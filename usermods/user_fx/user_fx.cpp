@@ -1463,6 +1463,102 @@ static const char _data_FX_MODE_DISSOLVEPLUS[] PROGMEM = "Dissolve Plus@Repeat s
 
 
 
+
+/*
+ * Nokia-style Growing Snake with Food + Crash/Restart
+ * - Starts at 5 LEDs
+ * - Food appears 6–9 LEDs ahead
+ * - Eating food makes the snake grow by +2
+ * - Nice fade on the tail
+ * - Runs continuously and wraps around
+ * - When snake becomes too long → crashes and restarts at 5
+ */
+uint16_t mode_nokia_snake(void) {
+
+  // ----- Timing -----
+  uint16_t cycleTime = 35 + ((255 - SEGMENT.speed) * 3);
+  uint32_t now = strip.now;
+
+  if (now - SEGENV.step < cycleTime) return FRAMETIME;
+  SEGENV.step = now;
+
+  // ----- Persistent state -----
+  static uint16_t foodPos = 0;
+  static bool foodActive = false;
+
+  // First run or after crash
+  if (SEGENV.call == 0 || SEGENV.aux1 == 0) {
+    SEGENV.aux0 = 4;          // head position
+    SEGENV.aux1 = 5;          // start length = 5
+    foodActive = false;
+  }
+
+  uint16_t head = SEGENV.aux0;
+  uint16_t len  = SEGENV.aux1;
+
+  // ----- Spawn food if needed -----
+  if (!foodActive) {
+    uint8_t dist = 6 + (hw_random8() % 4);   // 6–9 LEDs ahead
+    foodPos = (head + dist) % SEGLEN;
+    foodActive = true;
+  }
+
+  // ----- Move head -----
+  head = (head + 1) % SEGLEN;
+  SEGENV.aux0 = head;
+
+  // ----- Check if we ate the food -----
+  if (foodActive && head == foodPos) {
+    if (len < SEGLEN - 4) {
+      len += 2;                 // grow by +2
+      SEGENV.aux1 = len;
+    }
+    foodActive = false;
+  }
+
+  // ----- Crash condition -----
+  // Restart when the snake gets very long (you can change the number)
+  if (len > SEGLEN * 0.75) {   // crash when longer than 75% of the strip
+    SEGENV.aux1 = 0;           // forces restart next frame
+    return FRAMETIME;
+  }
+
+  // ----- Draw everything -----
+  SEGMENT.fill(SEGCOLOR(1));   // background
+
+  // Draw snake with fade
+  for (uint16_t i = 0; i < len; i++) {
+    uint16_t pos = (head - i + SEGLEN) % SEGLEN;
+
+    uint32_t col;
+    if (i == 0) {
+      col = SEGCOLOR(0);                     // head
+    } else {
+      uint8_t fade = 255 - ((i * 220) / len); // nice tail fade
+      if (SEGMENT.palette) {
+        col = SEGMENT.color_from_palette((i * 255) / len, false, PALETTE_SOLID_WRAP, 0);
+        col = color_fade(col, fade);
+      } else {
+        col = color_fade(SEGCOLOR(0), fade);
+      }
+    }
+    SEGMENT.setPixelColor(pos, col);
+  }
+
+  // Draw food
+  if (foodActive) {
+    uint32_t foodCol = SEGCOLOR(2);
+    if (foodCol == 0) foodCol = 0x00FF00;    // bright green fallback
+    SEGMENT.setPixelColor(foodPos, foodCol);
+  }
+
+  return FRAMETIME;
+}
+
+static const char _data_FX_MODE_NOKIA_SNAKE[] PROGMEM =
+  "Nokia Snake@Speed,!;!,!;!;01";
+
+
 /////////////////////
 //  UserMod Class  //
 /////////////////////
@@ -1478,6 +1574,7 @@ class UserFxUsermod : public Usermod {
     strip.addEffect(255, &mode_ants, _data_FX_MODE_ANTS);
     strip.addEffect(255, &mode_morsecode, _data_FX_MODE_MORSECODE);
     strip.addEffect(255, &mode_dissolveplus, _data_FX_MODE_DISSOLVEPLUS);
+    strip.addEffect(255, &mode_nokia_snake, _data_FX_MODE_NOKIA_SNAKE);
 
     ////////////////////////////////////////
     //  add your effect function(s) here  //
