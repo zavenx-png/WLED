@@ -1473,13 +1473,13 @@ static const char _data_FX_MODE_DISSOLVEPLUS[] PROGMEM = "Dissolve Plus@Repeat s
  * - Runs continuously and wraps around
  * - When snake becomes too long → crashes and restarts at 5
  */
-uint16_t mode_nokia_snake(void) {
+static void mode_nokia_snake(void) {
 
   // ----- Timing -----
   uint16_t cycleTime = 35 + ((255 - SEGMENT.speed) * 3);
   uint32_t now = strip.now;
 
-  if (now - SEGENV.step < cycleTime) return FRAMETIME;
+  if (now - SEGENV.step < cycleTime) return;
   SEGENV.step = now;
 
   // ----- Persistent state -----
@@ -1520,7 +1520,7 @@ uint16_t mode_nokia_snake(void) {
   // Restart when the snake gets very long (you can change the number)
   if (len > SEGLEN * 0.75) {   // crash when longer than 75% of the strip
     SEGENV.aux1 = 0;           // forces restart next frame
-    return FRAMETIME;
+    return;
   }
 
   // ----- Draw everything -----
@@ -1551,8 +1551,6 @@ uint16_t mode_nokia_snake(void) {
     if (foodCol == 0) foodCol = 0x00FF00;    // bright green fallback
     SEGMENT.setPixelColor(foodPos, foodCol);
   }
-
-  return FRAMETIME;
 }
 
 static const char _data_FX_MODE_NOKIA_SNAKE[] PROGMEM =
