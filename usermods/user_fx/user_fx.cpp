@@ -1498,7 +1498,7 @@ static void mode_nokia_snake(void) {
 
   // ----- Spawn food if needed -----
   if (!foodActive) {
-    uint8_t dist = 6 + (hw_random8() % 4);   // 6–9 LEDs ahead
+    uint8_t dist = 14 + (hw_random8() % 5);   // 14–18 LEDs ahead
     foodPos = (head + dist) % SEGLEN;
     foodActive = true;
   }
@@ -1510,7 +1510,7 @@ static void mode_nokia_snake(void) {
   // ----- Check if we ate the food -----
   if (foodActive && head == foodPos) {
     if (len < SEGLEN - 4) {
-      len += 2;                 // grow by +2
+      len += 1;                 // grow by +1 per food eaten
       SEGENV.aux1 = len;
     }
     foodActive = false;
@@ -1526,20 +1526,33 @@ static void mode_nokia_snake(void) {
   // ----- Draw everything -----
   SEGMENT.fill(SEGCOLOR(1));   // background
 
-  // Draw snake with fade
+  // Draw snake: solid/sharp near the head, fading gradually toward the tail.
+  // The solid (sharp) portion scales with snake length - a longer snake keeps
+  // proportionally more of its body at full brightness, just like the classic game,
+  // with only the trailing tip actually fading out.
+  uint16_t sharpLen = (uint16_t)(len * 0.6f);
+  if (sharpLen < 1) sharpLen = 1;
+  uint16_t fadeSpan = (len > sharpLen) ? (len - sharpLen) : 1;
+
   for (uint16_t i = 0; i < len; i++) {
     uint16_t pos = (head - i + SEGLEN) % SEGLEN;
 
     uint32_t col;
     if (i == 0) {
-      col = SEGCOLOR(0);                     // head
+      col = SEGCOLOR(0);                     // head marker, always full brightness
     } else {
-      uint8_t fade = 255 - ((i * 220) / len); // nice tail fade
-      if (SEGMENT.palette) {
-        col = SEGMENT.color_from_palette((i * 255) / len, false, PALETTE_SOLID_WRAP, 0);
-        col = color_fade(col, fade);
+      uint32_t baseColor = SEGMENT.palette
+        ? SEGMENT.color_from_palette((i * 255) / len, false, PALETTE_SOLID_WRAP, 0)
+        : SEGCOLOR(0);
+
+      if (i < sharpLen) {
+        col = baseColor;                     // solid body zone - no fade
       } else {
-        col = color_fade(SEGCOLOR(0), fade);
+        float t = (float)(i - sharpLen) / (float)fadeSpan;
+        float ease = 1.0f - t;
+        ease = ease * ease;                  // quadratic ease-out for a smooth, natural fade
+        uint8_t fade = (uint8_t)(ease * 230.0f) + 20; // floor at 20 so the tail doesn't vanish to black
+        col = color_fade(baseColor, fade);
       }
     }
     SEGMENT.setPixelColor(pos, col);
