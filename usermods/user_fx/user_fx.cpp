@@ -1598,15 +1598,19 @@ static const char _data_FX_MODE_NOKIA_SNAKE[] PROGMEM =
 //   Section 4 forward
 //   Section 5 forward
 //   Section 6 forward
-//   Section 7 reverse
-//   Section 8 reverse
+//   Section 7 reverse (handled through the existing reversed ledmap)
+//   Section 8 reverse (handled through the existing reversed ledmap)
 //   Section 5 forward
 //   Section 6 forward
-//   Section 7 reverse
-//   Section 9 reverse
+//   Section 7 reverse (handled through the existing reversed ledmap)
+//   Section 9 reverse (handled through the existing reversed ledmap)
 //
 // Values are LOGICAL LED indices. The normal WLED ledmap then converts
 // those logical indices to the physical LEDs.
+// IMPORTANT: sections 7, 8, and 9 are already physically reversed by the
+// user's normal ledmap.json. Therefore, to make Chunchun travel those
+// physical sections in REVERSE order, the virtual path uses their logical
+// indices in FORWARD order. The ledmap supplies the physical reversal.
 static const uint16_t chunchunHarnessPath[CHUNCHUN_HARNESS_PATH_LEN] PROGMEM = {
   // Section 0: 0..35
    0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15,
@@ -1643,13 +1647,13 @@ static const uint16_t chunchunHarnessPath[CHUNCHUN_HARNESS_PATH_LEN] PROGMEM = {
  182,183,184,185,186,187,188,189,190,191,192,193,194,195,196,197,
  198,199,200,201,202,203,204,
 
-  // Section 7 reversed: 234..205
- 234,233,232,231,230,229,228,227,226,225,224,223,222,221,220,
- 219,218,217,216,215,214,213,212,211,210,209,208,207,206,205,
+  // Section 7 reversed physically: logical indices must be FORWARD here
+ 205,206,207,208,209,210,211,212,213,214,215,216,217,218,219,220,
+ 221,222,223,224,225,226,227,228,229,230,231,232,233,234,
 
-  // Section 8 reversed: 256..235
- 256,255,254,253,252,251,250,249,248,247,246,245,244,243,242,241,
- 240,239,238,237,236,235,
+  // Section 8 reversed physically: logical indices must be FORWARD here
+ 235,236,237,238,239,240,241,242,243,244,245,246,247,248,249,250,
+ 251,252,253,254,255,256,
 
   // Section 5 again: 152..181
  152,153,154,155,156,157,158,159,160,161,162,163,164,165,166,167,
@@ -1659,14 +1663,14 @@ static const uint16_t chunchunHarnessPath[CHUNCHUN_HARNESS_PATH_LEN] PROGMEM = {
  182,183,184,185,186,187,188,189,190,191,192,193,194,195,196,197,
  198,199,200,201,202,203,204,
 
-  // Section 7 again reversed: 234..205
- 234,233,232,231,230,229,228,227,226,225,224,223,222,221,220,
- 219,218,217,216,215,214,213,212,211,210,209,208,207,206,205,
+  // Section 7 again reversed physically: logical indices must be FORWARD here
+ 205,206,207,208,209,210,211,212,213,214,215,216,217,218,219,220,
+ 221,222,223,224,225,226,227,228,229,230,231,232,233,234,
 
-  // Section 9 reversed: 290..257
- 290,289,288,287,286,285,284,283,282,281,280,279,278,277,276,275,
- 274,273,272,271,270,269,268,267,266,265,264,263,262,261,260,259,
- 258,257
+  // Section 9 reversed physically: logical indices must be FORWARD here
+ 257,258,259,260,261,262,263,264,265,266,267,268,269,270,271,272,
+ 273,274,275,276,277,278,279,280,281,282,283,284,285,286,287,288,
+ 289,290
 };
 
 
