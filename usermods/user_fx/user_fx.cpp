@@ -1570,6 +1570,174 @@ static const char _data_FX_MODE_NOKIA_SNAKE[] PROGMEM =
   "Nokia Snake@Speed,!;!,!;!;01";
 
 
+// ============================================================================
+// Custom Chunchun for the LED harness
+//
+// IMPORTANT:
+// This is intentionally based directly on WLED's original mode_chunchun()
+// implementation. The animation math, timing, fading, bird count formula,
+// sine-wave positioning, color calculation, and rendering are kept the same.
+//
+// The ONLY functional change is the coordinate system:
+//   - normal WLED effects use the existing 292-LED logical segment + ledmap
+//   - this effect uses a 410-position virtual path
+//   - each virtual position is translated to a 292-LED logical position
+//
+// Therefore the existing ledmap.json is left untouched.
+// ============================================================================
+
+#define CHUNCHUN_HARNESS_PATH_LEN 410
+
+// 410 virtual positions following the requested harness path:
+//
+//   Section 0 forward
+//   Section 1 forward
+//   Section 2 forward
+//   Section 3 forward
+//   Section 0 forward
+//   Section 4 forward
+//   Section 5 forward
+//   Section 6 forward
+//   Section 7 reverse
+//   Section 8 reverse
+//   Section 5 forward
+//   Section 6 forward
+//   Section 7 reverse
+//   Section 9 reverse
+//
+// Values are LOGICAL LED indices. The normal WLED ledmap then converts
+// those logical indices to the physical LEDs.
+static const uint16_t chunchunHarnessPath[CHUNCHUN_HARNESS_PATH_LEN] PROGMEM = {
+  // Section 0: 0..35
+   0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15,
+  16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31,
+  32, 33, 34, 35,
+
+  // Section 1: 36..53
+  36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51,
+  52, 53,
+
+  // Section 2: 54..93
+  54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67,
+  68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81,
+  82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93,
+
+  // Section 3: 94..119
+  94, 95, 96, 97, 98, 99,100,101,102,103,104,105,106,107,
+ 108,109,110,111,112,113,114,115,116,117,118,119,
+
+  // Section 0 again: 0..35
+   0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15,
+  16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31,
+  32, 33, 34, 35,
+
+  // Section 4: 120..151
+ 120,121,122,123,124,125,126,127,128,129,130,131,132,133,134,135,
+ 136,137,138,139,140,141,142,143,144,145,146,147,148,149,150,151,
+
+  // Section 5: 152..181
+ 152,153,154,155,156,157,158,159,160,161,162,163,164,165,166,167,
+ 168,169,170,171,172,173,174,175,176,177,178,179,180,181,
+
+  // Section 6: 182..204
+ 182,183,184,185,186,187,188,189,190,191,192,193,194,195,196,197,
+ 198,199,200,201,202,203,204,
+
+  // Section 7 reversed: 234..205
+ 234,233,232,231,230,229,228,227,226,225,224,223,222,221,220,
+ 219,218,217,216,215,214,213,212,211,210,209,208,207,206,205,
+
+  // Section 8 reversed: 256..235
+ 256,255,254,253,252,251,250,249,248,247,246,245,244,243,242,241,
+ 240,239,238,237,236,235,
+
+  // Section 5 again: 152..181
+ 152,153,154,155,156,157,158,159,160,161,162,163,164,165,166,167,
+ 168,169,170,171,172,173,174,175,176,177,178,179,180,181,
+
+  // Section 6 again: 182..204
+ 182,183,184,185,186,187,188,189,190,191,192,193,194,195,196,197,
+ 198,199,200,201,202,203,204,
+
+  // Section 7 again reversed: 234..205
+ 234,233,232,231,230,229,228,227,226,225,224,223,222,221,220,
+ 219,218,217,216,215,214,213,212,211,210,209,208,207,206,205,
+
+  // Section 9 reversed: 290..257
+ 290,289,288,287,286,285,284,283,282,281,280,279,278,277,276,275,
+ 274,273,272,271,270,269,268,267,266,265,264,263,262,261,260,259,
+ 258,257
+};
+
+
+// This is WLED's original Chunchun effect with the virtual-path coordinate
+// substitution described above. Compare against WLED's stock mode_chunchun():
+//
+//   SEGMENT.fade_out(254);
+//   counter = strip.now * (6 + (SEGMENT.speed >> 4));
+//   numBirds = 2 + (SEGLEN >> 3);
+//   span = (SEGMENT.intensity << 8) / numBirds;
+//   counter -= span;
+//   megumin = sin16_t(counter) + 0x8000;
+//   bird = uint32_t(megumin * SEGLEN) >> 16;
+//   constrain(...);
+//   color_from_palette(...);
+//   setPixelColor(...);
+//
+// The original 292-LED SEGLEN is replaced by the 410-position virtual
+// harness path only where it defines the animation coordinate system.
+static void mode_chunchun_harness(void)
+{
+  if (SEGLEN <= 1) FX_FALLBACK_STATIC;
+
+  // Original WLED Chunchun line -- unchanged.
+  SEGMENT.fade_out(254); // add a bit of trail
+
+  // Original WLED Chunchun line -- unchanged.
+  unsigned counter = strip.now * (6 + (SEGMENT.speed >> 4));
+
+  // Original formula, but applied to the 410-position virtual path.
+  unsigned numBirds = 2 + (CHUNCHUN_HARNESS_PATH_LEN >> 3);
+
+  // Original WLED Chunchun line -- unchanged.
+  unsigned span = (SEGMENT.intensity << 8) / numBirds;
+
+  for (unsigned i = 0; i < numBirds; i++)
+  {
+    // Original WLED Chunchun line -- unchanged.
+    counter -= span;
+
+    // Original WLED Chunchun line -- unchanged.
+    unsigned megumin = sin16_t(counter) + 0x8000;
+
+    // Original calculation, with the virtual path length substituted for
+    // the physical/logical segment length.
+    unsigned bird = uint32_t(megumin * CHUNCHUN_HARNESS_PATH_LEN) >> 16;
+
+    bird = constrain(bird, 0U, CHUNCHUN_HARNESS_PATH_LEN - 1U);
+
+    // Translate the virtual bird position into the normal 292-LED logical
+    // coordinate space. The existing ledmap.json then performs the physical
+    // mapping exactly as it does for every other WLED effect.
+    uint16_t logicalBird = pgm_read_word(&chunchunHarnessPath[bird]);
+
+    // Original WLED Chunchun color calculation -- unchanged.
+    SEGMENT.setPixelColor(
+      logicalBird,
+      SEGMENT.color_from_palette(
+        (i * 255) / numBirds,
+        false,
+        false,
+        0
+      )
+    );
+  }
+}
+
+static const char _data_FX_MODE_CHUNCHUN_HARNESS[] PROGMEM =
+  "Chunchun Harness@!,Gap size;!,!;!";
+
+
 /////////////////////
 //  UserMod Class  //
 /////////////////////
@@ -1596,6 +1764,10 @@ class UserFxUsermod : public Usermod {
     // strip.addEffect(255, &mode_your_effect, _data_FX_MODE_YOUR_EFFECT);
     // strip.addEffect(255, &mode_your_effect2, _data_FX_MODE_YOUR_EFFECT2);
     // strip.addEffect(255, &mode_your_effect3, _data_FX_MODE_YOUR_EFFECT3);
+
+    // Custom Chunchun: uses the 410-position virtual harness path while
+    // preserving the normal 292-LED ledmap for all other effects.
+    strip.addEffect(255, &mode_chunchun_harness, _data_FX_MODE_CHUNCHUN_HARNESS);
   }
 
 
