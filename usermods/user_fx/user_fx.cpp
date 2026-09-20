@@ -2186,6 +2186,556 @@ static const char _data_FX_MODE_Z_STARLIGHT[] PROGMEM =
   "Z - Starlight Nervous System@Speed,Stars,Flash,Drift;!,!;!;01";
 
 
+// ============================================================================
+// Z - Harness Visual Suite II
+//
+// 15 additional effects, all built on the same 410-position virtual harness
+// path (CHUNCHUN_HARNESS_PATH_LEN / chunchunHarnessPath / zh_* helpers
+// defined above). Nothing above this block is modified - these are pure
+// additions. None of these are games; they are all ambient / dancing /
+// generative light art intended to look as striking as possible across the
+// full harness topology.
+// ============================================================================
+
+// ---------------------------------------------------------------------------
+// Z - Aurora Curtain
+// Three overlapping slow sine "veils" combine into soft, drifting bands of
+// color reminiscent of the aurora borealis rippling across the sky.
+// ---------------------------------------------------------------------------
+static void mode_z_aurora_curtain(void)
+{
+  if (SEGLEN <= 1) FX_FALLBACK_STATIC;
+  SEGMENT.fade_out(230);
+
+  const uint32_t t = strip.now;
+  const uint16_t L = CHUNCHUN_HARNESS_PATH_LEN;
+  const uint16_t speedFac = 1 + (SEGMENT.speed >> 5);
+
+  for (uint16_t p = 0; p < L; p++) {
+    uint16_t x = (uint32_t)p * 65535UL / L;
+    uint16_t w1 = x * 2U + (uint16_t)(t * speedFac);
+    uint16_t w2 = x * 3U - (uint16_t)(t * speedFac / 2U);
+    uint16_t w3 = x + (uint16_t)(t * speedFac / 3U);
+    uint8_t band1 = (uint8_t)((sin16_t(w1) + 32768) >> 8);
+    uint8_t band2 = (uint8_t)((sin16_t(w2) + 32768) >> 8);
+    uint8_t band3 = (uint8_t)((sin16_t(w3) + 32768) >> 8);
+    uint8_t veil = (uint8_t)(((uint16_t)band1 * 100U + (uint16_t)band2 * 100U + (uint16_t)band3 * 55U) / 255U);
+    if (veil < 15) continue;
+    uint8_t br = qadd8(10, scale8(veil, 220));
+    br = qadd8(br, SEGMENT.intensity >> 3);
+    uint16_t hue = 27000U + (uint16_t)(band1 * 60U) + (uint16_t)(t * 4U);
+    SEGMENT.setPixelColor(zh_path_led(p), zh_palette(hue, br));
+  }
+}
+
+static const char _data_FX_MODE_Z_AURORA_CURTAIN[] PROGMEM =
+  "Z - Aurora Curtain@Speed,Glow,Bands,Drift;!,!;!;01";
+
+// ---------------------------------------------------------------------------
+// Z - Phoenix Flight
+// A blazing white-hot comet races continuously around the full harness,
+// cooling from white through yellow to deep red along its tail, with
+// crackling embers randomly spawning behind it.
+// ---------------------------------------------------------------------------
+static void mode_z_phoenix_flight(void)
+{
+  if (SEGLEN <= 1) FX_FALLBACK_STATIC;
+  SEGMENT.fade_out(228);
+
+  const uint32_t t = strip.now;
+  const uint16_t L = CHUNCHUN_HARNESS_PATH_LEN;
+  uint32_t cycle = 2600U - (uint32_t)SEGMENT.speed * 6U;
+  if (cycle < 800U) cycle = 800U;
+  const uint16_t head = zh_wrap(((uint64_t)t * L) / cycle);
+  const uint16_t width = 12 + (SEGMENT.intensity >> 4);
+
+  for (uint16_t p = 0; p < L; p++) {
+    uint16_t d = zh_cyclic_distance(p, head);
+    if (d >= width) continue;
+    uint8_t br = zh_soft(d, width);
+    uint16_t hue = 4000U + (uint16_t)(d * 40U); // white-yellow core cooling to deep red tail
+    uint32_t col = zh_palette(hue, br);
+    if (br > 225) col = color_fade(0xFFFFFFFF, br);
+    SEGMENT.setPixelColor(zh_path_led(p), col);
+  }
+
+  for (uint8_t i = 0; i < 3; i++) {
+    if (hw_random8() < 60) {
+      uint16_t emberOffset = hw_random16(width, (uint16_t)(width * 4));
+      uint16_t emberPos = zh_wrap((uint32_t)head + L - emberOffset);
+      uint8_t emberBr = 100 + hw_random8(100);
+      SEGMENT.setPixelColor(zh_path_led(emberPos), zh_palette((uint16_t)(3500 + hw_random16(2500)), emberBr));
+    }
+  }
+}
+
+static const char _data_FX_MODE_Z_PHOENIX_FLIGHT[] PROGMEM =
+  "Z - Phoenix Flight@Speed,Blaze,Tail width,Embers;!,!;!;01";
+
+// ---------------------------------------------------------------------------
+// Z - Crystal Resonance
+// A dim icy field of faceted "crystals" (a stable per-position hash) catches
+// a slow traveling pulse of light and throws sharp, bright glints back at
+// the viewer, like sunlight moving across a bed of gems.
+// ---------------------------------------------------------------------------
+static void mode_z_crystal_resonance(void)
+{
+  if (SEGLEN <= 1) FX_FALLBACK_STATIC;
+  SEGMENT.fade_out(240);
+
+  const uint32_t t = strip.now;
+  const uint16_t L = CHUNCHUN_HARNESS_PATH_LEN;
+  uint8_t pulse = (uint8_t)((sin16_t(t * (2 + (SEGMENT.speed >> 5))) + 32768) >> 8);
+
+  for (uint16_t p = 0; p < L; p++) {
+    uint32_t h = (uint32_t)p * 2654435761UL;
+    h ^= h >> 15;
+    uint8_t facet = (uint8_t)(h >> 24);
+    uint8_t base = scale8(facet, 40);
+    uint8_t glint = 0;
+    if (facet > (235U - (SEGMENT.intensity >> 4))) {
+      uint8_t phaseOffset = (uint8_t)(h >> 8);
+      uint8_t local = (uint8_t)(pulse + phaseOffset);
+      if (local > 200) glint = (uint8_t)((local - 200) * 4);
+    }
+    uint8_t br = qadd8(base, glint);
+    if (br < 6) continue;
+    uint16_t hue = 33000U + (uint16_t)(facet * 30U);
+    uint32_t col = zh_palette(hue, br);
+    if (glint > 150) col = color_fade(0xFFFFFFFF, glint);
+    SEGMENT.setPixelColor(zh_path_led(p), col);
+  }
+}
+
+static const char _data_FX_MODE_Z_CRYSTAL_RESONANCE[] PROGMEM =
+  "Z - Crystal Resonance@Speed,Glints,Density,Shimmer;!,!;!;01";
+
+// ---------------------------------------------------------------------------
+// Z - Nebula Drift
+// Three very slow interfering wave fields multiply together to create a
+// continuously morphing, deep-space nebula cloud in purples, blues and teal.
+// ---------------------------------------------------------------------------
+static void mode_z_nebula_drift(void)
+{
+  if (SEGLEN <= 1) FX_FALLBACK_STATIC;
+  const uint32_t t = strip.now / 2U; // extra slow, dreamlike drift
+  const uint16_t L = CHUNCHUN_HARNESS_PATH_LEN;
+
+  for (uint16_t p = 0; p < L; p++) {
+    uint16_t x = (uint32_t)p * 65535UL / L;
+    uint16_t w1 = x + (uint16_t)(t * (1 + (SEGMENT.speed >> 6)));
+    uint16_t w2 = x * 2U - (uint16_t)t;
+    uint16_t w3 = x * 5U + (uint16_t)(t / 2U);
+    uint8_t f1 = (uint8_t)((sin16_t(w1) + 32768) >> 8);
+    uint8_t f2 = (uint8_t)((sin16_t(w2) + 32768) >> 8);
+    uint8_t f3 = (uint8_t)((sin16_t(w3) + 32768) >> 8);
+    uint8_t cloud = (uint8_t)(((uint16_t)f1 * f2) >> 8);
+    cloud = scale8(cloud, f3);
+    uint8_t br = qadd8(8, scale8(cloud, 200));
+    br = qadd8(br, SEGMENT.intensity >> 4);
+    if (br < 6) continue;
+    uint16_t hue = 40000U + (uint16_t)(cloud * 90U) + (uint16_t)(t * 2U);
+    SEGMENT.setPixelColor(zh_path_led(p), zh_palette(hue, br));
+  }
+}
+
+static const char _data_FX_MODE_Z_NEBULA_DRIFT[] PROGMEM =
+  "Z - Nebula Drift@Speed,Density,Glow,Depth;!,!;!;01";
+
+// ---------------------------------------------------------------------------
+// Z - Solar Flare
+// Independent flares randomly ignite at points around the harness and
+// erupt outward as fast, fading rings of white-hot to deep orange light.
+// ---------------------------------------------------------------------------
+struct ZFlare { uint16_t origin; uint32_t startTime; bool active; };
+constexpr uint8_t Z_MAX_FLARES = 5;
+
+static void mode_z_solar_flare(void)
+{
+  if (SEGLEN <= 1) FX_FALLBACK_STATIC;
+  unsigned dataSize = sizeof(ZFlare) * Z_MAX_FLARES;
+  if (!SEGENV.allocateData(dataSize)) FX_FALLBACK_STATIC;
+  ZFlare* flares = reinterpret_cast<ZFlare*>(SEGENV.data);
+
+  if (SEGENV.call == 0) {
+    for (uint8_t i = 0; i < Z_MAX_FLARES; i++) flares[i].active = false;
+  }
+
+  SEGMENT.fade_out(232);
+  const uint32_t t = strip.now;
+  const uint16_t L = CHUNCHUN_HARNESS_PATH_LEN;
+  uint32_t dur = 900U - (uint32_t)(SEGMENT.speed << 1);
+  if (dur < 300U) dur = 300U;
+
+  for (uint8_t i = 0; i < Z_MAX_FLARES; i++) {
+    if (!flares[i].active && hw_random8() < (10 + (SEGMENT.intensity >> 4))) {
+      flares[i].active = true;
+      flares[i].origin = hw_random16(L);
+      flares[i].startTime = t;
+      break;
+    }
+  }
+
+  for (uint8_t i = 0; i < Z_MAX_FLARES; i++) {
+    if (!flares[i].active) continue;
+    uint32_t age = t - flares[i].startTime;
+    if (age > dur) { flares[i].active = false; continue; }
+    uint8_t progress8 = (uint8_t)((age * 255U) / dur);
+    uint16_t radius = (uint16_t)(((uint32_t)progress8 * (L / 3U)) >> 8);
+    const uint16_t width = 10;
+    for (uint16_t p = 0; p < L; p++) {
+      uint16_t d = zh_cyclic_distance(p, flares[i].origin);
+      uint16_t diff = (d > radius) ? (d - radius) : (radius - d);
+      uint8_t br = zh_soft(diff, width);
+      if (br < 3) continue;
+      br = scale8(br, (uint8_t)(255U - progress8));
+      uint16_t hue = 5500U + (uint16_t)(d * 15U);
+      uint32_t col = zh_palette(hue, br);
+      if (br > 200) col = color_fade(0xFFFFFFFF, br);
+      SEGMENT.setPixelColor(zh_path_led(p), col);
+    }
+  }
+}
+
+static const char _data_FX_MODE_Z_SOLAR_FLARE[] PROGMEM =
+  "Z - Solar Flare@Frequency,Energy,,;!,!;!;01";
+
+// ---------------------------------------------------------------------------
+// Z - Kaleidoscope Bloom
+// A symmetric, multi-petal flower pattern breathes open and closed across
+// the entire harness, its petals slowly rotating through hue as they bloom.
+// ---------------------------------------------------------------------------
+static void mode_z_kaleidoscope_bloom(void)
+{
+  if (SEGLEN <= 1) FX_FALLBACK_STATIC;
+  const uint32_t t = strip.now;
+  const uint16_t L = CHUNCHUN_HARNESS_PATH_LEN;
+  const uint8_t petals = 5 + (SEGMENT.intensity >> 5); // 5 - 12 petals
+  uint16_t breathe = (uint16_t)((sin16_t(t * (1 + (SEGMENT.speed >> 6))) + 32768) >> 1);
+
+  for (uint16_t p = 0; p < L; p++) {
+    uint16_t x = (uint32_t)p * 65535UL / L;
+    uint16_t petalPhase = (uint16_t)((uint32_t)x * petals);
+    uint8_t petalWave = (uint8_t)((sin16_t(petalPhase + (uint16_t)(t * 3U)) + 32768) >> 8);
+    uint8_t bloom = scale8(petalWave, (uint8_t)(breathe >> 8));
+    uint8_t br = qadd8(6, bloom);
+    if (br < 8) continue;
+    uint16_t hue = petalPhase + (uint16_t)(t * 12U);
+    SEGMENT.setPixelColor(zh_path_led(p), zh_palette(hue, br));
+  }
+}
+
+static const char _data_FX_MODE_Z_KALEIDOSCOPE_BLOOM[] PROGMEM =
+  "Z - Kaleidoscope Bloom@Speed,Petals,Bloom,Color;!,!;!;01";
+
+// ---------------------------------------------------------------------------
+// Z - Serpentine Silk
+// A single smooth, slowly traveling wave gives the impression of a ribbon
+// of silk rippling along the full length of the harness, with a fine
+// secondary shimmer layered on top.
+// ---------------------------------------------------------------------------
+static void mode_z_serpentine_silk(void)
+{
+  if (SEGLEN <= 1) FX_FALLBACK_STATIC;
+  const uint32_t t = strip.now;
+  const uint16_t L = CHUNCHUN_HARNESS_PATH_LEN;
+
+  for (uint16_t p = 0; p < L; p++) {
+    uint16_t x = (uint32_t)p * 65535UL / L;
+    uint16_t wave = x + (uint16_t)(t * (1 + (SEGMENT.speed >> 5)));
+    uint8_t s = (uint8_t)((sin16_t(wave) + 32768) >> 8);
+    uint8_t ripple = (uint8_t)((sin16_t(x * 4U - t * 2U) + 32768) >> 9);
+    uint8_t br = qadd8(30, scale8(s, 160));
+    br = qadd8(br, ripple);
+    br = qadd8(br, SEGMENT.intensity >> 4);
+    uint16_t hue = x + (uint16_t)(t * 6U);
+    SEGMENT.setPixelColor(zh_path_led(p), zh_palette(hue, br));
+  }
+}
+
+static const char _data_FX_MODE_Z_SERPENTINE_SILK[] PROGMEM =
+  "Z - Serpentine Silk@Speed,Sheen,Flow,Hue;!,!;!;01";
+
+// ---------------------------------------------------------------------------
+// Z - Quantum Foam
+// Dense, chaotic, independently-randomized flickers of light and color pop
+// in and out of existence across the harness, occasionally flashing white,
+// evoking quantum vacuum fluctuations.
+// ---------------------------------------------------------------------------
+static void mode_z_quantum_foam(void)
+{
+  if (SEGLEN <= 1) FX_FALLBACK_STATIC;
+  SEGMENT.fade_out(200);
+  const uint16_t L = CHUNCHUN_HARNESS_PATH_LEN;
+  const uint8_t density = 20 + (SEGMENT.intensity >> 2);
+
+  for (uint16_t p = 0; p < L; p++) {
+    if (hw_random8() > density) continue;
+    uint8_t br = hw_random8(80, 255);
+    uint16_t hue = hw_random16();
+    uint32_t col = zh_palette(hue, br);
+    if (hw_random8() < 20) col = color_fade(0xFFFFFFFF, br);
+    SEGMENT.setPixelColor(zh_path_led(p), col);
+  }
+}
+
+static const char _data_FX_MODE_Z_QUANTUM_FOAM[] PROGMEM =
+  "Z - Quantum Foam@,Density,,;!,!;!;01";
+
+// ---------------------------------------------------------------------------
+// Z - Molten Core
+// A pulsing, breathing heat source sits at the center of the virtual path
+// and radiates outward with a flickering heat gradient from white-hot core
+// to deep smoldering red at the edges.
+// ---------------------------------------------------------------------------
+static void mode_z_molten_core(void)
+{
+  if (SEGLEN <= 1) FX_FALLBACK_STATIC;
+  const uint32_t t = strip.now;
+  const uint16_t L = CHUNCHUN_HARNESS_PATH_LEN;
+  const uint16_t center = (uint16_t)(L / 2U);
+  uint8_t breathe = (uint8_t)((sin16_t(t * (1 + (SEGMENT.speed >> 6))) + 32768) >> 8);
+
+  SEGMENT.fade_out(210);
+
+  for (uint16_t p = 0; p < L; p++) {
+    uint16_t d = zh_cyclic_distance(p, center);
+    uint16_t maxD = L / 2U;
+    uint8_t falloff = zh_soft(d, maxD);
+    uint8_t heat = scale8(falloff, qadd8(120, breathe));
+    heat = qadd8(heat, SEGMENT.intensity >> 4);
+    heat = qadd8(heat, (hw_random8() % 20)); // flicker
+    if (heat < 6) continue;
+    uint16_t hue = 4500U + (uint16_t)((255U - heat) * 25U);
+    uint32_t col = zh_palette(hue, heat);
+    if (heat > 235) col = color_fade(0xFFFFFFFF, heat);
+    SEGMENT.setPixelColor(zh_path_led(p), col);
+  }
+}
+
+static const char _data_FX_MODE_Z_MOLTEN_CORE[] PROGMEM =
+  "Z - Molten Core@Speed,Heat,,Flicker;!,!;!;01";
+
+// ---------------------------------------------------------------------------
+// Z - Comet Storm
+// Several independent comets, each with its own speed, direction and hue,
+// race continuously around the full harness with soft triangular tails,
+// producing a constantly-changing storm of streaking light.
+// ---------------------------------------------------------------------------
+struct ZComet { uint16_t pos; int16_t vel; uint16_t hue; };
+constexpr uint8_t Z_MAX_COMETS = 6;
+
+static void mode_z_comet_storm(void)
+{
+  if (SEGLEN <= 1) FX_FALLBACK_STATIC;
+  unsigned dataSize = sizeof(ZComet) * Z_MAX_COMETS;
+  if (!SEGENV.allocateData(dataSize)) FX_FALLBACK_STATIC;
+  ZComet* comets = reinterpret_cast<ZComet*>(SEGENV.data);
+  const uint16_t L = CHUNCHUN_HARNESS_PATH_LEN;
+
+  if (SEGENV.call == 0) {
+    for (uint8_t i = 0; i < Z_MAX_COMETS; i++) {
+      comets[i].pos = hw_random16(L);
+      comets[i].vel = (int16_t)((hw_random8(2) ? 1 : -1) * (int16_t)hw_random16(1, 4));
+      comets[i].hue = hw_random16();
+    }
+  }
+
+  SEGMENT.fade_out(220);
+  const uint8_t speedScale = 1 + (SEGMENT.speed >> 5);
+  const uint8_t numComets = 2 + (SEGMENT.intensity >> 6); // 2 - 5
+
+  for (uint8_t i = 0; i < numComets && i < Z_MAX_COMETS; i++) {
+    int32_t np = (int32_t)comets[i].pos + comets[i].vel * speedScale;
+    while (np < 0) np += L;
+    while (np >= (int32_t)L) np -= L;
+    comets[i].pos = (uint16_t)np;
+
+    const uint16_t tailLen = 14;
+    int8_t dir = (comets[i].vel > 0) ? 1 : -1;
+    for (uint16_t k = 0; k < tailLen; k++) {
+      int32_t tp = (int32_t)comets[i].pos - dir * k;
+      tp = ((tp % (int32_t)L) + (int32_t)L) % (int32_t)L;
+      uint8_t br = zh_tri(k, tailLen);
+      if (br < 4) continue;
+      SEGMENT.setPixelColor(zh_path_led((uint16_t)tp), zh_palette(comets[i].hue, br));
+    }
+  }
+}
+
+static const char _data_FX_MODE_Z_COMET_STORM[] PROGMEM =
+  "Z - Comet Storm@Speed,Comets,,;!,!;!;01";
+
+// ---------------------------------------------------------------------------
+// Z - Prism Cascade
+// Sharp, saturated spectral bands scroll continuously around the harness,
+// each band a distinct hue with a soft edge, like light being split by a
+// prism into cascading bars of color.
+// ---------------------------------------------------------------------------
+static void mode_z_prism_cascade(void)
+{
+  if (SEGLEN <= 1) FX_FALLBACK_STATIC;
+  const uint32_t t = strip.now;
+  const uint16_t L = CHUNCHUN_HARNESS_PATH_LEN;
+  const uint8_t bands = 7;
+  const uint16_t bandWidth = L / bands;
+  const uint16_t shift = (uint16_t)(((t * (1 + (SEGMENT.speed >> 5))) / 4U) % L);
+
+  for (uint16_t p = 0; p < L; p++) {
+    uint16_t pp = zh_wrap((uint32_t)p + shift);
+    uint8_t bandIdx = (uint8_t)((pp / bandWidth) % bands);
+    uint16_t withinBand = pp % bandWidth;
+    uint16_t distFromEdge = min(withinBand, (uint16_t)(bandWidth - withinBand));
+    uint8_t edge = zh_tri(distFromEdge, bandWidth / 2);
+    uint8_t br = qadd8(60, scale8(edge, 195));
+    br = qadd8(br, SEGMENT.intensity >> 4);
+    uint16_t hue = (uint16_t)bandIdx * (uint16_t)(65535U / bands);
+    SEGMENT.setPixelColor(zh_path_led(p), zh_palette(hue, br));
+  }
+}
+
+static const char _data_FX_MODE_Z_PRISM_CASCADE[] PROGMEM =
+  "Z - Prism Cascade@Speed,Bands,Glow,;!,!;!;01";
+
+// ---------------------------------------------------------------------------
+// Z - Deep Current
+// Slow undulating blue-green waves flow along the harness like light
+// filtering through deep ocean water, with a fine high-frequency shimmer
+// layered on top to suggest sunlight glinting through the surface above.
+// ---------------------------------------------------------------------------
+static void mode_z_deep_current(void)
+{
+  if (SEGLEN <= 1) FX_FALLBACK_STATIC;
+  const uint32_t t = strip.now;
+  const uint16_t L = CHUNCHUN_HARNESS_PATH_LEN;
+
+  for (uint16_t p = 0; p < L; p++) {
+    uint16_t x = (uint32_t)p * 65535UL / L;
+    uint16_t flow = x + (uint16_t)(t * (1 + (SEGMENT.speed >> 6)));
+    uint8_t wave = (uint8_t)((sin16_t(flow) + 32768) >> 8);
+    uint8_t shimmer = (uint8_t)((sin16_t(x * 9U + t * 5U) + 32768) >> 11);
+    uint8_t br = qadd8(20, scale8(wave, 150));
+    br = qadd8(br, shimmer);
+    br = qadd8(br, SEGMENT.intensity >> 4);
+    uint16_t hue = 30000U + (uint16_t)(wave * 40U);
+    SEGMENT.setPixelColor(zh_path_led(p), zh_palette(hue, br));
+  }
+}
+
+static const char _data_FX_MODE_Z_DEEP_CURRENT[] PROGMEM =
+  "Z - Deep Current@Speed,Waves,Shimmer,;!,!;!;01";
+
+// ---------------------------------------------------------------------------
+// Z - Firefly Swarm
+// A swarm of soft, warm-colored fireflies wander gently around the harness,
+// each with its own wander phase and twinkle rate, dimming and brightening
+// independently for a calm, organic, ambient glow.
+// ---------------------------------------------------------------------------
+struct ZFirefly { uint16_t basePos; uint16_t phase; uint8_t hueSeed; };
+constexpr uint8_t Z_MAX_FIREFLIES = 24;
+
+static void mode_z_firefly_swarm(void)
+{
+  if (SEGLEN <= 1) FX_FALLBACK_STATIC;
+  unsigned dataSize = sizeof(ZFirefly) * Z_MAX_FIREFLIES;
+  if (!SEGENV.allocateData(dataSize)) FX_FALLBACK_STATIC;
+  ZFirefly* flies = reinterpret_cast<ZFirefly*>(SEGENV.data);
+  const uint16_t L = CHUNCHUN_HARNESS_PATH_LEN;
+
+  if (SEGENV.call == 0) {
+    for (uint8_t i = 0; i < Z_MAX_FIREFLIES; i++) {
+      flies[i].basePos = hw_random16(L);
+      flies[i].phase = hw_random16();
+      flies[i].hueSeed = hw_random8();
+    }
+  }
+
+  SEGMENT.fade_out(236);
+  const uint32_t t = strip.now;
+  const uint8_t numFlies = 6 + (SEGMENT.intensity >> 4); // up to ~22
+
+  for (uint8_t i = 0; i < numFlies && i < Z_MAX_FIREFLIES; i++) {
+    uint16_t wander = (uint16_t)((sin16_t(flies[i].phase + t * (1 + (SEGMENT.speed >> 6))) + 32768) >> 10); // 0-63
+    uint16_t pos = zh_wrap((uint32_t)flies[i].basePos + wander);
+    uint8_t twinkle = (uint8_t)((sin16_t(flies[i].phase * 3U + t * 7U) + 32768) >> 8);
+    if (twinkle < 60) continue;
+    uint8_t br = scale8(twinkle, 210);
+    uint16_t hue = 9000U + (uint16_t)(flies[i].hueSeed) * 60U;
+    uint32_t col = zh_palette(hue, br);
+    uint16_t ledPos = zh_path_led(pos);
+    SEGMENT.setPixelColor(ledPos, col);
+    uint16_t neighborPos = zh_path_led(zh_wrap((uint32_t)pos + 1));
+    SEGMENT.setPixelColor(neighborPos, color_fade(col, 120));
+  }
+}
+
+static const char _data_FX_MODE_Z_FIREFLY_SWARM[] PROGMEM =
+  "Z - Firefly Swarm@Speed,Swarm size,,;!,!;!;01";
+
+// ---------------------------------------------------------------------------
+// Z - Void Ripple
+// From a dark, dormant center, a single ring of pale violet light expands
+// outward across the entire harness, fading as it grows, before the void
+// resets and ripples again - like something ancient stirring in the dark.
+// ---------------------------------------------------------------------------
+static void mode_z_void_ripple(void)
+{
+  if (SEGLEN <= 1) FX_FALLBACK_STATIC;
+  const uint16_t L = CHUNCHUN_HARNESS_PATH_LEN;
+  const uint16_t center = (uint16_t)(L / 2U);
+  uint32_t cycle = 3400U - (uint32_t)SEGMENT.speed * 8U;
+  if (cycle < 900U) cycle = 900U;
+  const uint32_t phase = strip.now % cycle;
+
+  SEGMENT.fade_out(218);
+
+  const uint16_t maxRadius = L / 2U;
+  uint16_t radius = (uint16_t)(((uint32_t)maxRadius * phase) / cycle);
+  const uint16_t width = 6 + (SEGMENT.intensity >> 5);
+
+  for (uint16_t p = 0; p < L; p++) {
+    uint16_t d = zh_cyclic_distance(p, center);
+    uint16_t diff = (d > radius) ? (d - radius) : (radius - d);
+    uint8_t br = zh_soft(diff, width);
+    if (br < 3) continue;
+    uint8_t fadeAmt = (uint8_t)(255U - ((phase * 200U) / cycle));
+    br = scale8(br, fadeAmt);
+    uint16_t hue = 44000U + (uint16_t)(d * 10U);
+    SEGMENT.setPixelColor(zh_path_led(p), zh_palette(hue, br));
+  }
+}
+
+static const char _data_FX_MODE_Z_VOID_RIPPLE[] PROGMEM =
+  "Z - Void Ripple@Speed,Reach,Width,;!,!;!;01";
+
+// ---------------------------------------------------------------------------
+// Z - Solstice Spiral
+// Multiple spiral "arms" of light rotate continuously along the harness,
+// their hue cycling as they turn, evoking the slow rotation of a distant
+// spiral galaxy.
+// ---------------------------------------------------------------------------
+static void mode_z_solstice_spiral(void)
+{
+  if (SEGLEN <= 1) FX_FALLBACK_STATIC;
+  const uint32_t t = strip.now;
+  const uint16_t L = CHUNCHUN_HARNESS_PATH_LEN;
+  const uint8_t arms = 3;
+
+  for (uint16_t p = 0; p < L; p++) {
+    uint16_t x = (uint32_t)p * 65535UL / L;
+    uint16_t armPhase = (uint16_t)((uint32_t)x * arms) + (uint16_t)(t * (1 + (SEGMENT.speed >> 5)));
+    uint8_t armWave = (uint8_t)((sin16_t(armPhase) + 32768) >> 8);
+    uint8_t br = qadd8(15, scale8(armWave, 200));
+    br = qadd8(br, SEGMENT.intensity >> 4);
+    uint16_t hue = x + (uint16_t)(t * 8U);
+    SEGMENT.setPixelColor(zh_path_led(p), zh_palette(hue, br));
+  }
+}
+
+static const char _data_FX_MODE_Z_SOLSTICE_SPIRAL[] PROGMEM =
+  "Z - Solstice Spiral@Speed,Arms,Glow,;!,!;!;01";
+
+
 /////////////////////
 //  UserMod Class  //
 /////////////////////
@@ -2228,6 +2778,23 @@ class UserFxUsermod : public Usermod {
     strip.addEffect(255, &mode_z_wormhole, _data_FX_MODE_Z_WORMHOLE);
     strip.addEffect(255, &mode_z_rainbow_fracture, _data_FX_MODE_Z_RAINBOW_FRACTURE);
     strip.addEffect(255, &mode_z_starlight, _data_FX_MODE_Z_STARLIGHT);
+
+    // Z - Harness Visual Suite II (15 new effects)
+    strip.addEffect(255, &mode_z_aurora_curtain, _data_FX_MODE_Z_AURORA_CURTAIN);
+    strip.addEffect(255, &mode_z_phoenix_flight, _data_FX_MODE_Z_PHOENIX_FLIGHT);
+    strip.addEffect(255, &mode_z_crystal_resonance, _data_FX_MODE_Z_CRYSTAL_RESONANCE);
+    strip.addEffect(255, &mode_z_nebula_drift, _data_FX_MODE_Z_NEBULA_DRIFT);
+    strip.addEffect(255, &mode_z_solar_flare, _data_FX_MODE_Z_SOLAR_FLARE);
+    strip.addEffect(255, &mode_z_kaleidoscope_bloom, _data_FX_MODE_Z_KALEIDOSCOPE_BLOOM);
+    strip.addEffect(255, &mode_z_serpentine_silk, _data_FX_MODE_Z_SERPENTINE_SILK);
+    strip.addEffect(255, &mode_z_quantum_foam, _data_FX_MODE_Z_QUANTUM_FOAM);
+    strip.addEffect(255, &mode_z_molten_core, _data_FX_MODE_Z_MOLTEN_CORE);
+    strip.addEffect(255, &mode_z_comet_storm, _data_FX_MODE_Z_COMET_STORM);
+    strip.addEffect(255, &mode_z_prism_cascade, _data_FX_MODE_Z_PRISM_CASCADE);
+    strip.addEffect(255, &mode_z_deep_current, _data_FX_MODE_Z_DEEP_CURRENT);
+    strip.addEffect(255, &mode_z_firefly_swarm, _data_FX_MODE_Z_FIREFLY_SWARM);
+    strip.addEffect(255, &mode_z_void_ripple, _data_FX_MODE_Z_VOID_RIPPLE);
+    strip.addEffect(255, &mode_z_solstice_spiral, _data_FX_MODE_Z_SOLSTICE_SPIRAL);
   }
 
 
