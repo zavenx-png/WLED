@@ -1567,7 +1567,7 @@ static void mode_nokia_snake(void) {
 }
 
 static const char _data_FX_MODE_NOKIA_SNAKE[] PROGMEM =
-  "Nokia Snake@Speed,!;!,!;!;01";
+  "Z - Nokia Snake@Speed,!;!,!;!;01";
 
 
 // ============================================================================
@@ -1739,7 +1739,451 @@ static void mode_chunchun_harness(void)
 }
 
 static const char _data_FX_MODE_CHUNCHUN_HARNESS[] PROGMEM =
-  "Chunchun Harness@!,Gap size;!,!;!";
+  "Z - Chunchun Harness@!,Gap size;!,!;!";
+
+
+// ============================================================================
+// Z - Harness Visual Suite
+//
+// All effects below use the same 410-position virtual harness path as the
+// custom Chunchun effect above. The path is expressed in the normal logical
+// LED coordinate space so the existing one-to-one ledmap.json remains intact.
+// In particular, Sections 7, 8 and 9 are supplied in logical FORWARD order;
+// the existing ledmap performs their physical reversal.
+//
+// The effects intentionally use the full topology rather than treating the
+// strip as a simple 1D line. Repeated sections therefore participate in the
+// animation as branches/rejoins while normal WLED effects remain untouched.
+// ============================================================================
+
+static inline uint16_t zh_path_led(uint16_t p)
+{
+  return pgm_read_word(&chunchunHarnessPath[p % CHUNCHUN_HARNESS_PATH_LEN]);
+}
+
+static inline uint16_t zh_wrap(uint32_t x)
+{
+  return (uint16_t)(x % CHUNCHUN_HARNESS_PATH_LEN);
+}
+
+static inline uint16_t zh_cyclic_distance(uint16_t a, uint16_t b)
+{
+  uint16_t d = (a > b) ? (a - b) : (b - a);
+  uint16_t other = CHUNCHUN_HARNESS_PATH_LEN - d;
+  return d < other ? d : other;
+}
+
+static inline uint8_t zh_tri(uint16_t distance, uint16_t width)
+{
+  if (distance >= width) return 0;
+  return (uint8_t)(255U - ((uint32_t)distance * 255U / width));
+}
+
+static inline uint8_t zh_soft(uint16_t distance, uint16_t width)
+{
+  if (distance >= width) return 0;
+  uint32_t x = 255U - ((uint32_t)distance * 255U / width);
+  return (uint8_t)((x * x) >> 8);
+}
+
+static inline uint32_t zh_palette(uint16_t hue, uint8_t brightness)
+{
+  uint32_t c = SEGMENT.color_from_palette((uint8_t)(hue >> 8), true, true, 0);
+  return color_fade(c, brightness);
+}
+
+// ---------------------------------------------------------------------------
+// Z - Neural Pulse
+// Multiple pulses propagate through the harness topology. Different pulse
+// velocities create apparent splitting/recombination when the virtual path
+// revisits a physical section.
+// ---------------------------------------------------------------------------
+static void mode_z_neural_pulse(void)
+{
+  if (SEGLEN <= 1) FX_FALLBACK_STATIC;
+  SEGMENT.fade_out(238);
+
+  const uint32_t t = strip.now;
+  const uint16_t L = CHUNCHUN_HARNESS_PATH_LEN;
+  const uint16_t width = 9 + (SEGMENT.intensity >> 5);
+  const uint16_t p0 = zh_wrap((t * (2 + (SEGMENT.speed >> 5))) / 8U);
+  const uint16_t p1 = zh_wrap((t * (3 + (SEGMENT.speed >> 6))) / 11U + 137U);
+  const uint16_t p2 = zh_wrap((t * (1 + (SEGMENT.speed >> 6))) / 6U + 276U);
+
+  for (uint16_t p = 0; p < L; p++) {
+    uint8_t b0 = zh_soft(zh_cyclic_distance(p, p0), width);
+    uint8_t b1 = zh_soft(zh_cyclic_distance(p, p1), width + 3);
+    uint8_t b2 = zh_soft(zh_cyclic_distance(p, p2), width + 5);
+    uint8_t b = max(b0, max(b1, b2));
+    if (b < 3) continue;
+
+    uint16_t h = (uint16_t)(p * 65535UL / L) + (uint16_t)(t * 19U);
+    if (b1 > b && b1 >= b0 && b1 >= b2) h += 21000;
+    else if (b2 > b0 && b2 >= b1) h += 43000;
+
+    uint8_t boosted = qadd8(b, (uint8_t)(SEGMENT.intensity >> 2));
+    SEGMENT.setPixelColor(zh_path_led(p), zh_palette(h, boosted));
+  }
+}
+
+static const char _data_FX_MODE_Z_NEURAL_PULSE[] PROGMEM =
+  "Z - Neural Pulse@Speed,Energy,Width,Chaos;!,!;!;01";
+
+// ---------------------------------------------------------------------------
+// Z - Liquid Chrome
+// A narrow, high-contrast traveling highlight rides on a dark iridescent
+// field. The result is intended to resemble liquid metal / oil-slick chrome.
+// ---------------------------------------------------------------------------
+static void mode_z_liquid_chrome(void)
+{
+  if (SEGLEN <= 1) FX_FALLBACK_STATIC;
+  const uint32_t t = strip.now;
+  const uint16_t L = CHUNCHUN_HARNESS_PATH_LEN;
+
+  for (uint16_t p = 0; p < L; p++) {
+    uint16_t spatial = (uint32_t)p * 65535UL / L;
+    uint16_t a = spatial + (uint16_t)(t * (2 + (SEGMENT.speed >> 5)));
+    uint16_t b = spatial * 3U - (uint16_t)(t * 3U);
+    int16_t s1 = sin16_t(a);
+    int16_t s2 = sin16_t(b);
+    uint8_t broad = (uint8_t)((abs((int)s1) + abs((int)s2)) >> 9);
+    uint8_t glint = (uint8_t)((uint16_t)(s1 + 32768) >> 8);
+    glint = (uint8_t)((uint16_t)glint * glint >> 8);
+    uint8_t brightness = qadd8(28, (uint8_t)(broad >> 1));
+    brightness = qadd8(brightness, scale8(glint, 220));
+    brightness = qadd8(brightness, SEGMENT.intensity >> 2);
+
+    uint16_t hue = spatial + (uint16_t)(t * 10U) + (uint16_t)(s2 >> 2);
+    uint32_t c = zh_palette(hue, brightness);
+
+    // A tiny white specular highlight makes the chrome read as reflective.
+    if (glint > 235) c = color_fade(0xFFFFFFFF, (uint8_t)(glint - 220) * 7);
+    SEGMENT.setPixelColor(zh_path_led(p), c);
+  }
+}
+
+static const char _data_FX_MODE_Z_LIQUID_CHROME[] PROGMEM =
+  "Z - Liquid Chrome@Speed,Metal,Contrast,Shift;!,!;!;01";
+
+// ---------------------------------------------------------------------------
+// Z - Plasma Veins
+// Several low-frequency fields interfere to create continuously morphing
+// plasma. It is intentionally smooth and organic rather than a simple chase.
+// ---------------------------------------------------------------------------
+static void mode_z_plasma_veins(void)
+{
+  if (SEGLEN <= 1) FX_FALLBACK_STATIC;
+  const uint32_t t = strip.now;
+  const uint16_t L = CHUNCHUN_HARNESS_PATH_LEN;
+
+  for (uint16_t p = 0; p < L; p++) {
+    uint16_t x = (uint32_t)p * 65535UL / L;
+    uint16_t w1 = x * 2U + (uint16_t)(t * (1 + (SEGMENT.speed >> 6)));
+    uint16_t w2 = x * 5U - (uint16_t)(t * 2U);
+    uint16_t w3 = x * 11U + (uint16_t)(t * 3U);
+    uint8_t f1 = (uint8_t)((sin16_t(w1) + 32768) >> 8);
+    uint8_t f2 = (uint8_t)((sin16_t(w2) + 32768) >> 8);
+    uint8_t f3 = (uint8_t)((sin16_t(w3) + 32768) >> 8);
+    uint8_t field = (uint8_t)(((uint16_t)f1 * 110U + (uint16_t)f2 * 90U + (uint16_t)f3 * 55U) / 255U);
+    uint8_t pulse = qadd8(field, (uint8_t)(sin16_t(x + t * 5U) >> 9));
+    uint8_t brightness = qadd8(18, scale8(pulse, 220));
+    brightness = qadd8(brightness, SEGMENT.intensity >> 3);
+    uint16_t hue = x + (uint16_t)(f2 * 180U) + (uint16_t)(t * 9U);
+    SEGMENT.setPixelColor(zh_path_led(p), zh_palette(hue, brightness));
+  }
+}
+
+static const char _data_FX_MODE_Z_PLASMA_VEINS[] PROGMEM =
+  "Z - Plasma Veins@Speed,Plasma,Glow,Drift;!,!;!;01";
+
+// ---------------------------------------------------------------------------
+// Z - Electric Organism
+// Mostly dark, with stochastic electrical impulses. A deterministic moving
+// field is combined with real hardware randomness so successive cycles do
+// not look identical.
+// ---------------------------------------------------------------------------
+static void mode_z_electric_organism(void)
+{
+  if (SEGLEN <= 1) FX_FALLBACK_STATIC;
+  SEGMENT.fade_out(218);
+
+  if (SEGENV.call == 0) {
+    SEGENV.aux0 = 0;
+    SEGENV.aux1 = hw_random16() % CHUNCHUN_HARNESS_PATH_LEN;
+  }
+
+  if (SEGENV.aux0 > 0) SEGENV.aux0--;
+  if (SEGENV.aux0 == 0) {
+    SEGENV.aux1 = hw_random16() % CHUNCHUN_HARNESS_PATH_LEN;
+    SEGENV.aux0 = 10 + (hw_random8() % (45 + ((255 - SEGMENT.speed) >> 3)));
+  }
+
+  const uint16_t head = SEGENV.aux1 % CHUNCHUN_HARNESS_PATH_LEN;
+  const uint16_t width = 4 + (SEGMENT.intensity >> 6);
+  const uint32_t t = strip.now;
+  for (uint16_t p = 0; p < CHUNCHUN_HARNESS_PATH_LEN; p++) {
+    uint8_t b = zh_soft(zh_cyclic_distance(p, head), width);
+    if (b < 4) continue;
+    uint16_t h = (uint16_t)(t * 45U) + (uint16_t)(p * 401U);
+    uint8_t flicker = 180 + (hw_random8() >> 4);
+    b = scale8(b, flicker);
+    uint32_t c = zh_palette(h, b);
+    if (b > 220) c = color_fade(0xFFFFFFFF, b);
+    SEGMENT.setPixelColor(zh_path_led(p), c);
+  }
+
+  // A synchronized electrical discharge every so often.
+  if ((t / 900U) % 7U == 3U) {
+    uint8_t flash = (uint8_t)(255U - ((t % 900U) * 255U / 900U));
+    if (flash > 190) {
+      uint16_t center = (uint16_t)(CHUNCHUN_HARNESS_PATH_LEN / 2U);
+      for (uint16_t p = 0; p < CHUNCHUN_HARNESS_PATH_LEN; p++) {
+        uint8_t b = zh_soft(zh_cyclic_distance(p, center), 20);
+        if (b > 0) SEGMENT.setPixelColor(zh_path_led(p), color_fade(0xFFFFFFFF, scale8(b, flash)));
+      }
+    }
+  }
+}
+
+static const char _data_FX_MODE_Z_ELECTRIC_ORGANISM[] PROGMEM =
+  "Z - Electric Organism@Speed,Voltage,Arc width,Chaos;!,!;!;01";
+
+// ---------------------------------------------------------------------------
+// Z - Chromatic Ribbon
+// Four luminous ribbons weave through the topology. Their relative phases
+// drift slowly so they form continually changing braids rather than a fixed
+// repeating rainbow chase.
+// ---------------------------------------------------------------------------
+static void mode_z_chromatic_ribbon(void)
+{
+  if (SEGLEN <= 1) FX_FALLBACK_STATIC;
+  SEGMENT.fade_out(235);
+
+  const uint32_t t = strip.now;
+  const uint16_t L = CHUNCHUN_HARNESS_PATH_LEN;
+  const uint16_t width = 14 + (SEGMENT.intensity >> 4);
+  const uint16_t base = zh_wrap((t * (1 + (SEGMENT.speed >> 5))) / 7U);
+  const uint16_t centers[4] = {
+    zh_wrap(base),
+    zh_wrap(base + 103U + (t >> 5)),
+    zh_wrap(base + 211U - (t >> 6)),
+    zh_wrap(base + 317U + (t >> 7))
+  };
+
+  for (uint16_t p = 0; p < L; p++) {
+    uint8_t best = 0;
+    uint8_t which = 0;
+    for (uint8_t k = 0; k < 4; k++) {
+      uint8_t b = zh_soft(zh_cyclic_distance(p, centers[k]), width);
+      if (b > best) { best = b; which = k; }
+    }
+    if (best < 3) continue;
+    uint16_t hue = (uint16_t)(which * 16384U) + (uint16_t)(t * 21U) + (uint16_t)(p * 97U);
+    uint8_t shimmer = 210 + (uint8_t)((sin16_t(p * 701U + t * 9U) + 32768) >> 11);
+    best = scale8(best, shimmer);
+    SEGMENT.setPixelColor(zh_path_led(p), zh_palette(hue, best));
+  }
+}
+
+static const char _data_FX_MODE_Z_CHROMATIC_RIBBON[] PROGMEM =
+  "Z - Chromatic Ribbon@Speed,Ribbon width,Color spread,Shimmer;!,!;!;01";
+
+// ---------------------------------------------------------------------------
+// Z - Gravity Well
+// Energy appears to fall toward a central attractor, accelerates into it,
+// then erupts outward as a luminous shockwave.
+// ---------------------------------------------------------------------------
+static void mode_z_gravity_well(void)
+{
+  if (SEGLEN <= 1) FX_FALLBACK_STATIC;
+  const uint16_t L = CHUNCHUN_HARNESS_PATH_LEN;
+  const uint32_t cycle = 3000U - (uint32_t)SEGMENT.speed * 7U;
+  const uint32_t phase = strip.now % (cycle < 900U ? 900U : cycle);
+  const uint16_t center = (uint16_t)(L / 2U);
+  const uint32_t convergeEnd = (cycle * 62U) / 100U;
+
+  SEGMENT.fade_out(220);
+
+  if (phase < convergeEnd) {
+    uint16_t maxDist = L / 2U;
+    uint16_t remaining = (uint16_t)(convergeEnd - phase);
+    uint16_t d = (uint32_t)maxDist * remaining / convergeEnd;
+    uint16_t a = zh_wrap(center + d);
+    uint16_t b = zh_wrap(center + L - d);
+    uint16_t width = 7 + (SEGMENT.intensity >> 5);
+
+    for (uint16_t p = 0; p < L; p++) {
+      uint8_t ba = zh_soft(zh_cyclic_distance(p, a), width);
+      uint8_t bb = zh_soft(zh_cyclic_distance(p, b), width);
+      uint8_t br = max(ba, bb);
+      if (br < 3) continue;
+      uint16_t h = (uint16_t)(phase * 27U) + (uint16_t)(p * 151U);
+      SEGMENT.setPixelColor(zh_path_led(p), zh_palette(h, br));
+    }
+  } else {
+    uint32_t shockPhase = phase - convergeEnd;
+    uint32_t shockLen = (cycle > convergeEnd) ? (cycle - convergeEnd) : 1U;
+    uint16_t radius = (uint32_t)(L / 2U) * shockPhase / shockLen;
+    uint16_t width = 5 + (SEGMENT.intensity >> 6);
+    for (uint16_t p = 0; p < L; p++) {
+      uint16_t d = zh_cyclic_distance(p, center);
+      uint16_t diff = (d > radius) ? (d - radius) : (radius - d);
+      uint8_t br = zh_soft(diff, width);
+      if (br < 3) continue;
+      br = scale8(br, (uint8_t)(255U - (shockPhase * 150U / shockLen)));
+      SEGMENT.setPixelColor(zh_path_led(p), zh_palette((uint16_t)(shockPhase * 31U), br));
+    }
+  }
+}
+
+static const char _data_FX_MODE_Z_GRAVITY_WELL[] PROGMEM =
+  "Z - Gravity Well@Speed,Mass,Shock width,Color;!,!;!;01";
+
+// ---------------------------------------------------------------------------
+// Z - Bioluminescent Creature
+// Slow, organic glowing pulses emerge from a moving interference field.
+// The effect spends much of its time near-black, making the brighter pulses
+// feel like a living organism rather than an LED animation.
+// ---------------------------------------------------------------------------
+static void mode_z_bioluminescent(void)
+{
+  if (SEGLEN <= 1) FX_FALLBACK_STATIC;
+  SEGMENT.fade_out(246);
+
+  const uint32_t t = strip.now;
+  const uint16_t L = CHUNCHUN_HARNESS_PATH_LEN;
+  uint16_t moving = zh_wrap((t * (1 + (SEGMENT.speed >> 6))) / 15U);
+
+  for (uint16_t p = 0; p < L; p++) {
+    uint16_t x = (uint32_t)p * 65535UL / L;
+    uint8_t n1 = (uint8_t)((sin16_t(x * 3U + t * 2U) + 32768) >> 9);
+    uint8_t n2 = (uint8_t)((sin16_t(x * 7U - t * 3U) + 32768) >> 9);
+    uint8_t n3 = (uint8_t)((sin16_t(x * 13U + t) + 32768) >> 9);
+    uint8_t organic = (uint8_t)(((uint16_t)n1 * n2) >> 8);
+    organic = qadd8(organic, n3 >> 2);
+
+    uint8_t traveling = zh_soft(zh_cyclic_distance(p, moving), 23);
+    uint8_t br = scale8(organic, 130);
+    br = qadd8(br, scale8(traveling, 180));
+    if (br < 5) continue;
+
+    uint16_t hue = 37000U + (uint16_t)(organic * 95U) + (uint16_t)(t * 5U);
+    SEGMENT.setPixelColor(zh_path_led(p), zh_palette(hue, br));
+  }
+}
+
+static const char _data_FX_MODE_Z_BIOLUMINESCENT[] PROGMEM =
+  "Z - Bioluminescent Creature@Speed,Life,Glow,Drift;!,!;!;01";
+
+// ---------------------------------------------------------------------------
+// Z - Wormhole
+// A luminous point accelerates around the complete topology. Its trail is
+// compressed near the head and stretched behind it, producing a tunnel-like
+// sense of motion.
+// ---------------------------------------------------------------------------
+static void mode_z_wormhole(void)
+{
+  if (SEGLEN <= 1) FX_FALLBACK_STATIC;
+  SEGMENT.fade_out(224);
+
+  const uint16_t L = CHUNCHUN_HARNESS_PATH_LEN;
+  const uint32_t cycle = 1800U - (uint32_t)SEGMENT.speed * 4U;
+  const uint32_t c = cycle < 650U ? 650U : cycle;
+  const uint32_t ph = strip.now % c;
+  const uint16_t head = (uint32_t)L * ph * ph / (uint64_t)c / c;
+  const uint16_t width = 18 + (SEGMENT.intensity >> 4);
+
+  for (uint16_t p = 0; p < L; p++) {
+    uint16_t d = zh_cyclic_distance(p, head);
+    uint8_t br = zh_soft(d, width);
+    if (br < 2) continue;
+    uint8_t tail = (d < width / 2U) ? 255 : (uint8_t)(255U - (uint32_t)(d - width / 2U) * 180U / width);
+    br = scale8(br, tail);
+    uint16_t hue = (uint16_t)(ph * 43U) + (uint16_t)(d * 390U);
+    if (d < 4) br = 255;
+    SEGMENT.setPixelColor(zh_path_led(p), zh_palette(hue, br));
+  }
+}
+
+static const char _data_FX_MODE_Z_WORMHOLE[] PROGMEM =
+  "Z - Wormhole@Speed,Energy,Tunnel width,Color;!,!;!;01";
+
+// ---------------------------------------------------------------------------
+// Z - Rainbow Fracture
+// A coherent chromatic wave periodically breaks into multiple waves, then
+// locks back together. The fracture timing is smooth rather than a hard cut.
+// ---------------------------------------------------------------------------
+static void mode_z_rainbow_fracture(void)
+{
+  if (SEGLEN <= 1) FX_FALLBACK_STATIC;
+  const uint32_t t = strip.now;
+  const uint16_t L = CHUNCHUN_HARNESS_PATH_LEN;
+  uint16_t phase = (uint16_t)(t * (2 + (SEGMENT.speed >> 5)));
+  uint16_t fracture = (uint16_t)((sin16_t(t * 2U) + 32768) >> 1);
+
+  for (uint16_t p = 0; p < L; p++) {
+    uint16_t x = (uint32_t)p * 65535UL / L;
+    uint16_t offset = (uint16_t)((uint32_t)fracture * sin16_t(x * 3U + t * 3U) / 32768L);
+    uint16_t q = x + phase + offset;
+    uint8_t wave = (uint8_t)((sin16_t(q) + 32768) >> 8);
+    uint8_t sharp = wave > 128 ? (uint8_t)((wave - 128) * 2U) : (uint8_t)((128 - wave) * 2U);
+    uint8_t br = qadd8(35, scale8(sharp, 210));
+    br = qadd8(br, SEGMENT.intensity >> 3);
+    uint16_t hue = q + (uint16_t)(t * 15U);
+    SEGMENT.setPixelColor(zh_path_led(p), zh_palette(hue, br));
+  }
+}
+
+static const char _data_FX_MODE_Z_RAINBOW_FRACTURE[] PROGMEM =
+  "Z - Rainbow Fracture@Speed,Fracture,Saturation,Glow;!,!;!;01";
+
+// ---------------------------------------------------------------------------
+// Z - Starlight Nervous System
+// Deep darkness with sparse stars, drifting constellation links, and rare
+// coordinated neural flashes. Designed to look spectacular from a distance
+// without continuously blasting the viewer with light.
+// ---------------------------------------------------------------------------
+static void mode_z_starlight(void)
+{
+  if (SEGLEN <= 1) FX_FALLBACK_STATIC;
+  SEGMENT.fade_out(205);
+
+  const uint32_t t = strip.now;
+  const uint16_t L = CHUNCHUN_HARNESS_PATH_LEN;
+  const uint16_t constellation = zh_wrap((t * (1 + (SEGMENT.speed >> 6))) / 20U);
+
+  for (uint16_t p = 0; p < L; p++) {
+    // Cheap integer hash: stable for a frame but changes as time advances.
+    uint32_t h = (uint32_t)p * 1103515245UL + (t / 75U) * 12345UL + 0x9E3779B9UL;
+    h ^= h >> 16;
+    h *= 2246822519UL;
+    h ^= h >> 13;
+    uint8_t star = (uint8_t)(h >> 24);
+
+    uint8_t br = 0;
+    if (star > (245U - (SEGMENT.intensity >> 4))) br = 150 + (star >> 2);
+    uint8_t link = zh_soft(zh_cyclic_distance(p, constellation), 13);
+    br = qadd8(br, scale8(link, 110));
+    if (br < 4) continue;
+
+    uint16_t hue = 40500U + (uint16_t)(star * 70U) + (uint16_t)(t * 3U);
+    uint32_t c = zh_palette(hue, br);
+    if (br > 235) c = color_fade(0xFFFFFFFF, br);
+    SEGMENT.setPixelColor(zh_path_led(p), c);
+  }
+
+  // A rare white neural flash crossing the full topology.
+  if ((t / 1400U) % 9U == 4U) {
+    uint16_t head = zh_wrap((t * 2U) / 5U);
+    for (uint16_t p = 0; p < L; p++) {
+      uint8_t br = zh_soft(zh_cyclic_distance(p, head), 5);
+      if (br > 0) SEGMENT.setPixelColor(zh_path_led(p), color_fade(0xFFFFFFFF, br));
+    }
+  }
+}
+
+static const char _data_FX_MODE_Z_STARLIGHT[] PROGMEM =
+  "Z - Starlight Nervous System@Speed,Stars,Flash,Drift;!,!;!;01";
 
 
 /////////////////////
@@ -1772,6 +2216,18 @@ class UserFxUsermod : public Usermod {
     // Custom Chunchun: uses the 410-position virtual harness path while
     // preserving the normal 292-LED ledmap for all other effects.
     strip.addEffect(255, &mode_chunchun_harness, _data_FX_MODE_CHUNCHUN_HARNESS);
+
+    // Z - Harness Visual Suite
+    strip.addEffect(255, &mode_z_neural_pulse, _data_FX_MODE_Z_NEURAL_PULSE);
+    strip.addEffect(255, &mode_z_liquid_chrome, _data_FX_MODE_Z_LIQUID_CHROME);
+    strip.addEffect(255, &mode_z_plasma_veins, _data_FX_MODE_Z_PLASMA_VEINS);
+    strip.addEffect(255, &mode_z_electric_organism, _data_FX_MODE_Z_ELECTRIC_ORGANISM);
+    strip.addEffect(255, &mode_z_chromatic_ribbon, _data_FX_MODE_Z_CHROMATIC_RIBBON);
+    strip.addEffect(255, &mode_z_gravity_well, _data_FX_MODE_Z_GRAVITY_WELL);
+    strip.addEffect(255, &mode_z_bioluminescent, _data_FX_MODE_Z_BIOLUMINESCENT);
+    strip.addEffect(255, &mode_z_wormhole, _data_FX_MODE_Z_WORMHOLE);
+    strip.addEffect(255, &mode_z_rainbow_fracture, _data_FX_MODE_Z_RAINBOW_FRACTURE);
+    strip.addEffect(255, &mode_z_starlight, _data_FX_MODE_Z_STARLIGHT);
   }
 
 
