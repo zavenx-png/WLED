@@ -2450,6 +2450,446 @@ static const char _data_FX_MODE_Z_ORBITAL_WALTZ[] PROGMEM =
   "Z - Orbital Waltz@Speed,Eccentricity,Width,;!,!;!;01";
 
 
+
+
+// ============================================================================
+// Z - Harness Visual Suite IV
+// Fifteen slow, high-quality effects designed for the 410-position virtual
+// harness path. All motion is deliberately multi-second, smooth, and free of
+// hard flashes. They reuse the existing zh_* helpers and chunchunHarnessPath
+// so the topology (including repeated / reversed sections) is fully expressed.
+// ============================================================================
+
+// ---------------------------------------------------------------------------
+// Z - Aurora Curtain
+// Soft vertical curtains of light drift slowly along the harness, their
+// edges dissolving into each other like real auroral sheets. Colour shifts
+// are extremely gradual.
+// ---------------------------------------------------------------------------
+static void mode_z_aurora_curtain(void)
+{
+  if (SEGLEN <= 1) FX_FALLBACK_STATIC;
+  const uint32_t t = strip.now;
+  const uint16_t L = CHUNCHUN_HARNESS_PATH_LEN;
+  const uint16_t speed = 18U + (SEGMENT.speed >> 4);
+  const uint16_t curtainW = 40U + (SEGMENT.intensity >> 2);
+
+  for (uint16_t p = 0; p < L; p++) {
+    uint16_t phase = (uint16_t)((t * speed) / 64U) + (p * 3U);
+    uint8_t wave = (uint8_t)((sin16_t(phase) + 32768) >> 8);
+    uint8_t wave2 = (uint8_t)((sin16_t(phase * 2U + 12000U) + 32768) >> 9);
+    uint8_t br = scale8(qadd8(wave, wave2), 180);
+    br = qadd8(br, SEGMENT.custom1 >> 4);
+    if (br < 6) continue;
+    uint16_t hue = 28000U + (uint16_t)(wave * 70U) + (uint16_t)(t / 80U);
+    SEGMENT.setPixelColor(zh_path_led(p), zh_palette(hue, br));
+  }
+}
+static const char _data_FX_MODE_Z_AURORA_CURTAIN[] PROGMEM =
+  "Z - Aurora Curtain@Speed,Width,Floor,;!,!;!;01";
+
+// ---------------------------------------------------------------------------
+// Z - Silk Ribbon
+// A single luminous ribbon of variable width snakes through the entire
+// topology with a gentle undulation. The ribbon never snaps; it breathes.
+// ---------------------------------------------------------------------------
+static void mode_z_silk_ribbon(void)
+{
+  if (SEGLEN <= 1) FX_FALLBACK_STATIC;
+  SEGMENT.fade_out(40 + (SEGMENT.custom1 >> 3));
+
+  const uint32_t t = strip.now;
+  const uint16_t L = CHUNCHUN_HARNESS_PATH_LEN;
+  uint16_t head = zh_wrap((t * (6U + (SEGMENT.speed >> 5))) / 32U);
+  uint16_t width = 18U + (SEGMENT.intensity >> 3);
+
+  for (int16_t d = -(int16_t)width; d <= (int16_t)width; d++) {
+    uint16_t p = zh_wrap((uint32_t)head + d);
+    uint8_t br = zh_soft((uint16_t)abs(d), width);
+    if (br < 4) continue;
+    uint8_t shimmer = (uint8_t)((sin16_t((uint16_t)(p * 40U + t * 3U)) + 32768) >> 10);
+    br = qadd8(br, shimmer);
+    uint16_t hue = 12000U + (uint16_t)(p * 20U) + (uint16_t)(t / 60U);
+    SEGMENT.setPixelColor(zh_path_led(p), zh_palette(hue, br));
+  }
+}
+static const char _data_FX_MODE_Z_SILK_RIBBON[] PROGMEM =
+  "Z - Silk Ribbon@Speed,Width,Persistence,;!,!;!;01";
+
+// ---------------------------------------------------------------------------
+// Z - Biolume Bloom
+// Soft glowing blooms appear at random locations on the path, expand
+// slowly, then fade. Several blooms coexist and gently interact.
+// ---------------------------------------------------------------------------
+static void mode_z_biolume_bloom(void)
+{
+  if (SEGLEN <= 1) FX_FALLBACK_STATIC;
+  SEGMENT.fade_out(28 + (SEGMENT.custom1 >> 4));
+
+  const uint32_t t = strip.now;
+  const uint16_t L = CHUNCHUN_HARNESS_PATH_LEN;
+
+  for (uint8_t i = 0; i < 3; i++) {
+    uint32_t period = 7000U + i * 2300U - (SEGMENT.speed * 12U);
+    if (period < 3500U) period = 3500U;
+    uint16_t phase = (uint16_t)(((t + i * 1800U) % period) * 65535UL / period);
+    uint8_t life = (uint8_t)((sin16_t(phase) + 32768) >> 8);
+    if (life < 20) continue;
+
+    uint16_t center = zh_wrap((uint32_t)(t / (40U + i * 7U)) + i * (L / 3U));
+    uint16_t radius = 12U + scale8(life, 28U + (SEGMENT.intensity >> 3));
+
+    for (uint16_t p = 0; p < L; p++) {
+      uint16_t d = zh_cyclic_distance(p, center);
+      uint8_t br = zh_soft(d, radius);
+      br = scale8(br, life);
+      if (br < 5) continue;
+      uint16_t hue = 18000U + i * 9000U + (uint16_t)(life * 30U);
+      SEGMENT.setPixelColor(zh_path_led(p), zh_palette(hue, br));
+    }
+  }
+}
+static const char _data_FX_MODE_Z_BIOLUME_BLOOM[] PROGMEM =
+  "Z - Biolume Bloom@Speed,Size,Persistence,;!,!;!;01";
+
+// ---------------------------------------------------------------------------
+// Z - Crystal Lattice
+// A slow-moving interference lattice formed by three travelling phase fronts.
+// Nodes brighten and dim over many seconds, creating a crystalline shimmer.
+// ---------------------------------------------------------------------------
+static void mode_z_crystal_lattice(void)
+{
+  if (SEGLEN <= 1) FX_FALLBACK_STATIC;
+  const uint32_t t = strip.now;
+  const uint16_t L = CHUNCHUN_HARNESS_PATH_LEN;
+  const uint16_t k1 = 22U + (SEGMENT.intensity >> 4);
+  const uint16_t k2 = 31U + (SEGMENT.custom1 >> 5);
+  const uint16_t w  = 5U + (SEGMENT.speed >> 5);
+
+  for (uint16_t p = 0; p < L; p++) {
+    int32_t s1 = sin16_t((uint16_t)(p * k1 + t * w));
+    int32_t s2 = sin16_t((uint16_t)(p * k2 - t * (w + 1U)));
+    int32_t s3 = sin16_t((uint16_t)(p * 17U + t * 2U));
+    int32_t sum = (s1 + s2 + s3) / 3;
+    uint8_t br = (uint8_t)(((sum + 32768) * 255L) / 65536L);
+    br = scale8(br, br);
+    br = qadd8(br, SEGMENT.custom1 >> 5);
+    if (br < 8) continue;
+    uint16_t hue = 42000U + (uint16_t)(br * 40U) + (uint16_t)(t / 90U);
+    SEGMENT.setPixelColor(zh_path_led(p), zh_palette(hue, br));
+  }
+}
+static const char _data_FX_MODE_Z_CRYSTAL_LATTICE[] PROGMEM =
+  "Z - Crystal Lattice@Speed,Density,Floor,;!,!;!;01";
+
+// ---------------------------------------------------------------------------
+// Z - Slow Spiral
+// A luminous helix that slowly winds around the entire harness path.
+// Pitch and colour rotate over tens of seconds.
+// ---------------------------------------------------------------------------
+static void mode_z_slow_spiral(void)
+{
+  if (SEGLEN <= 1) FX_FALLBACK_STATIC;
+  const uint32_t t = strip.now;
+  const uint16_t L = CHUNCHUN_HARNESS_PATH_LEN;
+  const uint16_t turns = 3U + (SEGMENT.intensity >> 6);
+  const uint16_t speed = 4U + (SEGMENT.speed >> 5);
+
+  for (uint16_t p = 0; p < L; p++) {
+    uint16_t angle = (uint16_t)((uint32_t)p * turns * 65536UL / L) + (uint16_t)(t * speed / 16U);
+    uint8_t wave = (uint8_t)((sin16_t(angle) + 32768) >> 8);
+    uint8_t br = scale8(wave, 200);
+    br = qadd8(br, SEGMENT.custom1 >> 4);
+    if (br < 10) continue;
+    uint16_t hue = angle + (uint16_t)(t / 50U);
+    SEGMENT.setPixelColor(zh_path_led(p), zh_palette(hue, br));
+  }
+}
+static const char _data_FX_MODE_Z_SLOW_SPIRAL[] PROGMEM =
+  "Z - Slow Spiral@Speed,Turns,Floor,;!,!;!;01";
+
+// ---------------------------------------------------------------------------
+// Z - Mist Drift
+// Thick, soft banks of coloured mist slowly slide and interpenetrate.
+// Extremely low spatial frequency – almost abstract atmosphere.
+// ---------------------------------------------------------------------------
+static void mode_z_mist_drift(void)
+{
+  if (SEGLEN <= 1) FX_FALLBACK_STATIC;
+  const uint32_t t = strip.now;
+  const uint16_t L = CHUNCHUN_HARNESS_PATH_LEN;
+  const uint16_t z = (uint16_t)(t / (30U + (255 - SEGMENT.speed) / 4U));
+
+  for (uint16_t p = 0; p < L; p++) {
+    uint8_t n1 = perlin8(p * 3U, z, 0);
+    uint8_t n2 = perlin8(p * 5U + 2000U, z + 900U, 400U);
+    uint8_t br = scale8(qadd8(n1, n2 / 2), 160);
+    br = qadd8(br, SEGMENT.custom1 >> 4);
+    if (br < 12) continue;
+    uint16_t hue = 22000U + (uint16_t)(n2 * 50U) + (uint16_t)(t / 100U);
+    SEGMENT.setPixelColor(zh_path_led(p), zh_palette(hue, br));
+  }
+}
+static const char _data_FX_MODE_Z_MIST_DRIFT[] PROGMEM =
+  "Z - Mist Drift@Speed,Grain,Floor,;!,!;!;01";
+
+// ---------------------------------------------------------------------------
+// Z - Twin Moons
+// Two soft luminous bodies orbit the path on a near 3:2 resonance.
+// Their overlapping glow creates slow, breathing bright zones.
+// ---------------------------------------------------------------------------
+static void mode_z_twin_moons(void)
+{
+  if (SEGLEN <= 1) FX_FALLBACK_STATIC;
+  SEGMENT.fade_out(50);
+
+  const uint32_t t = strip.now;
+  const uint16_t L = CHUNCHUN_HARNESS_PATH_LEN;
+  uint32_t period = 11000U - (uint32_t)SEGMENT.speed * 28U;
+  if (period < 4000U) period = 4000U;
+
+  for (uint8_t m = 0; m < 2; m++) {
+    uint32_t pperiod = (m == 0) ? period : (period * 3U) / 2U;
+    uint16_t pos = zh_wrap((uint32_t)((t * L) / pperiod) + m * (L / 2U));
+    uint16_t width = 22U + (SEGMENT.intensity >> 3);
+
+    for (uint16_t p = 0; p < L; p++) {
+      uint8_t br = zh_soft(zh_cyclic_distance(p, pos), width);
+      if (br < 4) continue;
+      uint16_t hue = (m == 0) ? 8000U : 36000U;
+      hue += (uint16_t)(t / 70U);
+      SEGMENT.setPixelColor(zh_path_led(p), zh_palette(hue, br));
+    }
+  }
+}
+static const char _data_FX_MODE_Z_TWIN_MOONS[] PROGMEM =
+  "Z - Twin Moons@Speed,Size,,;!,!;!;01";
+
+// ---------------------------------------------------------------------------
+// Z - Liquid Mercury
+// Thick, reflective liquid flows slowly along the path with surface
+// tension-like beading. High contrast yet completely smooth.
+// ---------------------------------------------------------------------------
+static void mode_z_liquid_mercury(void)
+{
+  if (SEGLEN <= 1) FX_FALLBACK_STATIC;
+  const uint32_t t = strip.now;
+  const uint16_t L = CHUNCHUN_HARNESS_PATH_LEN;
+  const uint16_t flow = (uint16_t)(t * (3U + (SEGMENT.speed >> 5)) / 24U);
+
+  for (uint16_t p = 0; p < L; p++) {
+    uint16_t x = p + flow;
+    uint8_t n = perlin8(x * 4U, 0, 0);
+    n = qadd8(n, perlin8(x * 9U, 1000U, 0) / 3);
+    uint8_t br = scale8(n, n);
+    br = qadd8(br, SEGMENT.custom1 >> 5);
+    if (br < 15) continue;
+    uint16_t hue = 48000U + (uint16_t)(n * 20U);
+    uint32_t c = zh_palette(hue, br);
+    if (br > 200) c = color_fade(0xFFFFFFFF, br);
+    SEGMENT.setPixelColor(zh_path_led(p), c);
+  }
+}
+static const char _data_FX_MODE_Z_LIQUID_MERCURY[] PROGMEM =
+  "Z - Liquid Mercury@Speed,Beading,Floor,;!,!;!;01";
+
+// ---------------------------------------------------------------------------
+// Z - Echo Chamber
+// Soft pulses travel the path and leave long, decaying echoes that
+// recombine when the topology revisits a physical section.
+// ---------------------------------------------------------------------------
+static void mode_z_echo_chamber(void)
+{
+  if (SEGLEN <= 1) FX_FALLBACK_STATIC;
+  SEGMENT.fade_out(22 + (SEGMENT.custom1 >> 4));
+
+  const uint32_t t = strip.now;
+  const uint16_t L = CHUNCHUN_HARNESS_PATH_LEN;
+  uint16_t head = zh_wrap((t * (5U + (SEGMENT.speed >> 5))) / 28U);
+  uint16_t width = 14U + (SEGMENT.intensity >> 4);
+
+  for (int16_t d = -(int16_t)width; d <= (int16_t)width; d++) {
+    uint16_t p = zh_wrap((uint32_t)head + d);
+    uint8_t br = zh_soft((uint16_t)abs(d), width);
+    if (br < 5) continue;
+    SEGMENT.setPixelColor(zh_path_led(p), zh_palette((uint16_t)(t / 40U), br));
+  }
+
+  uint16_t echo = zh_wrap(L - head / 2U);
+  for (int16_t d = -10; d <= 10; d++) {
+    uint16_t p = zh_wrap((uint32_t)echo + d);
+    uint8_t br = zh_soft((uint16_t)abs(d), 11);
+    br = scale8(br, 140);
+    if (br < 5) continue;
+    SEGMENT.setPixelColor(zh_path_led(p), zh_palette((uint16_t)(t / 40U + 20000U), br));
+  }
+}
+static const char _data_FX_MODE_Z_ECHO_CHAMBER[] PROGMEM =
+  "Z - Echo Chamber@Speed,Width,Persistence,;!,!;!;01";
+
+// ---------------------------------------------------------------------------
+// Z - Solar Wind
+// Long, streaming particles of light flow along the path with subtle
+// speed variation and soft tails.
+// ---------------------------------------------------------------------------
+static void mode_z_solar_wind(void)
+{
+  if (SEGLEN <= 1) FX_FALLBACK_STATIC;
+  SEGMENT.fade_out(35);
+
+  const uint32_t t = strip.now;
+  const uint16_t L = CHUNCHUN_HARNESS_PATH_LEN;
+  uint8_t count = 4 + (SEGMENT.intensity >> 6);
+
+  for (uint8_t i = 0; i < count; i++) {
+    uint32_t speed = 7U + i + (SEGMENT.speed >> 5);
+    uint16_t pos = zh_wrap((t * speed) / 30U + i * (L / count));
+    uint16_t tail = 16U + (i * 3U);
+
+    for (uint16_t d = 0; d < tail; d++) {
+      uint16_t p = zh_wrap(pos - d);
+      uint8_t br = zh_soft(d, tail);
+      if (br < 4) continue;
+      uint16_t hue = 9000U + i * 6000U + (uint16_t)(t / 80U);
+      SEGMENT.setPixelColor(zh_path_led(p), zh_palette(hue, br));
+    }
+  }
+}
+static const char _data_FX_MODE_Z_SOLAR_WIND[] PROGMEM =
+  "Z - Solar Wind@Speed,Streams,,;!,!;!;01";
+
+// ---------------------------------------------------------------------------
+// Z - Velvet Undulation
+// Extremely low-frequency standing + travelling wave combination that makes
+// the whole harness appear to breathe like soft fabric in a slow wind.
+// ---------------------------------------------------------------------------
+static void mode_z_velvet_undulation(void)
+{
+  if (SEGLEN <= 1) FX_FALLBACK_STATIC;
+  const uint32_t t = strip.now;
+  const uint16_t L = CHUNCHUN_HARNESS_PATH_LEN;
+  const uint16_t speed = 3U + (SEGMENT.speed >> 6);
+
+  for (uint16_t p = 0; p < L; p++) {
+    uint16_t stand = (uint16_t)((sin16_t(p * 28U) + 32768) >> 8);
+    uint16_t travel = (uint16_t)((sin16_t(p * 18U + t * speed) + 32768) >> 8);
+    uint8_t br = scale8(qadd8(stand / 2, travel), 170);
+    br = qadd8(br, SEGMENT.custom1 >> 4);
+    if (br < 10) continue;
+    uint16_t hue = 32000U + (uint16_t)(stand * 30U) + (uint16_t)(t / 120U);
+    SEGMENT.setPixelColor(zh_path_led(p), zh_palette(hue, br));
+  }
+}
+static const char _data_FX_MODE_Z_VELVET_UNDULATION[] PROGMEM =
+  "Z - Velvet Undulation@Speed,Depth,Floor,;!,!;!;01";
+
+// ---------------------------------------------------------------------------
+// Z - Prism Cascade
+// Soft colour bands cascade slowly along the path; each band has a
+// different velocity so they shear and recombine beautifully.
+// ---------------------------------------------------------------------------
+static void mode_z_prism_cascade(void)
+{
+  if (SEGLEN <= 1) FX_FALLBACK_STATIC;
+  const uint32_t t = strip.now;
+  const uint16_t L = CHUNCHUN_HARNESS_PATH_LEN;
+
+  for (uint16_t p = 0; p < L; p++) {
+    uint8_t b0 = (uint8_t)((sin16_t((uint16_t)(p * 12U + t * 2U)) + 32768) >> 8);
+    uint8_t b1 = (uint8_t)((sin16_t((uint16_t)(p * 19U - t * 3U)) + 32768) >> 8);
+    uint8_t b2 = (uint8_t)((sin16_t((uint16_t)(p * 27U + t )) + 32768) >> 8);
+    uint8_t br = scale8(qadd8(qadd8(b0, b1) / 2, b2 / 3), 190);
+    br = qadd8(br, SEGMENT.custom1 >> 5);
+    if (br < 8) continue;
+    uint16_t hue = (uint16_t)(p * 40U + t / 40U);
+    SEGMENT.setPixelColor(zh_path_led(p), zh_palette(hue, br));
+  }
+}
+static const char _data_FX_MODE_Z_PRISM_CASCADE[] PROGMEM =
+  "Z - Prism Cascade@Speed,Complexity,Floor,;!,!;!;01";
+
+// ---------------------------------------------------------------------------
+// Z - Gravity Lens
+// Light appears to bend around two slowly moving masses, creating
+// bright arcs and dark voids that drift across the topology.
+// ---------------------------------------------------------------------------
+static void mode_z_gravity_lens(void)
+{
+  if (SEGLEN <= 1) FX_FALLBACK_STATIC;
+  const uint32_t t = strip.now;
+  const uint16_t L = CHUNCHUN_HARNESS_PATH_LEN;
+
+  uint16_t m1 = zh_wrap((t * 3U) / 40U);
+  uint16_t m2 = zh_wrap((t * 5U) / 55U + L / 2U);
+  uint16_t influence = 50U + (SEGMENT.intensity >> 2);
+
+  for (uint16_t p = 0; p < L; p++) {
+    uint16_t d1 = zh_cyclic_distance(p, m1);
+    uint16_t d2 = zh_cyclic_distance(p, m2);
+    uint16_t inv1 = (d1 < influence) ? (influence - d1) : 0;
+    uint16_t inv2 = (d2 < influence) ? (influence - d2) : 0;
+    uint8_t br = scale8(qadd8(inv1 * 2, inv2 * 2), 180);
+    br = qadd8(br, SEGMENT.custom1 >> 5);
+    if (br < 8) continue;
+    uint16_t hue = 5000U + (uint16_t)(inv1 * 40U) + (uint16_t)(t / 90U);
+    SEGMENT.setPixelColor(zh_path_led(p), zh_palette(hue, br));
+  }
+}
+static const char _data_FX_MODE_Z_GRAVITY_LENS[] PROGMEM =
+  "Z - Gravity Lens@Speed,Influence,Floor,;!,!;!;01";
+
+// ---------------------------------------------------------------------------
+// Z - Quiet Storm
+// Distant, rolling energy fronts move through the harness. Brightness
+// rises and falls over many seconds; colour is cool and restrained.
+// ---------------------------------------------------------------------------
+static void mode_z_quiet_storm(void)
+{
+  if (SEGLEN <= 1) FX_FALLBACK_STATIC;
+  const uint32_t t = strip.now;
+  const uint16_t L = CHUNCHUN_HARNESS_PATH_LEN;
+  const uint16_t z = (uint16_t)(t / (45U + (255 - SEGMENT.speed) / 5U));
+
+  for (uint16_t p = 0; p < L; p++) {
+    uint8_t n = perlin8(p * 2U, z, 0);
+    uint8_t n2 = perlin8(p * 6U + 3000U, z / 2U, 800U);
+    uint8_t br = scale8(n, 140);
+    br = qadd8(br, scale8(n2, 60));
+    br = qadd8(br, SEGMENT.custom1 >> 4);
+    if (br < 10) continue;
+    uint16_t hue = 36000U + (uint16_t)(n2 * 25U);
+    SEGMENT.setPixelColor(zh_path_led(p), zh_palette(hue, br));
+  }
+}
+static const char _data_FX_MODE_Z_QUIET_STORM[] PROGMEM =
+  "Z - Quiet Storm@Speed,Grain,Floor,;!,!;!;01";
+
+// ---------------------------------------------------------------------------
+// Z - Infinite Corridor
+// Perspective-like bright rings travel along the path, giving a strong
+// sense of depth and motion through a tunnel.
+// ---------------------------------------------------------------------------
+static void mode_z_infinite_corridor(void)
+{
+  if (SEGLEN <= 1) FX_FALLBACK_STATIC;
+  const uint32_t t = strip.now;
+  const uint16_t L = CHUNCHUN_HARNESS_PATH_LEN;
+  const uint16_t speed = 8U + (SEGMENT.speed >> 4);
+  const uint16_t spacing = 55U + (SEGMENT.intensity >> 2);
+
+  for (uint16_t p = 0; p < L; p++) {
+    uint16_t dist = (p + (t * speed) / 32U) % spacing;
+    uint8_t br = zh_soft(dist, spacing / 3U);
+    br = qadd8(br, SEGMENT.custom1 >> 5);
+    if (br < 8) continue;
+    uint16_t hue = 20000U + (uint16_t)(dist * 80U) + (uint16_t)(t / 100U);
+    SEGMENT.setPixelColor(zh_path_led(p), zh_palette(hue, br));
+  }
+}
+static const char _data_FX_MODE_Z_INFINITE_CORRIDOR[] PROGMEM =
+  "Z - Infinite Corridor@Speed,Spacing,Floor,;!,!;!;01";
+
+
 /////////////////
 //  UserMod Class  //
 /////////////////////
@@ -2501,6 +2941,23 @@ class UserFxUsermod : public Usermod {
     strip.addEffect(255, &mode_z_tidal_interference, _data_FX_MODE_Z_TIDAL_INTERFERENCE);
     strip.addEffect(255, &mode_z_ember_drift, _data_FX_MODE_Z_EMBER_DRIFT);
     strip.addEffect(255, &mode_z_orbital_waltz, _data_FX_MODE_Z_ORBITAL_WALTZ);
+
+    // Z - Harness Visual Suite IV (15 new slow cinematic effects)
+    strip.addEffect(255, &mode_z_aurora_curtain, _data_FX_MODE_Z_AURORA_CURTAIN);
+    strip.addEffect(255, &mode_z_silk_ribbon, _data_FX_MODE_Z_SILK_RIBBON);
+    strip.addEffect(255, &mode_z_biolume_bloom, _data_FX_MODE_Z_BIOLUME_BLOOM);
+    strip.addEffect(255, &mode_z_crystal_lattice, _data_FX_MODE_Z_CRYSTAL_LATTICE);
+    strip.addEffect(255, &mode_z_slow_spiral, _data_FX_MODE_Z_SLOW_SPIRAL);
+    strip.addEffect(255, &mode_z_mist_drift, _data_FX_MODE_Z_MIST_DRIFT);
+    strip.addEffect(255, &mode_z_twin_moons, _data_FX_MODE_Z_TWIN_MOONS);
+    strip.addEffect(255, &mode_z_liquid_mercury, _data_FX_MODE_Z_LIQUID_MERCURY);
+    strip.addEffect(255, &mode_z_echo_chamber, _data_FX_MODE_Z_ECHO_CHAMBER);
+    strip.addEffect(255, &mode_z_solar_wind, _data_FX_MODE_Z_SOLAR_WIND);
+    strip.addEffect(255, &mode_z_velvet_undulation, _data_FX_MODE_Z_VELVET_UNDULATION);
+    strip.addEffect(255, &mode_z_prism_cascade, _data_FX_MODE_Z_PRISM_CASCADE);
+    strip.addEffect(255, &mode_z_gravity_lens, _data_FX_MODE_Z_GRAVITY_LENS);
+    strip.addEffect(255, &mode_z_quiet_storm, _data_FX_MODE_Z_QUIET_STORM);
+    strip.addEffect(255, &mode_z_infinite_corridor, _data_FX_MODE_Z_INFINITE_CORRIDOR);
   }
 
 
