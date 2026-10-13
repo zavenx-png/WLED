@@ -3566,6 +3566,354 @@ static const char _data_FX_MODE_HAT4_HOURGLASS_REVERSAL[] PROGMEM =
 
 
 
+
+// ============================================================================
+// HAT VII — VELVET MOTION & STARDUST
+//
+// Custom choreography for the actual 144 LED hat:
+//   TOP row       index 0..50, FRONT center index 24 (LED 25)
+//   BOTTOM row    index 93..143, FRONT center index 116 (LED 117)
+//   SHARED BACK   index 51..92, center index 70 (LED 71).
+//
+// Each effect has a dedicated five-stop designer palette (enabled by default)
+// and an optional WLED-palette override. There are NO permanently glowing
+// "center markers." Moving beams use fractional positions + a smooth feather,
+// so there are no one-LED jumps or abrupt speed changes. Sparkles use deterministic
+// eased envelopes; no per-pixel random frame-to-frame flicker.
+// ============================================================================
+
+// Five-stop cyclic palettes stored in flash. Signature colorways avoid cyan,
+// hard blue, and white; gold is warm pigmented light, not RGB white.
+static const uint8_t hat7_gradients[7][5][3] PROGMEM = {
+  {{ 13,  0, 30},{132,  8,113},{251, 17,171},{255,128, 73},{ 13,  0, 30}}, // 0 Velvet Switchblade: plum/orchid/rose/peach
+  {{ 18,  0, 28},{136,  4, 62},{239, 55,148},{253,165, 63},{ 18,  0, 28}}, // 1 Satin Duet: burgundy/mauve/rose-gold
+  {{ 12,  1, 34},{101, 10,114},{180, 61,176},{243,107, 76},{ 12,  1, 34}}, // 2 Orchid Minuet: deep fig/lilac/persimmon
+  {{ 19,  1, 20},{133, 30, 58},{250,103,122},{255,191, 71},{ 19,  1, 20}}, // 3 Champagne Stardust: black-cherry/rose/champagne
+  {{ 12,  0, 31},{118, 11,130},{226, 37,166},{255,133, 60},{ 12,  0, 31}}, // 4 Amethyst Fireflies: grape/violet/coral
+  {{ 18,  0, 21},{157,  5, 51},{242, 62,122},{245,163, 80},{ 18,  0, 21}}, // 5 Garnet Constellation: oxblood/raspberry/gold
+  {{ 15,  1, 22},{132,  4, 84},{255, 31,129},{253,169, 67},{ 15,  1, 22}}  // 6 Petal Glitterfall: mulberry/fuchsia/honey
+};
+static inline uint32_t hat7_color(uint8_t scheme,uint8_t hue,uint8_t power) {
+  if(SEGMENT.check1) return color_fade(SEGMENT.color_from_palette(hue,true,true,0),power);
+  const uint16_t u=(uint16_t)hue*4U;
+  const uint8_t stop=u>>8,alpha=(uint8_t)u;
+  const uint8_t r=hat3_mix8(
+    pgm_read_byte(&hat7_gradients[scheme][stop][0]),
+    pgm_read_byte(&hat7_gradients[scheme][stop+1][0]),alpha);
+  const uint8_t g=hat3_mix8(
+    pgm_read_byte(&hat7_gradients[scheme][stop][1]),
+    pgm_read_byte(&hat7_gradients[scheme][stop+1][1]),alpha);
+  const uint8_t b=hat3_mix8(
+    pgm_read_byte(&hat7_gradients[scheme][stop][2]),
+    pgm_read_byte(&hat7_gradients[scheme][stop+1][2]),alpha);
+  return RGBW32(scale8(r,power),scale8(g,power),scale8(b,power),0);
+}
+// Maximum-channel blending keeps colorful crossing blades saturated rather than
+// adding into a glaring near-white intersection.
+static inline void hat7_add(uint16_t led,uint8_t scheme,uint8_t hue,uint8_t power) {
+  if(led>=144||power<2)return;
+  const uint32_t old=SEGMENT.getPixelColor(led),c=hat7_color(scheme,hue,power);
+  SEGMENT.setPixelColor(led,RGBW32(
+    R(old)>R(c)?R(old):R(c),
+    G(old)>G(c)?G(old):G(c),
+    B(old)>B(c)?B(old):B(c),0));
+}
+static inline uint8_t hat7_feather(float delta,float radius,uint8_t power) {
+  float v=1.0f-fabsf(delta)/radius;
+  if(v<=0.0f)return 0;
+  v=v*v*(3.0f-2.0f*v); // C1 smoothstep and therefore no hard spatial flicker
+  return (uint8_t)(v*(float)power);
+}
+static inline uint8_t hat7_spark_envelope(uint8_t p) {
+  // Smooth bell exactly zero at event boundaries, so reset is invisible.
+  const uint16_t tri=(p<128)?(uint16_t)p*2U:(uint16_t)(255U-p)*2U;
+  const uint16_t raised=(tri*tri)>>8;
+  return (uint8_t)((raised*raised)>>8);
+}
+static void hat7_beam_row(uint8_t row,float x,float radius,uint8_t scheme,uint8_t hue,uint8_t power) {
+  int16_t lo=(int16_t)floorf(x-radius),hi=(int16_t)ceilf(x+radius);
+  if(lo<0)lo=0;
+  if(hi>50)hi=50;
+  for(int16_t j=lo;j<=hi;j++){
+    uint8_t b=hat7_feather((float)j-x,radius,power);
+    hat7_add((row?93:0)+j,scheme,(uint8_t)(hue+(int16_t)(j-x)*3),b);
+  }
+}
+static void hat7_beam_rear(float x,float radius,uint8_t scheme,uint8_t hue,uint8_t power) {
+  int16_t lo=(int16_t)floorf(x-radius),hi=(int16_t)ceilf(x+radius);
+  if(lo<51)lo=51;
+  if(hi>92)hi=92;
+  for(int16_t j=lo;j<=hi;j++)
+    hat7_add((uint16_t)j,scheme,(uint8_t)(hue+(int16_t)(j-x)*4),
+             hat7_feather((float)j-x,radius,power));
+}
+static inline uint16_t hat7_path_pixel(uint8_t row,uint8_t pos) {
+  // Real consecutive physical LED paths: paired front centers -> ONE rear.
+  // Top: 24..50 then 51..70. Bottom: 116..93 then 92..70.
+  return row?(uint16_t)(116U-pos):(uint16_t)(24U+pos);
+}
+static void hat7_beam_path(uint8_t row,float pos,float radius,
+                           uint8_t scheme,uint8_t hue,uint8_t power) {
+  const int16_t lo=(int16_t)floorf(pos-radius);
+  const int16_t hi=(int16_t)ceilf(pos+radius);
+  for(int16_t n=lo;n<=hi;n++){
+    if(n<0||n>46)continue;
+    hat7_add(hat7_path_pixel(row,(uint8_t)n),scheme,
+      (uint8_t)(hue+n*2),hat7_feather((float)n-pos,radius,power));
+  }
+}
+static void hat7_rear_dance(uint8_t scheme,float angle,uint8_t gain,uint8_t hue) {
+  // Rear must be visibly alive, but a single shared center cannot be drawn as
+  // two independent, permanently lit front pixels.
+  const float x1=(float)HAT_BACK_CENTER+18.0f*sinf(angle);
+  const float x2=(float)HAT_BACK_CENTER+17.0f*sinf(angle+2.15f);
+  hat7_beam_rear(x1,4.2f,scheme,hue,gain);
+  hat7_beam_rear(x2,3.1f,scheme,(uint8_t)(hue+96),scale8(gain,176));
+}
+static inline uint8_t hat7_pulse(uint32_t t,uint8_t id,uint16_t duration,uint8_t seed) {
+  uint32_t shifted=t+(uint32_t)hat3_hash(id,seed)*31U;
+  const uint32_t epoch=shifted/duration;
+  if(hat3_hash((uint16_t)(id*19U+seed),(uint16_t)epoch)<105U) return 0;
+  const uint8_t p=(uint32_t)(shifted%duration)*255U/duration;
+  return hat7_spark_envelope(p);
+}
+static void hat7_glint(uint16_t pos,uint8_t scheme,uint8_t hue,uint8_t power) {
+  if(pos>=144||power<5)return;
+  hat7_add(pos,scheme,hue,power);
+  // One-pixel soft amber/mauve facet; do not bleed between disconnected edges.
+  uint16_t start=(pos<51)?0:((pos<=92)?51:93);
+  uint16_t end=(pos<51)?50:((pos<=92)?92:143);
+  if(pos>start)hat7_add(pos-1,scheme,(uint8_t)(hue+24),scale8(power,63));
+  if(pos<end)hat7_add(pos+1,scheme,(uint8_t)(hue+24),scale8(power,63));
+}
+
+// 01 VELVET SWITCHBLADE — a reimagined smooth Switchblade Waltz.
+// Three staggered pairs describe harmonic figure-eights, pass each other at
+// the two different physical front centers, and exchange a softened echo across
+// rows. Continuous fractional LED footprints eliminate the former jerky steps.
+static void mode_hat7_velvet_switchblade(void){
+  if(SEGLEN<144)FX_FALLBACK_STATIC;
+  SEGMENT.fill(BLACK);
+  const uint32_t t=strip.now;
+  const uint32_t period=5700U-(uint32_t)SEGMENT.speed*13U;
+  const float ang=6.28318530718f*(float)(t%period)/(float)period;
+  for(uint8_t blade=0;blade<3;blade++){
+    for(uint8_t row=0;row<2;row++){
+      const float phase=ang*(1.0f+0.14f*(float)blade)
+          +2.094395f*blade+0.62f*(float)row;
+      const float center=(float)hat_row_center(row);
+      const float x=center+18.0f*sinf(phase)+3.5f*sinf(phase*2.0f+0.7f*blade);
+      uint8_t power=(uint8_t)(207U+(uint8_t)(SEGMENT.intensity>>3));
+      hat7_beam_row(row,x,3.9f+(float)blade*0.45f,0,
+                    (uint8_t)(58U+blade*60U+row*18U+t/160U),power);
+      // A delayed physical reflection on the other front arc; not a snap swap.
+      const float ghost=(float)hat_row_center(1-row)-13.0f*sinf(phase-0.34f);
+      hat7_beam_row(1-row,ghost,2.5f,0,
+                    (uint8_t)(157U+blade*28U),scale8(power,91));
+      // Center becomes brighter ONLY as a traveling blade passes through.
+      if(fabsf(x-center)<1.5f)
+        hat7_beam_row(row,x,2.5f,0,(uint8_t)(184U+blade*9U),218);
+    }
+  }
+  hat7_rear_dance(0,ang*1.55f+0.1f,190,(uint8_t)(137U+t/180U));
+}
+
+// 02 SATIN DUET — two romantic dancers on the REAL front-to-rear LED tracks.
+// They reach the single back-center pixel at different beats, return smoothly,
+// and trade color while a partner follows at a phase offset. No jumps at
+// LED50->51 or LED93->92 because paths address contiguous strip indexes.
+static void mode_hat7_satin_duet(void){
+  if(SEGLEN<144)FX_FALLBACK_STATIC;
+  SEGMENT.fill(BLACK);
+  const uint32_t t=strip.now;
+  const uint32_t period=6800U-(uint32_t)SEGMENT.speed*13U;
+  const float theta=6.28318530718f*(float)(t%period)/(float)period;
+  for(uint8_t row=0;row<2;row++){
+    float a=theta+(row?1.18f:0.0f);
+    float pathA=23.0f*(1.0f-cosf(a));
+    float pathB=23.0f*(1.0f-cosf(a+1.76f));
+    uint8_t aHue=(uint8_t)(88U+row*74U+t/184U);
+    hat7_beam_path(row,pathA,4.8f,1,aHue,238);
+    hat7_beam_path(row,pathB,3.1f,1,(uint8_t)(aHue+84U),163);
+    // Delayed glitter embellishment follows the two main glides.
+    hat7_beam_path(row,pathA-5.0f,2.4f,1,(uint8_t)(aHue+39U),76);
+    if(pathA<2.0f)hat7_beam_path(row,pathA,2.8f,1,198,219);
+  }
+  // Rear LED71 participates via the shared physical paths above, plus a
+  // low-energy side-to-side stage light that actually travels over the rear.
+  hat7_rear_dance(1,theta*0.86f+1.7f,96,146);
+}
+
+// 03 ORCHID MINUET — two opposing waltz trios rock from side to side across
+// the upper/lower crowns, with the back in a third counterpoint rhythm.
+// Elliptical harmonic paths + anti-aliased light spill create a flowing dance.
+static void mode_hat7_orchid_minuet(void){
+  if(SEGLEN<144)FX_FALLBACK_STATIC;
+  SEGMENT.fill(BLACK);
+  const uint32_t t=strip.now;
+  const uint32_t period=7600U-(uint32_t)SEGMENT.speed*16U;
+  const float theta=6.28318530718f*(float)(t%period)/(float)period;
+  for(uint8_t row=0;row<2;row++){
+    for(uint8_t k=0;k<3;k++){
+      float a=theta+(float)k*2.094395f+(row?2.34f:0.0f);
+      float x=(float)hat_row_center(row)+17.8f*sinf(a)+3.0f*sinf(2.0f*a+1.10f);
+      uint8_t hue=(uint8_t)(67U+k*58U+row*36U+t/215U);
+      hat7_beam_row(row,x,4.0f,2,hue,218);
+      hat7_beam_row(row,x-3.5f*sinf(a+1.2f),2.5f,2,(uint8_t)(hue+53),68);
+      // Only beat-specific crossing produces glitter, not a pinned center.
+      if(fabsf(x-(float)hat_row_center(row))<1.4f)
+        hat7_beam_row(row,x,2.1f,2,(uint8_t)(hue+96),233);
+    }
+  }
+  hat7_rear_dance(2,theta*1.02f+2.0f,208,(uint8_t)(178U+t/210U));
+}
+
+// 04 CHAMPAGNE STARDUST — uncorrelated warm scintillation across BOTH front
+// arcs and all 42 rear pixels. Each star grows and decays with a fourth-power
+// symmetric envelope: never frame-to-frame random toggling or full-white flash.
+static void mode_hat7_champagne_stardust(void){
+  if(SEGLEN<144)FX_FALLBACK_STATIC;
+  SEGMENT.fill(BLACK);
+  const uint32_t t=strip.now;
+  const uint8_t density=(uint8_t)(95U+(SEGMENT.intensity>>2));
+  // 38 stable star locations; the rear receives 12 guaranteed independent ones.
+  for(uint8_t id=0;id<38;id++){
+    uint16_t px;
+    if(id<13)px=(uint16_t)((id*19U+hat3_hash(id,7))%51U);
+    else if(id<26)px=(uint16_t)(93U+(id*23U+hat3_hash(id,11))%51U);
+    else px=(uint16_t)(51U+((id-26U)*13U+hat3_hash(id,21))%42U);
+    uint8_t energy=hat7_pulse(t,id,(uint16_t)(1700U+(id%5U)*370U),37);
+    energy=scale8(energy,(uint8_t)(175U+(density>>1)));
+    if(energy>7)hat7_glint(px,3,(uint8_t)(90U+id*29U+t/234U),energy);
+  }
+  // Soft champagne nebula travels across the rear, but the center is not a
+  // constant glowing "beacon".
+  float phase=6.28318530718f*(float)(t%8700U)/8700.0f;
+  hat7_rear_dance(3,phase,75,189);
+}
+
+// 05 AMETHYST FIREFLIES — drifting points that float, dim, and rekindle,
+// different motion on top, lower and rear arcs. All positions are fractional,
+// and occasional luminous clusters bloom where fireflies physically converge.
+static void mode_hat7_amethyst_fireflies(void){
+  if(SEGLEN<144)FX_FALLBACK_STATIC;
+  SEGMENT.fill(BLACK);
+  const uint32_t t=strip.now;
+  const float theta=6.28318530718f*(float)(t%11900U)/11900.0f
+                    *(0.60f+0.40f*(float)SEGMENT.speed/255.0f);
+  for(uint8_t row=0;row<2;row++){
+    for(uint8_t id=0;id<11;id++){
+      float phase=theta*(0.78f+0.07f*(float)(id%5U))
+                 +((float)id*2.399963f)+row*1.4f;
+      float x=(float)hat_row_center(row)+
+        20.0f*sinf(phase)+2.8f*sinf(2.2f*phase+id);
+      uint8_t tw=hat7_pulse(t,id+row*23U,(uint16_t)(2400U+id*140U),73);
+      uint8_t power=qadd8(48U,scale8(tw,(uint8_t)(146U+(SEGMENT.intensity>>2))));
+      hat7_beam_row(row,x,2.5f+(float)(id%3U)*0.4f,4,
+                    (uint8_t)(id*31U+row*72U+t/210U),power);
+    }
+  }
+  for(uint8_t id=0;id<10;id++){
+    float phase=theta*(0.8f+id*0.06f)+id*1.63f;
+    float x=70.0f+17.0f*sinf(phase)+3.0f*sinf(phase*1.7f);
+    uint8_t tw=hat7_pulse(t,id+61U,2100U+(uint16_t)id*175U,41);
+    hat7_beam_rear(x,2.5f,4,(uint8_t)(81U+id*43U+t/164U),
+                   qadd8(57U,scale8(tw,184)));
+  }
+}
+
+// 06 GARNET CONSTELLATION — paired shifting star maps, softly connected by
+// disappearing lines of rose-gold dust. Rear stars form their own moving arc;
+// nodes are always changing brightness, not permanent center lights.
+static void mode_hat7_garnet_constellation(void){
+  if(SEGLEN<144)FX_FALLBACK_STATIC;
+  SEGMENT.fill(BLACK);
+  const uint32_t t=strip.now;
+  const float theta=6.28318530718f*(float)(t%13100U)/13100.0f;
+  for(uint8_t row=0;row<2;row++){
+    float prior=0.0f;
+    for(uint8_t id=0;id<7;id++){
+      float offset=((float)id-3.0f)*6.5f;
+      float x=(float)hat_row_center(row)+offset+
+                    2.0f*sinf(theta*1.7f+id*1.38f+row*1.2f);
+      uint8_t envelope=hat7_pulse(t,id+row*11U,(uint16_t)(1900U+id*360U),54);
+      uint8_t power=qadd8(74U,scale8(envelope,169));
+      uint8_t hue=(uint8_t)(87U+id*36U+row*26U+t/300U);
+      hat7_beam_row(row,x,2.6f,5,hue,power);
+      // Moving fine-grain threads: dotted luminous nodes between pairs.
+      if(id>0){
+        for(uint8_t link=1;link<5;link++){
+          float at=prior+(x-prior)*(float)link/5.0f;
+          hat7_beam_row(row,at,1.05f,5,(uint8_t)(hue+33U),
+                        (uint8_t)(28U+scale8(envelope,35)));
+        }
+      }
+      prior=x;
+    }
+  }
+  for(uint8_t id=0;id<9;id++){
+    float phase=theta+id*0.7f;
+    float x=52.0f+(float)id*4.6f+1.6f*sinf(phase);
+    uint8_t tw=hat7_pulse(t,id+43U,(uint16_t)(2200U+id*260U),87);
+    hat7_beam_rear(x,2.3f,5,(uint8_t)(153U+id*19U+t/355U),
+                   qadd8(52U,scale8(tw,191)));
+  }
+}
+
+// 07 PETAL GLITTERFALL — flecks of gilded petals glide in staggered, smooth
+// streams from the TWO front centers, flow into the ONE rear arc, and dissipate
+// at the common back center. Fine trailing sparks catch light on the way.
+// Follow exact contiguous physical LED routes, not two fictitious back strips.
+static void mode_hat7_petal_glitterfall(void){
+  if(SEGLEN<144)FX_FALLBACK_STATIC;
+  SEGMENT.fill(BLACK);
+  const uint32_t t=strip.now;
+  const uint32_t period=6100U-(uint32_t)SEGMENT.speed*10U;
+  for(uint8_t row=0;row<2;row++){
+    for(uint8_t id=0;id<9;id++){
+      uint32_t local=(t+(uint32_t)id*period/9U+(row?period/17U:0U))%period;
+      float p=(float)local/(float)period;
+      // Gently accelerate and decelerate so movement doesn't look jerky.
+      float sm=p*p*(3.0f-2.0f*p);
+      float x=46.0f*sm;
+      uint8_t glow=(uint8_t)(100U+((SEGMENT.intensity*145U)>>8));
+      float envelope=sinf(3.14159265f*p);
+      uint8_t power=(uint8_t)((float)glow*envelope);
+      if(power<3)continue;
+      uint8_t hue=(uint8_t)(92U+id*29U+row*51U+t/245U);
+      hat7_beam_path(row,x,2.9f,6,hue,power);
+      hat7_beam_path(row,x-3.5f,1.7f,6,(uint8_t)(hue+47U),
+                     scale8(power,115));
+      // Brief facets near actual front / back intersections; no static glow.
+      if(x<2.0f||x>44.0f)
+        hat7_beam_path(row,x,2.0f,6,(uint8_t)(hue+87U),scale8(power,182));
+    }
+  }
+  // Spare drifting glitter fills the opposite half of the single back
+  // connector so the hat doesn't look dark when viewed from behind.
+  for(uint8_t id=0;id<7;id++){
+    float p=6.28318530718f*(float)(t%9900U)/9900.0f;
+    float x=(float)HAT_BACK_CENTER+18.0f*sinf(p+id*0.86f);
+    uint8_t tw=hat7_pulse(t,id+98U,(uint16_t)(1850U+id*230U),25);
+    hat7_beam_rear(x,1.7f,6,(uint8_t)(144U+id*36U),scale8(tw,151));
+  }
+}
+
+static const char _data_FX_MODE_HAT7_VELVET_SWITCHBLADE[] PROGMEM =
+  "Hat VII - Velvet Switchblade@Dance speed,Blade intensity,,,,WLED palette;!,!;!;1;sx=144,ix=180,o1=0";
+static const char _data_FX_MODE_HAT7_SATIN_DUET[] PROGMEM =
+  "Hat VII - Satin Duet@Waltz tempo,Glow,,,,WLED palette;!,!;!;1;sx=136,ix=185,o1=0";
+static const char _data_FX_MODE_HAT7_ORCHID_MINUET[] PROGMEM =
+  "Hat VII - Orchid Minuet@Tempo,Glide intensity,,,,WLED palette;!,!;!;1;sx=125,ix=173,o1=0";
+static const char _data_FX_MODE_HAT7_CHAMPAGNE_STARDUST[] PROGMEM =
+  "Hat VII - Champagne Stardust@Twinkle speed,Density,,,,WLED palette;!,!;!;1;sx=118,ix=172,o1=0";
+static const char _data_FX_MODE_HAT7_AMETHYST_FIREFLIES[] PROGMEM =
+  "Hat VII - Amethyst Fireflies@Drift speed,Glow,,,,WLED palette;!,!;!;1;sx=133,ix=175,o1=0";
+static const char _data_FX_MODE_HAT7_GARNET_CONSTELLATION[] PROGMEM =
+  "Hat VII - Garnet Constellation@Morph tempo,Sparkle,,,,WLED palette;!,!;!;1;sx=105,ix=175,o1=0";
+static const char _data_FX_MODE_HAT7_PETAL_GLITTERFALL[] PROGMEM =
+  "Hat VII - Petal Glitterfall@Fall speed,Shimmer,,,,WLED palette;!,!;!;1;sx=132,ix=185,o1=0";
+
 class UserFxUsermod : public Usermod {
  private:
  public:
@@ -3653,6 +4001,15 @@ strip.addEffect(255, &mode_z_prism_cascade, _data_FX_MODE_Z_PRISM_CASCADE);
     strip.addEffect(255, &mode_hat4_hourglass_reversal, _data_FX_MODE_HAT4_HOURGLASS_REVERSAL);
 
 
+
+    // HAT VII — Velvet Motion & Stardust: seven new curated 144-LED effects.
+    strip.addEffect(255, &mode_hat7_velvet_switchblade, _data_FX_MODE_HAT7_VELVET_SWITCHBLADE);
+    strip.addEffect(255, &mode_hat7_satin_duet, _data_FX_MODE_HAT7_SATIN_DUET);
+    strip.addEffect(255, &mode_hat7_orchid_minuet, _data_FX_MODE_HAT7_ORCHID_MINUET);
+    strip.addEffect(255, &mode_hat7_champagne_stardust, _data_FX_MODE_HAT7_CHAMPAGNE_STARDUST);
+    strip.addEffect(255, &mode_hat7_amethyst_fireflies, _data_FX_MODE_HAT7_AMETHYST_FIREFLIES);
+    strip.addEffect(255, &mode_hat7_garnet_constellation, _data_FX_MODE_HAT7_GARNET_CONSTELLATION);
+    strip.addEffect(255, &mode_hat7_petal_glitterfall, _data_FX_MODE_HAT7_PETAL_GLITTERFALL);
 
   }
 
