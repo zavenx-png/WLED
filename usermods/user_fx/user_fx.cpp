@@ -2730,8 +2730,8 @@ static void mode_hat_plasma_fork(void) {
   uint32_t t = strip.now;
   SEGMENT.fadeToBlackBy(42);
 
-  uint16_t headA = (uint16_t)((t * (0.018f + SEGMENT.speed * 0.00012f)) % 51);
-  uint16_t headB = (uint16_t)((t * (0.014f + SEGMENT.speed * 0.00009f)) % 51);
+  uint16_t headA = (uint16_t)((uint32_t)(t * (0.018f + SEGMENT.speed * 0.00012f)) % 51U);
+  uint16_t headB = (uint16_t)((uint32_t)(t * (0.014f + SEGMENT.speed * 0.00009f)) % 51U);
   uint16_t topPos = headA;
   uint16_t bottomPos = 93 + headB;
 
