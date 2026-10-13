@@ -2688,13 +2688,13 @@ static const char _data_FX_MODE_HAT_FRONT_RIPPLE[] PROGMEM =
 //   Bottom row : idx  93..143  (LED  94..144), front center idx 116 (LED 117)
 //
 // Both rows run in the SAME direction: side -> front center -> other side.
-// Row-local coordinate x = 0..50, with the front center at x = 24 (top), 23 (bottom).
+// Row-local x=0..50: front = x24 upper (LED25), x23 lower (LED117).
 //   top pixel    = HAT_TOP_BASE + x
 //   bottom pixel = HAT_BOT_BASE + x
 //
 // "Brake" effects (first five) share one speed profile: fast leaving the
-// side (x = 0), easing down to ~15% speed as they pass the front center
-// (x = 23), then accelerating again to the far side (x = 50). The profile is
+// side (x = 0), easing down near the physical front center (top x24,
+// bottom x23), then accelerating again to the far side (x = 50). The profile is
 // integrated, so the head genuinely spends more TIME near the center.
 //
 // Everything is time-derived (stateless) unless noted, and all brightness
@@ -2970,7 +2970,6 @@ static void mode_hat_meteor_rain(void) {
     for (uint8_t i = 0; i < HAT_MAX_METEORS; i++) {
       if (!m[i].active) {
         m[i].active = true;
-        m[i].x = (float)hat_row_center(m[i].row);
         m[i].dir = hw_random8(2) ? 1 : -1;
         m[i].hue = hw_random8();
         m[i].row = hw_random8(2);
@@ -3189,10 +3188,22 @@ static void hat3_spot(uint8_t row, int16_t x, uint8_t radius, uint8_t scheme, ui
   }
 }
 static void hat3_back(uint8_t scheme, uint8_t phase, uint8_t gain) {
-  for (uint8_t i = 51; i <= 92; i++) {
-    uint8_t q = hat3_sin8((uint8_t)(i * 12 + phase));
-    uint8_t value = scale8(q, gain);
-    hat3_add(i, scheme, (uint8_t)(phase + i * 3), value);
+  // Two opposing rear beams sweep the full 42-LED connector, meet at LED 71,
+  // then separate. Keep the back conspicuously alive but not a static hot spot.
+  const uint8_t travel=(uint16_t)hat3_sin8(phase)*20U/255U;
+  for(int16_t i=51;i<=92;i++){
+    int16_t d=i-HAT_BACK_CENTER;
+    uint8_t beams=qadd8(hat3_peak(d-(int16_t)travel,4),hat3_peak(d+(int16_t)travel,4));
+    uint8_t edge=hat3_peak(d-(int16_t)(20-travel),3);
+    uint8_t wave=hat3_sin8((uint8_t)(i*17+phase*2));
+    uint8_t power=qadd8(scale8(beams,208),scale8(edge,116));
+    power=qadd8(power,scale8(wave,(uint8_t)(26+gain/2)));
+    uint32_t col=hat3_color(scheme,(uint8_t)(phase/3+d*8+104),power);
+    uint32_t old=SEGMENT.getPixelColor((uint16_t)i);
+    SEGMENT.setPixelColor((uint16_t)i,RGBW32(
+      R(col)>R(old)?R(col):R(old),
+      G(col)>G(old)?G(col):G(old),
+      B(col)>B(old)?B(col):B(old),0));
   }
 }
 
@@ -3224,7 +3235,7 @@ static void mode_hat3_prism_guillotine(void) {
       hat3_add(hat3_rowpos(row,x), 0, idx, brightness);
     }
   }
-  hat3_spot(0,23,7,0,(uint8_t)(phase + 162),scale8(hat3_sin8(phase*3),115));
+  hat3_spot(0,24,7,0,(uint8_t)(phase + 162),scale8(hat3_sin8(phase*3),115));
   hat3_spot(1,23,7,0,(uint8_t)(phase + 162),scale8(hat3_sin8(phase*3),115));
   hat3_back(0, phase, 43);
 }
@@ -3280,7 +3291,8 @@ static void mode_hat3_diamond_rain(void) {
       hat3_add(hat3_rowpos(d[i].row,(uint8_t)xx),5,d[i].hue+j*16,halo);
     }
     hat3_spot(d[i].row,x,2,5,187,230);
-    if (x>=20&&x<=26) hat3_spot(1-d[i].row,23,5,5,d[i].hue+70,80);
+    if (abs(x-hat_row_center(d[i].row))<=3)
+      hat3_spot(1-d[i].row,hat_row_center(1-d[i].row),5,5,d[i].hue+70,80);
   }
   hat3_back(5,(uint8_t)(t/47),30);
 }
@@ -3297,8 +3309,9 @@ static void mode_hat3_supercollider(void) {
   for (uint8_t row=0;row<2;row++) {
     // mirror in time: approach -> impact -> explosion
     uint8_t motion=(phase<115)?(115-phase)*255U/115U:(phase-115)*255U/140U;
-    int16_t a=23-(uint16_t)motion*23U/255U;
-    int16_t b=23+(uint16_t)motion*27U/255U;
+    const int16_t center=hat_row_center(row);
+    int16_t a=center-(uint16_t)motion*center/255U;
+    int16_t b=center+(uint16_t)motion*(50-center)/255U;
     uint8_t hue=(uint8_t)(t/47+row*59);
     hat3_spot(row,a,5,6,hue,190);
     hat3_spot(row,b,5,6,hue+116,190);
@@ -3306,7 +3319,7 @@ static void mode_hat3_supercollider(void) {
       uint8_t expand=(uint16_t)(phase-110)*38U/70U;
       uint8_t fire=(phase<145)?212:(uint16_t)(180-phase)*212U/35U;
       for (uint8_t x=0;x<51;x++) {
-        uint8_t ripple=hat3_peak(abs((int)x-23)-(int16_t)expand,4);
+        uint8_t ripple=hat3_peak(abs((int)x-center)-(int16_t)expand,4);
         hat3_add(hat3_rowpos(row,x),6,(uint8_t)(phase+x*4+row*35),scale8(ripple,fire));
       }
     }
@@ -3350,7 +3363,7 @@ static void mode_hat3_julia_rifts(void) {
   for (uint8_t row=0;row<2;row++) {
     float y=(row?0.38f:-0.38f)+0.15f*sinf(ti*0.61f+row);
     for (uint8_t x=0;x<51;x++) {
-      float zx=((float)x-25.0f)*0.055f;
+      float zx=((float)x-(float)hat_row_center(row))*0.055f;
       float zy=y+0.10f*sinf((float)x*0.21f+ti*2.0f);
       uint8_t iter=0;
       for (;iter<12;iter++) {
@@ -3361,7 +3374,7 @@ static void mode_hat3_julia_rifts(void) {
       }
       uint8_t inner=(iter==12)?14:(uint8_t)(80+iter*13);
       uint8_t hue=(uint8_t)(iter*23+x*3+(t/67)+row*43);
-      uint8_t crack=hat3_peak((int16_t)x-(23+(int16_t)(5*sinf(ti*2.4f+row))),3);
+      uint8_t crack=hat3_peak((int16_t)x-(hat_row_center(row)+(int16_t)(5*sinf(ti*2.4f+row))),3);
       hat3_add(hat3_rowpos(row,x),8,hue,qadd8(inner,scale8(crack,170)));
     }
   }
@@ -3377,14 +3390,14 @@ static void mode_hat3_neon_calligraphy(void) {
   float time=(float)t*(0.00025f+SEGMENT.speed*0.000001f);
   for (uint8_t stroke=0;stroke<3;stroke++) {
     float ph=time*(0.62f+stroke*0.24f)+stroke*2.09f;
-    float x=25.0f+22.0f*sinf(ph)+4.0f*sinf(ph*2.71f+stroke);
     uint8_t row=(stroke==1)?1:0;
+    float x=(float)hat_row_center(row)+22.0f*sinf(ph)+4.0f*sinf(ph*2.71f+stroke);
     int16_t px=(int16_t)floorf(x);
     uint8_t frac=(uint8_t)((x-(float)px)*255.0f);
     uint8_t hue=(uint8_t)(stroke*79+t/75);
     hat3_spot(row,px,6,9,hue,scale8(220,255-frac));
     hat3_spot(row,px+1,6,9,hue+23,scale8(220,frac));
-    hat3_spot(1-row,50-px,3,9,hue+91,82);
+    hat3_spot(1-row,47-px,3,9,hue+91,82);
     if (fabsf(sinf(ph*1.5f))>0.92f) hat3_spot(row,px,3,9,188,175);
   }
   hat3_back(9,(uint8_t)(t/68),35);
@@ -3418,7 +3431,7 @@ static void mode_hat3_cosmic_pinball(void) {
       }
     }
     hat3_spot(p[i].row,p[i].x/16,4,10,(uint8_t)(p[i].hue+t/90),250);
-    if (p[i].x>320&&p[i].x<420) hat3_spot(1-p[i].row,23,4,10,(uint8_t)(p[i].hue+71),50);
+    if (p[i].x>320&&p[i].x<420) hat3_spot(1-p[i].row,hat_row_center(1-p[i].row),4,10,(uint8_t)(p[i].hue+71),50);
   }
   hat3_back(10,(uint8_t)(t/61),33);
 }
@@ -3460,7 +3473,7 @@ static void mode_hat3_bioluminescent_reef(void) {
   uint32_t t=strip.now;
   if (SEGENV.call==0) {
     memset(SEGENV.data,0,408);
-    u[23]=225; u[74]=225;
+    u[24]=225; u[74]=225;
     for(uint8_t j=0;j<8;j++)u[hw_random8(102)]=hw_random8(110,255);
     SEGENV.step=t;
   }
@@ -3475,7 +3488,7 @@ static void mode_hat3_bioluminescent_reef(void) {
       // Excited cells spread energy until their inhibitor switches them off.
       int16_t reaction=(a>74 && b<156)?29:-11;
       int16_t next=(int16_t)a+lap+reaction-(b>>5);
-      if (abs((int)x-23)<3) {
+      if (abs((int)x-hat_row_center(row))<3) {
         uint8_t peer=u[(1-row)*51+x];
         if (peer>135) next+=(peer-135)/8;
       }
@@ -3538,7 +3551,7 @@ static void mode_hat3_crown_of_seraphs(void) {
   uint8_t p=(uint32_t)(local%actLength)*255U/actLength;
   uint8_t scheme=14;
   for(uint8_t row=0;row<2;row++)for(uint8_t x=0;x<51;x++) {
-    uint8_t d=abs((int)x-23);
+    uint8_t d=abs((int)x-hat_row_center(row));
     uint8_t h=(uint8_t)(x*5+t/63+row*57);
     uint8_t v=0;
     if (act==0) { // Seed energy spirals inward to front
@@ -3642,9 +3655,16 @@ static void hat4_spot(uint8_t row,int16_t x,uint8_t width,uint8_t scheme,uint8_t
 }
 
 static void hat4_rear(uint8_t scheme,uint8_t phase,uint8_t gain){
-  for(uint8_t i=51;i<=92;i++){
-    uint8_t b=scale8((uint8_t)(hat3_sin8((uint8_t)(i*13+phase))>>1),gain);
-    hat4_add(i,scheme,(uint8_t)(phase+i*2),b);
+  uint8_t travel=(uint16_t)hat3_sin8(phase)*20U/255U;
+  for(int16_t i=51;i<=92;i++){
+    int16_t d=i-HAT_BACK_CENTER;
+    uint8_t toward=qadd8(hat4_bell(d-(int16_t)travel,4),
+                         hat4_bell(d+(int16_t)travel,4));
+    uint8_t counter=hat4_bell(d-(int16_t)(20-travel),3);
+    uint8_t sweep=scale8(hat3_sin8((uint8_t)(i*23+phase*2)),(uint8_t)(35+gain));
+    uint8_t light=qadd8(qadd8(scale8(toward,213),scale8(counter,105)),sweep);
+    // Rear midpoint only bright when converging beams actually intersect.
+    hat4_add(i,scheme,(uint8_t)(68+phase/2+d*8),light);
   }
 }
 
@@ -3672,19 +3692,20 @@ static void mode_hat4_switchblade_waltz(void){
       uint8_t phase=(uint8_t)(tick*(blade+1)+blade*64+row*18);
       int16_t disp=((int16_t)hat3_sin8(phase)-128)*(17+blade*3)/128;
       int16_t wobble=((int16_t)hat3_sin8((uint8_t)(phase*2+p+blade*41))-128)/34;
-      int16_t x=23+disp+wobble;
+      int16_t x=hat_row_center(row)+disp+wobble;
       uint8_t power=(uint8_t)(191+(blade%2)*43);
       hat4_spot(row,x,3+(blade%3),2,(uint8_t)(72+blade*39+p/2),power);
-      hat4_spot(1-row,46-x,2,2,(uint8_t)(193+blade*21+p/3),scale8(power,104));
+      // Crossing accent follows the moving blade, never a constant nucleus.
+      if(abs(x-hat_row_center(row))<=2)
+        hat4_spot(row,hat_row_center(row),2,2,(uint8_t)(175+blade*14),195);
+      hat4_spot(1-row,hat_row_center(row)+hat_row_center(1-row)-x,2,2,(uint8_t)(193+blade*21+p/3),scale8(power,104));
     }
     for(uint8_t x=0;x<51;x++){
-      int16_t d=abs((int)x-23);
+      int16_t d=abs((int)x-hat_row_center(row));
       uint8_t inter=scale8(hat3_sin8((uint8_t)(x*19-t/48+row*103)),48);
-      hat4_add((row?93:0)+x,2,(uint8_t)(p+x*8),qadd8(inter,scale8(hat4_bell(d,7),74)));
+      hat4_add((row?93:0)+x,2,(uint8_t)(p+x*8),inter);
     }
   }
-  uint8_t strike=hat3_sin8((uint8_t)(tick*3));
-  hat4_nucleus(2,(uint8_t)(156+p/4),192+scale8(strike,63),4);
   hat4_rear(2,(uint8_t)(t/40),28);
 }
 
@@ -3703,17 +3724,21 @@ static void mode_hat4_hourglass_reversal(void){
     uint8_t liveRow=(act==0||act==3)?row:1-row;
     for(uint8_t d=0;d<3;d++){
       int16_t gap=travel+(int16_t)d*5;
-      hat4_spot(liveRow,23-gap,4,3,(uint8_t)(76+d*42+row*23),220-d*21);
-      hat4_spot(liveRow,23+gap,4,3,(uint8_t)(178+d*23+row*39),213-d*18);
+      hat4_spot(liveRow,hat_row_center(liveRow)-gap,4,3,(uint8_t)(76+d*42+row*23),220-d*21);
+      hat4_spot(liveRow,hat_row_center(liveRow)+gap,4,3,(uint8_t)(178+d*23+row*39),213-d*18);
     }
     for(uint8_t x=0;x<51;x++){
-      uint8_t dd=abs((int)x-23);
+      uint8_t dd=abs((int)x-hat_row_center(row));
       uint8_t ribs=hat3_sin8((uint8_t)(dd*27+(act&1?f:-((int16_t)f))+row*64));
-      hat4_add((row?93:0)+x,3,(uint8_t)(x*5+act*48),qadd8(scale8(ribs,51),scale8(hat4_bell(dd,9),84)));
+      hat4_add((row?93:0)+x,3,(uint8_t)(x*5+act*48),scale8(ribs,44));
     }
   }
-  bool transfer=(f>200||f<35);
-  hat4_nucleus(3,(uint8_t)(182+act*10),transfer?250:193,transfer?5:3);
+  // Transfer flare occurs only when converging fronts meet at the seam.
+  if(travel<=2){
+    for(uint8_t row=0;row<2;row++){
+      hat4_spot(row,hat_row_center(row),2,3,(uint8_t)(181+act*13),210);
+    }
+  }
   hat4_rear(3,(uint8_t)(p*2),27);
 }
 
@@ -3732,23 +3757,24 @@ static void mode_hat4_ribbon_origami(void){
   uint16_t cycle=7100U-(uint16_t)SEGMENT.speed*13U;
   uint8_t p=(uint32_t)(t%cycle)*255U/cycle,act=p/64U,q=(uint8_t)(p%64U)*4U;
   for(uint8_t row=0;row<2;row++)for(uint8_t x=0;x<51;x++){
-    uint8_t d=abs((int)x-23);
+    uint8_t d=abs((int)x-hat_row_center(row));
     uint8_t fold=(uint8_t)(d*13U+q+(act&1?row*57:row*103));
     uint8_t tri=fold<128?fold*2U:(255U-fold)*2U;
     uint8_t crease=qsub8(tri,139);
     int16_t diagonal=((int16_t)(x*7U)+(row?53:0)+(act&1?q:-((int16_t)q)))&255;
     uint8_t edge=hat4_bell(diagonal-128,12);
     uint8_t v=qadd8(scale8(crease,184),scale8(edge,173));
-    v=qadd8(v,scale8(hat4_bell(d,5),(act==1||act==3)?140:74));
     if(act==2)v=scale8(v,(uint8_t)(206+(d&3)*10));
     hat4_add((row?93:0)+x,5,(uint8_t)(80+fold/2+act*34+row*18),v);
   }
   for(uint8_t row=0;row<2;row++){
-    int16_t tip=23+((int16_t)hat3_sin8((uint8_t)(q+act*55+row*128))-128)/7;
+    int16_t tip=hat_row_center(row)+((int16_t)hat3_sin8((uint8_t)(q+act*55+row*128))-128)/7;
     hat4_spot(row,tip,4,5,(uint8_t)(192+act*19),218);
-    hat4_spot(row,46-tip,3,5,114,145);
+    hat4_spot(row,hat_row_center(row)*2-tip,3,5,114,145);
+    // Only a fold tip crossing the physical hinge creates a bright accent.
+    if(abs(tip-hat_row_center(row))<=2)
+      hat4_spot(row,hat_row_center(row),2,5,175,190);
   }
-  hat4_nucleus(5,169,(act==1||act==3)?246:209,5);
   hat4_rear(5,(uint8_t)(t/34),22);
 }
 
