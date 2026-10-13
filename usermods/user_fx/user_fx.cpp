@@ -2598,6 +2598,196 @@ static const char _data_FX_MODE_Z_INFINITE_CORRIDOR[] PROGMEM =
 //  UserMod Class  //
 /////////////////////
 
+// ============================================================================
+// HAT FX PACK — 144 LEDs
+// Designed for this physical path:
+//   top row:    LED 1..51, front center at LED 24
+//   connector:  LED 52..93
+//   bottom row: LED 94..144, front center at LED 117
+//
+// WLED pixel indexes are zero-based in code. This pack addresses the physical
+// 144-LED segment directly and does NOT use the old 410-position harness map.
+// Add these functions before UserFxUsermod, then add the five registrations
+// shown at the bottom of this file inside UserFxUsermod::setup().
+// ============================================================================
+
+static inline uint16_t hat_wrap(int32_t p) {
+  while (p < 0) p += 144;
+  return (uint16_t)(p % 144);
+}
+
+static inline uint32_t hat_palette(uint8_t index, uint8_t bri = 255) {
+  uint32_t c = SEGMENT.color_from_palette(index, true, true, 0);
+  return color_fade(c, bri);
+}
+
+static inline uint8_t hat_falloff(uint16_t d, uint16_t width) {
+  if (d >= width) return 0;
+  uint16_t x = 255U - ((uint32_t)d * 255U / width);
+  return (uint8_t)((x * x) >> 8);
+}
+
+static inline uint16_t hat_dist(uint16_t a, uint16_t b) {
+  return (a > b) ? (a - b) : (b - a);
+}
+
+// 1) Front Brake — fast along the strip, eases near each front-center LED,
+// then accelerates again. A bright comet head leaves a soft tail.
+struct HatBrakeState {
+  float pos;
+  uint32_t last;
+};
+static void mode_hat_front_brake(void) {
+  if (SEGLEN < 144) { FX_FALLBACK_STATIC; }
+  if (!SEGENV.allocateData(sizeof(HatBrakeState))) { FX_FALLBACK_STATIC; }
+  HatBrakeState* s = reinterpret_cast<HatBrakeState*>(SEGENV.data);
+  if (SEGENV.call == 0) {
+    s->pos = 0.0f;
+    s->last = strip.now;
+    SEGMENT.fill(BLACK);
+  }
+
+  uint32_t now = strip.now;
+  uint32_t dt = now - s->last;
+  if (dt > 100) dt = 100;
+  s->last = now;
+
+  float p = s->pos;
+  // Slow zones around the two front-center LEDs (zero-based 23 and 116).
+  float dTop = fabsf(p - 23.0f);
+  float dBottom = fabsf(p - 116.0f);
+  float nearCenter = 1.0f - (min(dTop, dBottom) / 13.0f);
+  if (nearCenter < 0.0f) nearCenter = 0.0f;
+  float speedFactor = 1.0f - 0.82f * nearCenter * nearCenter;
+  float baseSpeed = 35.0f + (SEGMENT.speed * 0.95f); // LEDs/second
+  s->pos += baseSpeed * speedFactor * (dt / 1000.0f);
+  if (s->pos >= 144.0f) s->pos -= 144.0f;
+
+  SEGMENT.fadeToBlackBy(48);
+  int head = (int)s->pos;
+  uint8_t hue = (uint8_t)(strip.now / 22);
+  for (int tail = 0; tail < 13; tail++) {
+    uint16_t px = hat_wrap(head - tail);
+    uint8_t bri = 255 - (tail * 19);
+    if (tail == 0) bri = 255;
+    SEGMENT.setPixelColor(px, hat_palette(hue + tail * 3, bri));
+  }
+}
+
+// 2) Twin Front Comets — matching comets launch from the front centers and
+// travel toward opposite sides of both rows, giving a mirrored two-row look.
+static void mode_hat_twin_comets(void) {
+  if (SEGLEN < 144) { FX_FALLBACK_STATIC; }
+  SEGMENT.fill(BLACK);
+  uint32_t t = strip.now;
+  float phase = fmodf(t * (0.00025f + SEGMENT.speed * 0.0000025f), 1.0f);
+  int travel = (int)(phase * 27.0f);
+  int width = 8 + (SEGMENT.intensity >> 5);
+
+  // Top row: front center LED 24 (index 23), outward toward 1 and 51.
+  // Bottom row: front center LED 117 (index 116), outward toward 94 and 144.
+  for (int side = -1; side <= 1; side += 2) {
+    int top = 23 + side * travel;
+    int bottom = 116 + side * travel;
+    for (int d = -width; d <= width; d++) {
+      uint8_t bri = hat_falloff(abs(d), width + 1);
+      if (bri < 3) continue;
+      SEGMENT.setPixelColor(hat_wrap(top + d), hat_palette((uint8_t)(t / 30 + d * 4), bri));
+      SEGMENT.setPixelColor(hat_wrap(bottom + d), hat_palette((uint8_t)(t / 30 + 90 + d * 4), bri));
+    }
+  }
+  // Keep the connecting rear arc dimly alive so the rows feel connected.
+  for (int i = 51; i <= 92; i++) {
+    uint8_t wave = (uint8_t)(25 + 25 * (1.0f + sinf(t * 0.002f + i * 0.12f)));
+    SEGMENT.setPixelColor(i, hat_palette((uint8_t)(t / 45 + i * 2), wave));
+  }
+}
+
+// 3) Liquid Aurora — slow flowing color bands across both rows, with a
+// stronger luminous pool at the two front-center LEDs. Smooth, non-flashing.
+static void mode_hat_liquid_aurora(void) {
+  if (SEGLEN < 144) { FX_FALLBACK_STATIC; }
+  uint32_t t = strip.now;
+  for (uint16_t i = 0; i < 144; i++) {
+    float wave = sinf(t * (0.0010f + SEGMENT.speed * 0.000004f) + i * 0.105f);
+    float wave2 = sinf(t * 0.0007f - i * 0.061f);
+    uint8_t hue = (uint8_t)(t / 65 + i * 2 + (wave2 + 1.0f) * 30.0f);
+    uint8_t bri = (uint8_t)(75 + (wave + 1.0f) * 75.0f);
+
+    // Boost the front-center locations and their nearby LEDs.
+    uint16_t d1 = hat_dist(i, 23);
+    uint16_t d2 = hat_dist(i, 116);
+    uint16_t d = min(d1, d2);
+    if (d < 12) bri = qadd8(bri, hat_falloff(d, 12) / 2);
+    SEGMENT.setPixelColor(i, hat_palette(hue, bri));
+  }
+}
+
+// 4) Plasma Fork — a hot pulse travels along the top row, splits across the
+// front into the bottom row, and sends a secondary ripple around the rear arc.
+static void mode_hat_plasma_fork(void) {
+  if (SEGLEN < 144) { FX_FALLBACK_STATIC; }
+  uint32_t t = strip.now;
+  SEGMENT.fadeToBlackBy(42);
+
+  uint16_t headA = (uint16_t)((t * (0.018f + SEGMENT.speed * 0.00012f)) % 51);
+  uint16_t headB = (uint16_t)((t * (0.014f + SEGMENT.speed * 0.00009f)) % 51);
+  uint16_t topPos = headA;
+  uint16_t bottomPos = 93 + headB;
+
+  for (int d = -10; d <= 10; d++) {
+    uint8_t bri = hat_falloff(abs(d), 11);
+    if (bri < 3) continue;
+    SEGMENT.setPixelColor(hat_wrap(topPos + d), hat_palette((uint8_t)(t / 12 + 5), bri));
+    SEGMENT.setPixelColor(hat_wrap(bottomPos + d), hat_palette((uint8_t)(t / 12 + 110), bri));
+  }
+
+  // A traveling shimmer across the connecting section (indices 51..92).
+  for (int i = 51; i <= 92; i++) {
+    float x = (float)(i - 51) / 41.0f;
+    float wave = 0.5f + 0.5f * sinf(t * 0.004f - x * 6.28318f);
+    uint8_t bri = (uint8_t)(18 + wave * 105);
+    SEGMENT.setPixelColor(i, hat_palette((uint8_t)(t / 20 + i * 3), bri));
+  }
+}
+
+// 5) Front-Center Ripple — concentric-looking waves radiate away from both
+// front-center points along the two visible rows. The rear connector glows
+// with a complementary traveling wave.
+static void mode_hat_front_ripple(void) {
+  if (SEGLEN < 144) { FX_FALLBACK_STATIC; }
+  uint32_t t = strip.now;
+  float speed = 0.004f + SEGMENT.speed * 0.000018f;
+  for (uint16_t i = 0; i < 144; i++) {
+    float distTop = fabsf((float)i - 23.0f);
+    float distBottom = fabsf((float)i - 116.0f);
+    float dist = min(distTop, distBottom);
+    float wave = 0.5f + 0.5f * sinf(dist * 0.42f - t * speed);
+    float crest = powf(wave, 5.0f);
+    uint8_t bri = (uint8_t)(18 + crest * 235.0f);
+    uint8_t hue = (uint8_t)(t / 40 + dist * 3.0f);
+    SEGMENT.setPixelColor(i, hat_palette(hue, bri));
+  }
+  // Give the rear connector its own flowing wave so it doesn't look detached.
+  for (int i = 51; i <= 92; i++) {
+    float x = (float)(i - 51) / 41.0f;
+    float wave = 0.5f + 0.5f * sinf(x * 12.566f - t * speed * 0.7f);
+    SEGMENT.setPixelColor(i, hat_palette((uint8_t)(160 + t / 55 + i), (uint8_t)(30 + wave * 115)));
+  }
+}
+
+static const char _data_FX_MODE_HAT_FRONT_BRAKE[] PROGMEM =
+  "Hat - Front Brake@Speed,Trail brightness,,,,;;";
+static const char _data_FX_MODE_HAT_TWIN_COMETS[] PROGMEM =
+  "Hat - Twin Front Comets@Speed,Comet width,,,,;;";
+static const char _data_FX_MODE_HAT_LIQUID_AURORA[] PROGMEM =
+  "Hat - Liquid Aurora@Speed,Color flow,,,,;;";
+static const char _data_FX_MODE_HAT_PLASMA_FORK[] PROGMEM =
+  "Hat - Plasma Fork@Speed,Energy,Trail,,,,;;";
+static const char _data_FX_MODE_HAT_FRONT_RIPPLE[] PROGMEM =
+  "Hat - Front-Center Ripple@Speed,Wave width,,,,;;";
+
+
 class UserFxUsermod : public Usermod {
  private:
  public:
@@ -2653,6 +2843,13 @@ strip.addEffect(255, &mode_z_prism_cascade, _data_FX_MODE_Z_PRISM_CASCADE);
     strip.addEffect(255, &mode_z_gravity_lens, _data_FX_MODE_Z_GRAVITY_LENS);
     strip.addEffect(255, &mode_z_quiet_storm, _data_FX_MODE_Z_QUIET_STORM);
     strip.addEffect(255, &mode_z_infinite_corridor, _data_FX_MODE_Z_INFINITE_CORRIDOR);
+
+    // Z - Hat FX Pack (144 physical LEDs; use these effects on the hat controller)
+    strip.addEffect(255, &mode_hat_front_brake, _data_FX_MODE_HAT_FRONT_BRAKE);
+    strip.addEffect(255, &mode_hat_twin_comets, _data_FX_MODE_HAT_TWIN_COMETS);
+    strip.addEffect(255, &mode_hat_liquid_aurora, _data_FX_MODE_HAT_LIQUID_AURORA);
+    strip.addEffect(255, &mode_hat_plasma_fork, _data_FX_MODE_HAT_PLASMA_FORK);
+    strip.addEffect(255, &mode_hat_front_ripple, _data_FX_MODE_HAT_FRONT_RIPPLE);
   }
 
 
