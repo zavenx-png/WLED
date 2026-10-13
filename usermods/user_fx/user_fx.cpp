@@ -3559,6 +3559,307 @@ static const char _data_FX_MODE_HAT3_ELECTRIC_TESSELLATION[] PROGMEM = "Hat III 
 static const char _data_FX_MODE_HAT3_CROWN_OF_SERAPHS[] PROGMEM = "Hat III - Crown of Seraphs@Choreography,Energy,,,,WLED palette;!,!;!;1;sx=125,ix=180,o1=0";
 
 
+
+// ============================================================================
+// HAT IV: CENTER STAGE — composed for 144 physically arranged hat LEDs.
+// Top arc: 0..50 (front 23), bottom arc: 93..143 (front 116).
+// Back connector: 51..92. Curated palettes default, WLED palette optional.
+// These effects intentionally favor front-center theatrics over simple chases.
+// ============================================================================
+
+// Color stops in flash. Seven separate deep warm-neon stories, NO cyan/white.
+static const uint8_t hat4_gradients[7][5][3] PROGMEM = {
+  {{ 12,  0, 23},{122,  4, 82},{255, 18,126},{255,138, 37},{ 12,  0, 23}}, // 0 Aubergine/rose/amber
+  {{ 19,  0, 20},{151,  6, 52},{255, 41,133},{245,107, 49},{ 19,  0, 20}}, // 1 Oxblood/lipstick/copper
+  {{ 17,  0, 30},{194,  7, 91},{255, 72,150},{250,165, 31},{ 17,  0, 30}}, // 2 Wine/bubblegum/gold
+  {{ 14,  1, 28},{115,  0, 88},{245, 18, 88},{255,115, 20},{ 14,  1, 28}}, // 3 Plum/garnet/fire
+  {{  9,  0, 14},{126,  0, 27},{255,  9, 70},{246,106, 67},{  9,  0, 14}}, // 4 Black cherry/vermilion
+  {{ 17,  0, 22},{123, 12, 85},{255, 30,158},{253,166, 52},{ 17,  0, 22}}, // 5 Mulberry/marigold
+  {{ 10,  0, 26},{127,  0, 69},{255, 15,111},{255, 91, 20},{ 10,  0, 26}}  // 6 Velvet/ruby/ember
+};
+static inline uint8_t hat4_lerp(uint8_t a,uint8_t b,uint8_t w){
+  return (uint8_t)(((uint16_t)a*(255U-w)+(uint16_t)b*w+127U)/255U);
+}
+static inline uint32_t hat4_color(uint8_t scheme,uint8_t index,uint8_t power){
+  if(SEGMENT.check1)return color_fade(SEGMENT.color_from_palette(index,true,true,0),power);
+  uint16_t q=(uint16_t)index*4U; uint8_t k=q>>8,f=(uint8_t)q;
+  uint8_t r=hat4_lerp(pgm_read_byte(&hat4_gradients[scheme][k][0]),pgm_read_byte(&hat4_gradients[scheme][k+1][0]),f);
+  uint8_t g=hat4_lerp(pgm_read_byte(&hat4_gradients[scheme][k][1]),pgm_read_byte(&hat4_gradients[scheme][k+1][1]),f);
+  uint8_t b=hat4_lerp(pgm_read_byte(&hat4_gradients[scheme][k][2]),pgm_read_byte(&hat4_gradients[scheme][k+1][2]),f);
+  return RGBW32(scale8(r,power),scale8(g,power),scale8(b,power),0);
+}
+// Max-channel optical compositing keeps overlapping saturated colors saturated
+// rather than making a muddy near-white blast.
+static inline void hat4_add(int16_t px,uint8_t scheme,uint8_t hue,uint8_t power){
+  if(px<0||px>=144||power<3)return;
+  uint32_t v=hat4_color(scheme,hue,power),old=SEGMENT.getPixelColor((uint16_t)px);
+  SEGMENT.setPixelColor((uint16_t)px,RGBW32(
+    R(v)>R(old)?R(v):R(old),
+    G(v)>G(old)?G(v):G(old),
+    B(v)>B(old)?B(v):B(old),0));
+}
+static inline uint8_t hat4_bell(int16_t d,uint8_t width){
+  if(d<0)d=-d;
+  if(width==0||d>=width)return 0;
+  uint16_t k=255U-(uint16_t)d*255U/width;
+  return (uint8_t)(k*k>>8);
+}
+static void hat4_spot(uint8_t row,int16_t x,uint8_t width,uint8_t scheme,uint8_t hue,uint8_t power){
+  for(int8_t j=1-(int8_t)width;j<(int8_t)width;j++){
+    int16_t xx=x+j;
+    if(xx<0||xx>50)continue;
+    hat4_add((row?93:0)+xx,scheme,(uint8_t)(hue+j*3),scale8(power,hat4_bell(j,width)));
+  }
+}
+static void hat4_nucleus(uint8_t scheme,uint8_t hue,uint8_t strength,uint8_t width){
+  for(uint8_t row=0;row<2;row++){
+    hat4_spot(row,23,width,scheme,(uint8_t)(hue+row*9),strength);
+    hat4_spot(row,23,2,scheme,(uint8_t)(174+row*4),scale8(strength,211));
+  }
+}
+static void hat4_rear(uint8_t scheme,uint8_t phase,uint8_t gain){
+  for(uint8_t i=51;i<=92;i++){
+    uint8_t b=scale8((uint8_t)(hat3_sin8((uint8_t)(i*13+phase))>>1),gain);
+    hat4_add(i,scheme,(uint8_t)(phase+i*2),b);
+  }
+}
+
+// 01 SINGULARITY THEATRE. Three staggered wavefronts drawn inward on both
+// bands; their energy stalls and jumps between centers, then detonates in
+// colored shells and recoalesces at the front.
+static void mode_hat4_singularity_theatre(void){
+  if(SEGLEN<144)FX_FALLBACK_STATIC;
+  SEGMENT.fill(BLACK);
+  uint32_t t=strip.now;
+  uint32_t cycle=6500U-(uint32_t)SEGMENT.speed*13U;
+  uint16_t p=(uint32_t)(t%cycle)*255U/cycle;
+  uint8_t hue=(uint8_t)(64+t/101);
+  for(uint8_t row=0;row<2;row++){
+    for(uint8_t lane=0;lane<3;lane++){
+      int16_t d;uint8_t pow;
+      if(p<100){d=28-(uint16_t)p*28U/100U+lane*5;pow=(uint8_t)(190+lane*18);}
+      else if(p<143){d=lane*2;pow=(uint8_t)(185+(p-100)*60U/43U);}
+      else if(p<219){d=(uint16_t)(p-143)*32U/76U-lane*5;pow=(uint8_t)(242-lane*27);}
+      else{d=27-(uint16_t)(p-219)*27U/36U+lane*3;pow=165;}
+      if(d<0)d=0;
+      for(int8_t side=-1;side<=1;side+=2){
+        int16_t x=23+side*d+((int16_t)hat3_sin8((uint8_t)(t/23+row*43+lane*83))-128)/53;
+        hat4_spot(row,x,4+lane,0,(uint8_t)(hue+lane*46+row*9),pow);
+      }
+    }
+    for(uint8_t x=0;x<51;x++){
+      uint8_t d=abs((int)x-23);
+      uint8_t lattice=scale8(hat3_sin8((uint8_t)(d*25+t/25+row*29)),52);
+      uint8_t iris=hat4_bell((int16_t)d-(p<143?5:(uint16_t)(p-143)*28U/112U),3);
+      hat4_add((row?93:0)+x,0,(uint8_t)(106+d*6+t/99),qadd8(scale8(lattice,170),scale8(iris,110)));
+    }
+  }
+  hat4_nucleus(0,166,(p>=99&&p<=154)?248:212,5);
+  if(p>110&&p<164)hat4_nucleus(0,192,235,3);
+  hat4_rear(0,(uint8_t)(t/26),30);
+}
+
+// 02 VELVET PORTAL. A double rim opens and closes; opposing interference
+// ribs rotate inside it. The slit snaps shut onto the two front center pixels
+// and blooms back outward as copper and wine-colored echoes.
+static void mode_hat4_velvet_portal(void){
+  if(SEGLEN<144)FX_FALLBACK_STATIC;
+  SEGMENT.fill(BLACK);
+  uint32_t t=strip.now;
+  uint16_t cycle=5800U-(uint16_t)SEGMENT.speed*10U;
+  uint8_t p=(uint32_t)(t%cycle)*255U/cycle;
+  uint8_t radius=2+(uint16_t)hat3_sin8(p)*23U/255U;
+  bool close=radius<6;
+  for(uint8_t row=0;row<2;row++)for(uint8_t x=0;x<51;x++){
+    uint8_t d=abs((int)x-23);
+    uint8_t inner=hat4_bell((int16_t)d-radius,4);
+    uint8_t outer=hat4_bell((int16_t)d-radius-5,3);
+    uint8_t rib=hat3_sin8((uint8_t)(x*29+(row?t/14:-((int32_t)t/14))));
+    uint8_t lock=scale8(rib,(d<radius)?92:26);
+    uint8_t light=qadd8(qadd8(scale8(inner,233),scale8(outer,174)),qadd8(lock,scale8(hat4_bell(d,10),40)));
+    hat4_add((row?93:0)+x,1,(uint8_t)(x*7+t/69+row*27),light);
+    if(close&&d<3)hat4_add((row?93:0)+x,1,182,228);
+  }
+  hat4_nucleus(1,close?184:106,close?250:182,close?5:3);
+  if(close)for(uint8_t row=0;row<2;row++)for(uint8_t d=5;d<28;d+=5)
+    hat4_spot(row,23+d,2,1,(uint8_t)(d*8+p),130);
+  hat4_rear(1,(uint8_t)(t/49),24);
+}
+
+// 03 SWITCHBLADE WALTZ. Four accelerating blade paths trace crossing
+// figure-eights. Delayed anti-symmetric reflections bounce between the two
+// front arcs. The impact lock at the middle changes color with the rhythm.
+static void mode_hat4_switchblade_waltz(void){
+  if(SEGLEN<144)FX_FALLBACK_STATIC;
+  SEGMENT.fill(BLACK);
+  uint32_t t=strip.now;
+  uint8_t tick=(uint8_t)(t/(13+((255-SEGMENT.speed)>>4)));
+  uint8_t p=(uint8_t)(t/31);
+  for(uint8_t row=0;row<2;row++){
+    for(uint8_t blade=0;blade<4;blade++){
+      uint8_t phase=(uint8_t)(tick*(blade+1)+blade*64+row*18);
+      int16_t disp=((int16_t)hat3_sin8(phase)-128)*(17+blade*3)/128;
+      int16_t wobble=((int16_t)hat3_sin8((uint8_t)(phase*2+p+blade*41))-128)/34;
+      int16_t x=23+disp+wobble;
+      uint8_t power=(uint8_t)(191+(blade%2)*43);
+      hat4_spot(row,x,3+(blade%3),2,(uint8_t)(72+blade*39+p/2),power);
+      hat4_spot(1-row,46-x,2,2,(uint8_t)(193+blade*21+p/3),scale8(power,104));
+    }
+    for(uint8_t x=0;x<51;x++){
+      int16_t d=abs((int)x-23);
+      uint8_t inter=scale8(hat3_sin8((uint8_t)(x*19-t/48+row*103)),48);
+      hat4_add((row?93:0)+x,2,(uint8_t)(p+x*8),qadd8(inter,scale8(hat4_bell(d,7),74)));
+    }
+  }
+  uint8_t strike=hat3_sin8((uint8_t)(tick*3));
+  hat4_nucleus(2,(uint8_t)(156+p/4),192+scale8(strike,63),4);
+  hat4_rear(2,(uint8_t)(t/40),28);
+}
+
+// 04 HOURGLASS REVERSAL. Two opposed streams visibly squeeze through the
+// front and emerge on the OTHER band. After each transfer, the chronology
+// reverses; prismatic ripples remain attached to the crossed focal seam.
+static void mode_hat4_hourglass_reversal(void){
+  if(SEGLEN<144)FX_FALLBACK_STATIC;
+  SEGMENT.fill(BLACK);
+  uint32_t t=strip.now;
+  uint16_t cycle=4800U-(uint16_t)SEGMENT.speed*8U;
+  uint8_t p=(uint32_t)(t%cycle)*255U/cycle;
+  uint8_t act=p/64U,f=(uint8_t)(p%64U)*4U;
+  int16_t travel=(act==0||act==2)?26-(uint16_t)f*26U/255U:(uint16_t)f*26U/255U;
+  for(uint8_t row=0;row<2;row++){
+    uint8_t liveRow=(act==0||act==3)?row:1-row;
+    for(uint8_t d=0;d<3;d++){
+      int16_t gap=travel+(int16_t)d*5;
+      hat4_spot(liveRow,23-gap,4,3,(uint8_t)(76+d*42+row*23),220-d*21);
+      hat4_spot(liveRow,23+gap,4,3,(uint8_t)(178+d*23+row*39),213-d*18);
+    }
+    for(uint8_t x=0;x<51;x++){
+      uint8_t dd=abs((int)x-23);
+      uint8_t ribs=hat3_sin8((uint8_t)(dd*27+(act&1?f:-((int16_t)f))+row*64));
+      hat4_add((row?93:0)+x,3,(uint8_t)(x*5+act*48),qadd8(scale8(ribs,51),scale8(hat4_bell(dd,9),84)));
+    }
+  }
+  bool transfer=(f>200||f<35);
+  hat4_nucleus(3,(uint8_t)(182+act*10),transfer?250:193,transfer?5:3);
+  hat4_rear(3,(uint8_t)(p*2),27);
+}
+
+// 05 SCARLET ECLIPSE. An almost-black moving iris with hot cherry diffraction
+// edges shutters around the center; as it closes, each front nucleus brightens
+// and throws red-gold refraction teeth across the crown.
+static void mode_hat4_scarlet_eclipse(void){
+  if(SEGLEN<144)FX_FALLBACK_STATIC;
+  SEGMENT.fill(BLACK);
+  uint32_t t=strip.now;
+  uint8_t p=(uint8_t)(t/(16+((255-SEGMENT.speed)>>4)));
+  uint8_t iris=3+(uint16_t)hat3_sin8((uint8_t)(p/2))*15U/255U;
+  uint8_t shimmer=hat3_sin8((uint8_t)(p*3));
+  for(uint8_t row=0;row<2;row++)for(uint8_t x=0;x<51;x++){
+    uint8_t d=abs((int)x-23);
+    uint8_t a=hat4_bell((int16_t)d-iris,3),b=hat4_bell((int16_t)d-iris-5,3);
+    uint8_t blades=hat3_sin8((uint8_t)(x*37+row*71-p*2));
+    uint8_t outside=(d>iris)?scale8(blades,70):scale8(blades,12);
+    uint8_t intensity=qadd8(qadd8(scale8(a,244),scale8(b,131)),outside);
+    hat4_add((row?93:0)+x,4,(uint8_t)(55+row*13+x*5+p/3),intensity);
+  }
+  uint8_t core=iris<8?246:170+scale8(shimmer,61);
+  hat4_nucleus(4,iris<8?171:94,core,iris<8?6:3);
+  if(iris<8)for(uint8_t row=0;row<2;row++)for(uint8_t ring=3;ring<25;ring+=7)
+    hat4_spot(row,23+ring,2,4,(uint8_t)(195+ring*4+p),118);
+  hat4_rear(4,p,19);
+}
+
+// 06 RIBBON ORIGAMI. Four continuous chapters fold two crossing strips into
+// shifting triangular creases; gold-magenta folds invert through the precise
+// front hinge and turn into a pair of independently timed luminous blades.
+static void mode_hat4_ribbon_origami(void){
+  if(SEGLEN<144)FX_FALLBACK_STATIC;
+  SEGMENT.fill(BLACK);
+  uint32_t t=strip.now;
+  uint16_t cycle=7100U-(uint16_t)SEGMENT.speed*13U;
+  uint8_t p=(uint32_t)(t%cycle)*255U/cycle,act=p/64U,q=(uint8_t)(p%64U)*4U;
+  for(uint8_t row=0;row<2;row++)for(uint8_t x=0;x<51;x++){
+    uint8_t d=abs((int)x-23);
+    uint8_t fold=(uint8_t)(d*13U+q+(act&1?row*57:row*103));
+    uint8_t tri=fold<128?fold*2U:(255U-fold)*2U;
+    uint8_t crease=qsub8(tri,139);
+    int16_t diagonal=((int16_t)(x*7U)+(row?53:0)+(act&1?q:-((int16_t)q)))&255;
+    uint8_t edge=hat4_bell(diagonal-128,12);
+    uint8_t v=qadd8(scale8(crease,184),scale8(edge,173));
+    v=qadd8(v,scale8(hat4_bell(d,5),(act==1||act==3)?140:74));
+    if(act==2)v=scale8(v,(uint8_t)(206+(d&3)*10));
+    hat4_add((row?93:0)+x,5,(uint8_t)(80+fold/2+act*34+row*18),v);
+  }
+  for(uint8_t row=0;row<2;row++){
+    int16_t tip=23+((int16_t)hat3_sin8((uint8_t)(q+act*55+row*128))-128)/7;
+    hat4_spot(row,tip,4,5,(uint8_t)(192+act*19),218);
+    hat4_spot(row,46-tip,3,5,114,145);
+  }
+  hat4_nucleus(5,169,(act==1||act==3)?246:209,5);
+  hat4_rear(5,(uint8_t)(t/34),22);
+}
+
+// 07 MIDNIGHT REACTOR. Actual stateful heat propagation with 2x51 cells.
+// Source energy enters at both front centers, is advected outward, diffuses,
+// cross-couples between rows, and throws intermittent ruby-orange eruptions.
+// About 208 bytes of per-segment heap, no persistent global state.
+struct Hat4ReactorState {uint32_t last;uint8_t heat[102];uint8_t next[102];};
+static void mode_hat4_midnight_reactor(void){
+  if(SEGLEN<144)FX_FALLBACK_STATIC;
+  if(!SEGENV.allocateData(sizeof(Hat4ReactorState)))FX_FALLBACK_STATIC;
+  Hat4ReactorState* s=(Hat4ReactorState*)SEGENV.data;
+  uint32_t t=strip.now;
+  if(SEGENV.call==0){memset(s,0,sizeof(Hat4ReactorState));s->last=t;}
+  if(t-s->last>=24U){
+    s->last=t;
+    for(uint8_t row=0;row<2;row++)for(uint8_t x=0;x<51;x++){
+      uint8_t idx=row*51U+x;
+      uint8_t toward=(x<23)?x+1:((x>23)?x-1:23);
+      uint8_t parent=s->heat[row*51U+toward],self=s->heat[idx];
+      uint8_t other=s->heat[(1-row)*51U+x];
+      uint16_t sum=(uint16_t)parent*5U+(uint16_t)self*3U+(uint16_t)other;
+      s->next[idx]=qsub8((uint8_t)min((uint16_t)245U,sum/9U),(uint8_t)(3+((255-SEGMENT.intensity)>>6)));
+      if(x==23)s->next[idx]=(uint8_t)(220U+(uint16_t)hat3_sin8((uint8_t)(t/13+row*25))*35U/255U);
+      if(x>=19&&x<=27&&hw_random8()<(uint8_t)(8+(SEGMENT.intensity>>4)))
+        s->next[idx]=qadd8(s->next[idx],hw_random8(45,112));
+    }
+    memcpy(s->heat,s->next,sizeof(s->heat));
+  }
+  SEGMENT.fill(BLACK);
+  uint8_t gate=hat3_sin8((uint8_t)(t/18));
+  for(uint8_t row=0;row<2;row++)for(uint8_t x=0;x<51;x++){
+    uint8_t d=abs((int)x-23),heat=s->heat[row*51U+x];
+    uint8_t rib=scale8(hat3_sin8((uint8_t)(d*31+t/23+row*41)),heat>>2);
+    uint8_t light=qadd8(qadd8(heat,rib),scale8(hat4_bell(d,7),88));
+    uint8_t hue=(uint8_t)(50+(uint16_t)heat*150U/255U+d*3+row*11);
+    hat4_add((row?93:0)+x,6,hue,light);
+    if((d%7)==0&&heat>130)
+      hat4_add((row?93:0)+x,6,(uint8_t)(185+t/70),scale8(heat,135));
+  }
+  hat4_nucleus(6,(uint8_t)(176+t/138),210+scale8(gate,45),5);
+  if(gate>220)for(uint8_t row=0;row<2;row++){
+    hat4_spot(row,16,3,6,210,scale8(gate,133));
+    hat4_spot(row,30,3,6,210,scale8(gate,133));
+  }
+  hat4_rear(6,(uint8_t)(t/37),17);
+}
+
+static const char _data_FX_MODE_HAT4_SINGULARITY_THEATRE[] PROGMEM =
+  "Hat IV - Singularity Theatre@Act speed,Focal power,,,,WLED palette;!,!;!;1;sx=156,ix=205,o1=0";
+static const char _data_FX_MODE_HAT4_VELVET_PORTAL[] PROGMEM =
+  "Hat IV - Velvet Portal@Portal tempo,Iris energy,,,,WLED palette;!,!;!;1;sx=142,ix=195,o1=0";
+static const char _data_FX_MODE_HAT4_SWITCHBLADE_WALTZ[] PROGMEM =
+  "Hat IV - Switchblade Waltz@Blade tempo,Intensity,,,,WLED palette;!,!;!;1;sx=147,ix=190,o1=0";
+static const char _data_FX_MODE_HAT4_HOURGLASS_REVERSAL[] PROGMEM =
+  "Hat IV - Hourglass Reversal@Cycle tempo,Focal energy,,,,WLED palette;!,!;!;1;sx=133,ix=200,o1=0";
+static const char _data_FX_MODE_HAT4_SCARLET_ECLIPSE[] PROGMEM =
+  "Hat IV - Scarlet Eclipse@Eclipse velocity,Crown,,,,WLED palette;!,!;!;1;sx=147,ix=200,o1=0";
+static const char _data_FX_MODE_HAT4_RIBBON_ORIGAMI[] PROGMEM =
+  "Hat IV - Ribbon Origami@Fold speed,Gleam,,,,WLED palette;!,!;!;1;sx=130,ix=192,o1=0";
+static const char _data_FX_MODE_HAT4_MIDNIGHT_REACTOR[] PROGMEM =
+  "Hat IV - Midnight Reactor@Reactor tempo,Instability,,,,WLED palette;!,!;!;1;sx=140,ix=188,o1=0";
+
 class UserFxUsermod : public Usermod {
  private:
  public:
@@ -3651,6 +3952,15 @@ strip.addEffect(255, &mode_z_prism_cascade, _data_FX_MODE_Z_PRISM_CASCADE);
     strip.addEffect(255, &mode_hat3_bioluminescent_reef, _data_FX_MODE_HAT3_BIOLUMINESCENT_REEF);
     strip.addEffect(255, &mode_hat3_electric_tessellation, _data_FX_MODE_HAT3_ELECTRIC_TESSELLATION);
     strip.addEffect(255, &mode_hat3_crown_of_seraphs, _data_FX_MODE_HAT3_CROWN_OF_SERAPHS);
+    // Hat IV — Center Stage: seven new front-centered compositions
+    strip.addEffect(255, &mode_hat4_singularity_theatre, _data_FX_MODE_HAT4_SINGULARITY_THEATRE);
+    strip.addEffect(255, &mode_hat4_velvet_portal, _data_FX_MODE_HAT4_VELVET_PORTAL);
+    strip.addEffect(255, &mode_hat4_switchblade_waltz, _data_FX_MODE_HAT4_SWITCHBLADE_WALTZ);
+    strip.addEffect(255, &mode_hat4_hourglass_reversal, _data_FX_MODE_HAT4_HOURGLASS_REVERSAL);
+    strip.addEffect(255, &mode_hat4_scarlet_eclipse, _data_FX_MODE_HAT4_SCARLET_ECLIPSE);
+    strip.addEffect(255, &mode_hat4_ribbon_origami, _data_FX_MODE_HAT4_RIBBON_ORIGAMI);
+    strip.addEffect(255, &mode_hat4_midnight_reactor, _data_FX_MODE_HAT4_MIDNIGHT_REACTOR);
+
   }
 
 
