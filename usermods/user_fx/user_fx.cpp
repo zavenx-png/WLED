@@ -2648,6 +2648,8 @@ static inline uint16_t hat_dist(uint16_t a, uint16_t b) {
 // 5) Front-Center Ripple — concentric-looking waves radiate away from both
 // front-center points along the two visible rows. The rear connector glows
 // with a complementary traveling wave.
+// Rear-stage helper is implemented with the other hat geometry functions below.
+static void hat_rear_stage(uint8_t hue,uint8_t gain);
 static void mode_hat_front_ripple(void) {
   if (SEGLEN < 144) { FX_FALLBACK_STATIC; }
   uint32_t t = strip.now;
@@ -3703,7 +3705,7 @@ static void mode_hat4_switchblade_waltz(void){
     for(uint8_t x=0;x<51;x++){
       int16_t d=abs((int)x-hat_row_center(row));
       uint8_t inter=scale8(hat3_sin8((uint8_t)(x*19-t/48+row*103)),48);
-      hat4_add((row?93:0)+x,2,(uint8_t)(p+x*8),inter);
+      if(d>3)hat4_add((row?93:0)+x,2,(uint8_t)(p+x*8),inter);
     }
   }
   hat4_rear(2,(uint8_t)(t/40),28);
@@ -3730,7 +3732,7 @@ static void mode_hat4_hourglass_reversal(void){
     for(uint8_t x=0;x<51;x++){
       uint8_t dd=abs((int)x-hat_row_center(row));
       uint8_t ribs=hat3_sin8((uint8_t)(dd*27+(act&1?f:-((int16_t)f))+row*64));
-      hat4_add((row?93:0)+x,3,(uint8_t)(x*5+act*48),scale8(ribs,44));
+      if(dd>3)hat4_add((row?93:0)+x,3,(uint8_t)(x*5+act*48),scale8(ribs,44));
     }
   }
   // Transfer flare occurs only when converging fronts meet at the seam.
@@ -3765,7 +3767,7 @@ static void mode_hat4_ribbon_origami(void){
     uint8_t edge=hat4_bell(diagonal-128,12);
     uint8_t v=qadd8(scale8(crease,184),scale8(edge,173));
     if(act==2)v=scale8(v,(uint8_t)(206+(d&3)*10));
-    hat4_add((row?93:0)+x,5,(uint8_t)(80+fold/2+act*34+row*18),v);
+    if(d>3)hat4_add((row?93:0)+x,5,(uint8_t)(80+fold/2+act*34+row*18),v);
   }
   for(uint8_t row=0;row<2;row++){
     int16_t tip=hat_row_center(row)+((int16_t)hat3_sin8((uint8_t)(q+act*55+row*128))-128)/7;
