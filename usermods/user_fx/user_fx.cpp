@@ -3699,8 +3699,7 @@ static void mode_hat7_velvet_switchblade(void){
   const float ang=6.28318530718f*(float)(t%period)/(float)period;
   for(uint8_t blade=0;blade<3;blade++){
     for(uint8_t row=0;row<2;row++){
-      const float phase=ang*(1.0f+0.14f*(float)blade)
-          +2.094395f*blade+0.62f*(float)row;
+      const float phase=ang+2.094395f*(float)blade+0.62f*(float)row;
       const float center=(float)hat_row_center(row);
       const float x=center+18.0f*sinf(phase)+3.5f*sinf(phase*2.0f+0.7f*blade);
       uint8_t power=(uint8_t)(207U+(uint8_t)(SEGMENT.intensity>>3));
@@ -3715,7 +3714,7 @@ static void mode_hat7_velvet_switchblade(void){
         hat7_beam_row(row,x,2.5f,0,(uint8_t)(184U+blade*9U),218);
     }
   }
-  hat7_rear_dance(0,ang*1.55f+0.1f,190,(uint8_t)(137U+t/180U));
+  hat7_rear_dance(0,ang*2.0f+0.1f,190,(uint8_t)(137U+t/180U));
 }
 
 // 02 SATIN DUET — two romantic dancers on the REAL front-to-rear LED tracks.
@@ -3741,7 +3740,7 @@ static void mode_hat7_satin_duet(void){
   }
   // Rear LED71 participates via the shared physical paths above, plus a
   // low-energy side-to-side stage light that actually travels over the rear.
-  hat7_rear_dance(1,theta*0.86f+1.7f,96,146);
+  hat7_rear_dance(1,theta+1.7f,96,146);
 }
 
 // 03 ORCHID MINUET — two opposing waltz trios rock from side to side across
@@ -3765,7 +3764,7 @@ static void mode_hat7_orchid_minuet(void){
         hat7_beam_row(row,x,2.1f,2,(uint8_t)(hue+96),233);
     }
   }
-  hat7_rear_dance(2,theta*1.02f+2.0f,208,(uint8_t)(178U+t/210U));
+  hat7_rear_dance(2,theta+2.0f,208,(uint8_t)(178U+t/210U));
 }
 
 // 04 CHAMPAGNE STARDUST — uncorrelated warm scintillation across BOTH front
@@ -3799,14 +3798,15 @@ static void mode_hat7_amethyst_fireflies(void){
   if(SEGLEN<144)FX_FALLBACK_STATIC;
   SEGMENT.fill(BLACK);
   const uint32_t t=strip.now;
-  const float theta=6.28318530718f*(float)(t%11900U)/11900.0f
-                    *(0.60f+0.40f*(float)SEGMENT.speed/255.0f);
+  // Different whole cycles for each firefly prevent all creatures reversing in sync.
+  const uint32_t basePeriod=16500U-(uint32_t)SEGMENT.speed*22U;
   for(uint8_t row=0;row<2;row++){
     for(uint8_t id=0;id<11;id++){
-      float phase=theta*(0.78f+0.07f*(float)(id%5U))
-                 +((float)id*2.399963f)+row*1.4f;
+      uint32_t duration=basePeriod+(uint32_t)(id%5U)*1790U;
+      float phase=6.28318530718f*(float)(t%duration)/(float)duration
+                 +(float)id*2.399963f+row*1.4f;
       float x=(float)hat_row_center(row)+
-        20.0f*sinf(phase)+2.8f*sinf(2.2f*phase+id);
+        20.0f*sinf(phase)+2.8f*sinf(2.0f*phase+id);
       uint8_t tw=hat7_pulse(t,id+row*23U,(uint16_t)(2400U+id*140U),73);
       uint8_t power=qadd8(48U,scale8(tw,(uint8_t)(146U+(SEGMENT.intensity>>2))));
       hat7_beam_row(row,x,2.5f+(float)(id%3U)*0.4f,4,
@@ -3814,8 +3814,9 @@ static void mode_hat7_amethyst_fireflies(void){
     }
   }
   for(uint8_t id=0;id<10;id++){
-    float phase=theta*(0.8f+id*0.06f)+id*1.63f;
-    float x=70.0f+17.0f*sinf(phase)+3.0f*sinf(phase*1.7f);
+    uint32_t duration=basePeriod+(uint32_t)(id%6U)*1370U;
+    float phase=6.28318530718f*(float)(t%duration)/(float)duration+id*1.63f;
+    float x=70.0f+17.0f*sinf(phase)+3.0f*sinf(phase*2.0f);
     uint8_t tw=hat7_pulse(t,id+61U,2100U+(uint16_t)id*175U,41);
     hat7_beam_rear(x,2.5f,4,(uint8_t)(81U+id*43U+t/164U),
                    qadd8(57U,scale8(tw,184)));
@@ -3835,7 +3836,7 @@ static void mode_hat7_garnet_constellation(void){
     for(uint8_t id=0;id<7;id++){
       float offset=((float)id-3.0f)*6.5f;
       float x=(float)hat_row_center(row)+offset+
-                    2.0f*sinf(theta*1.7f+id*1.38f+row*1.2f);
+                    2.0f*sinf(theta*2.0f+id*1.38f+row*1.2f);
       uint8_t envelope=hat7_pulse(t,id+row*11U,(uint16_t)(1900U+id*360U),54);
       uint8_t power=qadd8(74U,scale8(envelope,169));
       uint8_t hue=(uint8_t)(87U+id*36U+row*26U+t/300U);
