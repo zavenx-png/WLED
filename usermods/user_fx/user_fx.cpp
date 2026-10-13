@@ -1580,15 +1580,15 @@ static const char _data_FX_MODE_NOKIA_SNAKE[] PROGMEM =
 //
 // The ONLY functional change is the coordinate system:
 //   - normal WLED effects use the configured logical segment + ledmap
-//   - this effect uses a 410-position virtual path
+//   - this effect uses a 595-position virtual path
 //   - each virtual position maps to a logical LED index in 0..290
 //
 // Therefore the existing ledmap.json is left untouched.
 // ============================================================================
 
-#define CHUNCHUN_HARNESS_PATH_LEN 410
+#define CHUNCHUN_HARNESS_PATH_LEN 595
 
-// 410 virtual positions following the requested harness path:
+// 595 virtual positions across 20 virtual sections following the harness path:
 //
 //   Section 0 forward
 //   Section 1 forward
@@ -1604,6 +1604,12 @@ static const char _data_FX_MODE_NOKIA_SNAKE[] PROGMEM =
 //   Section 6 forward
 //   Section 7 reverse (handled through the existing reversed ledmap)
 //   Section 9 reverse (handled through the existing reversed ledmap)
+//   Section 2 forward (repeat V03)
+//   Section 3 forward (repeat V04)
+//   Section 0 forward (repeat V01)
+//   Section 1 forward (repeat V02)
+//   Section 2 forward (repeat V03)
+//   Section 3 forward (repeat V04)
 //
 // Values are LOGICAL LED indices. The normal WLED ledmap then converts
 // those logical indices to the physical LEDs.
@@ -1670,7 +1676,34 @@ static const uint16_t chunchunHarnessPath[CHUNCHUN_HARNESS_PATH_LEN] PROGMEM = {
   // V14: P9, 34 LEDs, logical 257..290, reverse via ledmap
   257, 258, 259, 260, 261, 262, 263, 264, 265, 266, 267, 268, 269, 270, 271, 272,
   273, 274, 275, 276, 277, 278, 279, 280, 281, 282, 283, 284, 285, 286, 287, 288,
-  289, 290
+  289, 290,
+
+  // V15: P2 (repeat), 40 LEDs, logical 53..92, forward
+   53,  54,  55,  56,  57,  58,  59,  60,  61,  62,  63,  64,  65,  66,  67,  68,
+   69,  70,  71,  72,  73,  74,  75,  76,  77,  78,  79,  80,  81,  82,  83,  84,
+   85,  86,  87,  88,  89,  90,  91,  92,
+
+  // V16: P3 (repeat), 26 LEDs, logical 93..118, forward
+   93,  94,  95,  96,  97,  98,  99, 100, 101, 102, 103, 104, 105, 106, 107, 108,
+  109, 110, 111, 112, 113, 114, 115, 116, 117, 118,
+
+  // V17: P0 (repeat), 35 LEDs, logical 0..34, forward
+    0,   1,   2,   3,   4,   5,   6,   7,   8,   9,  10,  11,  12,  13,  14,  15,
+   16,  17,  18,  19,  20,  21,  22,  23,  24,  25,  26,  27,  28,  29,  30,  31,
+   32,  33,  34,
+
+  // V18: P1 (repeat), 18 LEDs, logical 35..52, forward
+   35,  36,  37,  38,  39,  40,  41,  42,  43,  44,  45,  46,  47,  48,  49,  50,
+   51,  52,
+
+  // V19: P2 (repeat), 40 LEDs, logical 53..92, forward
+   53,  54,  55,  56,  57,  58,  59,  60,  61,  62,  63,  64,  65,  66,  67,  68,
+   69,  70,  71,  72,  73,  74,  75,  76,  77,  78,  79,  80,  81,  82,  83,  84,
+   85,  86,  87,  88,  89,  90,  91,  92,
+
+  // V20: P3 (repeat), 26 LEDs, logical 93..118, forward
+   93,  94,  95,  96,  97,  98,  99, 100, 101, 102, 103, 104, 105, 106, 107, 108,
+  109, 110, 111, 112, 113, 114, 115, 116, 117, 118
 };
 
 
@@ -1688,7 +1721,7 @@ static const uint16_t chunchunHarnessPath[CHUNCHUN_HARNESS_PATH_LEN] PROGMEM = {
 //   color_from_palette(...);
 //   setPixelColor(...);
 //
-// The original 292-LED SEGLEN is replaced by the 410-position virtual
+// The original 292-LED SEGLEN is replaced by the 595-position virtual
 // harness path only where it defines the animation coordinate system.
 static void mode_chunchun_harness(void)
 {
@@ -1700,7 +1733,7 @@ static void mode_chunchun_harness(void)
   // Original WLED Chunchun line -- unchanged.
   unsigned counter = strip.now * (6 + (SEGMENT.speed >> 4));
 
-  // Original formula, but applied to the 410-position virtual path.
+  // Original formula, but applied to the 595-position virtual path.
   unsigned numBirds = 2 + (CHUNCHUN_HARNESS_PATH_LEN >> 3);
 
   // Original WLED Chunchun line -- unchanged.
@@ -1745,9 +1778,9 @@ static const char _data_FX_MODE_CHUNCHUN_HARNESS[] PROGMEM =
 // ============================================================================
 // Z - Harness Visual Suite
 //
-// All effects below use the same 410-position virtual harness path as the
+// All effects below use the same 595-position virtual harness path as the
 // custom Chunchun effect above. The path is expressed in the normal logical
-// LED coordinate space so the existing one-to-one ledmap.json remains intact.
+// LED coordinate space so the existing physical-wiring ledmap.json remains intact.
 // In particular, Sections 7, 8 and 9 are supplied in logical FORWARD order;
 // the existing ledmap performs their physical reversal.
 //
@@ -2077,7 +2110,7 @@ static const char _data_FX_MODE_Z_STARLIGHT[] PROGMEM =
 // ============================================================================
 // Z - Harness Visual Suite II
 //
-// 15 additional effects, all built on the same 410-position virtual harness
+// 15 additional effects, all built on the same 595-position virtual harness
 // path (CHUNCHUN_HARNESS_PATH_LEN / chunchunHarnessPath / zh_* helpers
 // defined above). Nothing above this block is modified - these are pure
 // additions. None of these are games; they are all ambient / dancing /
@@ -2212,7 +2245,7 @@ static const char _data_FX_MODE_Z_DEEP_CURRENT[] PROGMEM =
 // formula, because that's what makes the emergent complexity trustworthy -
 // each is "hard to have come up with" precisely because it wasn't invented,
 // it was borrowed from how pendulums, waves, orbits and coherent noise
-// actually behave, then translated onto the 410-position harness path.
+// actually behave, then translated onto the 595-position harness path.
 //
 // Design constraints followed throughout, based on photosensitive-epilepsy
 // guidance (WCAG 2.3.1 / Ofcom / Epilepsy Foundation, which put the danger
@@ -2359,7 +2392,7 @@ static const char _data_FX_MODE_Z_ORBITAL_WALTZ[] PROGMEM =
 
 // ============================================================================
 // Z - Harness Visual Suite IV
-// Fifteen slow, high-quality effects designed for the 410-position virtual
+// Fifteen slow, high-quality effects designed for the 595-position virtual
 // harness path. All motion is deliberately multi-second, smooth, and free of
 // hard flashes. They reuse the existing zh_* helpers and chunchunHarnessPath
 // so the topology (including repeated / reversed sections) is fully expressed.
@@ -2621,7 +2654,7 @@ class UserFxUsermod : public Usermod {
     // strip.addEffect(255, &mode_your_effect2, _data_FX_MODE_YOUR_EFFECT2);
     // strip.addEffect(255, &mode_your_effect3, _data_FX_MODE_YOUR_EFFECT3);
 
-    // Custom Chunchun: uses the 410-position virtual harness path while
+    // Custom Chunchun: uses the 595-position virtual harness path while
     // preserving the existing ledmap for all other effects.
     strip.addEffect(255, &mode_chunchun_harness, _data_FX_MODE_CHUNCHUN_HARNESS);
 
