@@ -1579,9 +1579,9 @@ static const char _data_FX_MODE_NOKIA_SNAKE[] PROGMEM =
 // sine-wave positioning, color calculation, and rendering are kept the same.
 //
 // The ONLY functional change is the coordinate system:
-//   - normal WLED effects use the existing 292-LED logical segment + ledmap
+//   - normal WLED effects use the configured logical segment + ledmap
 //   - this effect uses a 410-position virtual path
-//   - each virtual position is translated to a 292-LED logical position
+//   - each virtual position maps to a logical LED index in 0..290
 //
 // Therefore the existing ledmap.json is left untouched.
 // ============================================================================
@@ -1612,65 +1612,65 @@ static const char _data_FX_MODE_NOKIA_SNAKE[] PROGMEM =
 // physical sections in REVERSE order, the virtual path uses their logical
 // indices in FORWARD order. The ledmap supplies the physical reversal.
 static const uint16_t chunchunHarnessPath[CHUNCHUN_HARNESS_PATH_LEN] PROGMEM = {
-  // Section 0: 0..35
-   0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15,
-  16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31,
-  32, 33, 34, 35,
+  // V01: P0, 35 LEDs, logical 0..34, forward
+    0,   1,   2,   3,   4,   5,   6,   7,   8,   9,  10,  11,  12,  13,  14,  15,
+   16,  17,  18,  19,  20,  21,  22,  23,  24,  25,  26,  27,  28,  29,  30,  31,
+   32,  33,  34,
 
-  // Section 1: 36..53
-  36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51,
-  52, 53,
+  // V02: P1, 18 LEDs, logical 35..52, forward
+   35,  36,  37,  38,  39,  40,  41,  42,  43,  44,  45,  46,  47,  48,  49,  50,
+   51,  52,
 
-  // Section 2: 54..93
-  54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67,
-  68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81,
-  82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93,
+  // V03: P2, 40 LEDs, logical 53..92, forward
+   53,  54,  55,  56,  57,  58,  59,  60,  61,  62,  63,  64,  65,  66,  67,  68,
+   69,  70,  71,  72,  73,  74,  75,  76,  77,  78,  79,  80,  81,  82,  83,  84,
+   85,  86,  87,  88,  89,  90,  91,  92,
 
-  // Section 3: 94..119
-  94, 95, 96, 97, 98, 99,100,101,102,103,104,105,106,107,
- 108,109,110,111,112,113,114,115,116,117,118,119,
+  // V04: P3, 26 LEDs, logical 93..118, forward
+   93,  94,  95,  96,  97,  98,  99, 100, 101, 102, 103, 104, 105, 106, 107, 108,
+  109, 110, 111, 112, 113, 114, 115, 116, 117, 118,
 
-  // Section 0 again: 0..35
-   0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15,
-  16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31,
-  32, 33, 34, 35,
+  // V05: P0 (repeat), 35 LEDs, logical 0..34, forward
+    0,   1,   2,   3,   4,   5,   6,   7,   8,   9,  10,  11,  12,  13,  14,  15,
+   16,  17,  18,  19,  20,  21,  22,  23,  24,  25,  26,  27,  28,  29,  30,  31,
+   32,  33,  34,
 
-  // Section 4: 120..151
- 120,121,122,123,124,125,126,127,128,129,130,131,132,133,134,135,
- 136,137,138,139,140,141,142,143,144,145,146,147,148,149,150,151,
+  // V06: P4, 32 LEDs, logical 119..150, forward
+  119, 120, 121, 122, 123, 124, 125, 126, 127, 128, 129, 130, 131, 132, 133, 134,
+  135, 136, 137, 138, 139, 140, 141, 142, 143, 144, 145, 146, 147, 148, 149, 150,
 
-  // Section 5: 152..181
- 152,153,154,155,156,157,158,159,160,161,162,163,164,165,166,167,
- 168,169,170,171,172,173,174,175,176,177,178,179,180,181,
+  // V07: P5, 30 LEDs, logical 151..180, forward
+  151, 152, 153, 154, 155, 156, 157, 158, 159, 160, 161, 162, 163, 164, 165, 166,
+  167, 168, 169, 170, 171, 172, 173, 174, 175, 176, 177, 178, 179, 180,
 
-  // Section 6: 182..204
- 182,183,184,185,186,187,188,189,190,191,192,193,194,195,196,197,
- 198,199,200,201,202,203,204,
+  // V08: P6, 23 LEDs, logical 181..203, forward
+  181, 182, 183, 184, 185, 186, 187, 188, 189, 190, 191, 192, 193, 194, 195, 196,
+  197, 198, 199, 200, 201, 202, 203,
 
-  // Section 7 reversed physically: logical indices must be FORWARD here
- 205,206,207,208,209,210,211,212,213,214,215,216,217,218,219,220,
- 221,222,223,224,225,226,227,228,229,230,231,232,233,234,
+  // V09: P7, 31 LEDs, logical 204..234, reverse via ledmap
+  204, 205, 206, 207, 208, 209, 210, 211, 212, 213, 214, 215, 216, 217, 218, 219,
+  220, 221, 222, 223, 224, 225, 226, 227, 228, 229, 230, 231, 232, 233, 234,
 
-  // Section 8 reversed physically: logical indices must be FORWARD here
- 235,236,237,238,239,240,241,242,243,244,245,246,247,248,249,250,
- 251,252,253,254,255,256,
+  // V10: P8, 22 LEDs, logical 235..256, reverse via ledmap
+  235, 236, 237, 238, 239, 240, 241, 242, 243, 244, 245, 246, 247, 248, 249, 250,
+  251, 252, 253, 254, 255, 256,
 
-  // Section 5 again: 152..181
- 152,153,154,155,156,157,158,159,160,161,162,163,164,165,166,167,
- 168,169,170,171,172,173,174,175,176,177,178,179,180,181,
+  // V11: P5 (repeat), 30 LEDs, logical 151..180, forward
+  151, 152, 153, 154, 155, 156, 157, 158, 159, 160, 161, 162, 163, 164, 165, 166,
+  167, 168, 169, 170, 171, 172, 173, 174, 175, 176, 177, 178, 179, 180,
 
-  // Section 6 again: 182..204
- 182,183,184,185,186,187,188,189,190,191,192,193,194,195,196,197,
- 198,199,200,201,202,203,204,
+  // V12: P6 (repeat), 23 LEDs, logical 181..203, forward
+  181, 182, 183, 184, 185, 186, 187, 188, 189, 190, 191, 192, 193, 194, 195, 196,
+  197, 198, 199, 200, 201, 202, 203,
 
-  // Section 7 again reversed physically: logical indices must be FORWARD here
- 205,206,207,208,209,210,211,212,213,214,215,216,217,218,219,220,
- 221,222,223,224,225,226,227,228,229,230,231,232,233,234,
+  // V13: P7 (repeat), 31 LEDs, logical 204..234, reverse via ledmap
+  204, 205, 206, 207, 208, 209, 210, 211, 212, 213, 214, 215, 216, 217, 218, 219,
+  220, 221, 222, 223, 224, 225, 226, 227, 228, 229, 230, 231, 232, 233, 234,
 
-  // Section 9 reversed physically: logical indices must be FORWARD here
- 257,258,259,260,261,262,263,264,265,266,267,268,269,270,271,272,
- 273,274,275,276,277,278,279,280,281,282,283,284,285,286,287,288,
- 289,290
+  // V14: P9, 34 LEDs, logical 257..290, reverse via ledmap
+  257, 258, 259, 260, 261, 262, 263, 264, 265, 266, 267, 268, 269, 270, 271, 272,
+  273, 274, 275, 276, 277, 278, 279, 280, 281, 282, 283, 284, 285, 286, 287, 288,
+  289, 290
 };
 
 
@@ -1720,7 +1720,7 @@ static void mode_chunchun_harness(void)
 
     bird = constrain(bird, 0U, CHUNCHUN_HARNESS_PATH_LEN - 1U);
 
-    // Translate the virtual bird position into the normal 292-LED logical
+    // Translate the virtual bird position into the normal logical
     // coordinate space. The existing ledmap.json then performs the physical
     // mapping exactly as it does for every other WLED effect.
     uint16_t logicalBird = pgm_read_word(&chunchunHarnessPath[bird]);
@@ -2622,7 +2622,7 @@ class UserFxUsermod : public Usermod {
     // strip.addEffect(255, &mode_your_effect3, _data_FX_MODE_YOUR_EFFECT3);
 
     // Custom Chunchun: uses the 410-position virtual harness path while
-    // preserving the normal 292-LED ledmap for all other effects.
+    // preserving the existing ledmap for all other effects.
     strip.addEffect(255, &mode_chunchun_harness, _data_FX_MODE_CHUNCHUN_HARNESS);
 
     // Z - Harness Visual Suite
