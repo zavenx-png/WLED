@@ -3819,7 +3819,9 @@ static void mode_hat4_midnight_reactor(void){
       uint8_t parent=s->heat[row*51U+toward],self=s->heat[idx];
       uint8_t other=s->heat[(1-row)*51U+x];
       uint16_t sum=(uint16_t)parent*5U+(uint16_t)self*3U+(uint16_t)other;
-      s->next[idx]=qsub8((uint8_t)min((uint16_t)245U,sum/9U),(uint8_t)(3+((255-SEGMENT.intensity)>>6)));
+      uint16_t propagated=sum/9U;
+      if(propagated>245U)propagated=245U;
+      s->next[idx]=qsub8((uint8_t)propagated,(uint8_t)(3+((255-SEGMENT.intensity)>>6)));
       if(x==23)s->next[idx]=(uint8_t)(220U+(uint16_t)hat3_sin8((uint8_t)(t/13+row*25))*35U/255U);
       if(x>=19&&x<=27&&hw_random8()<(uint8_t)(8+(SEGMENT.intensity>>4)))
         s->next[idx]=qadd8(s->next[idx],hw_random8(45,112));
