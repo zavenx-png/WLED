@@ -3379,6 +3379,13 @@ static const uint8_t hat3_gradients[15][5][3] PROGMEM = {
   {{  3,  0, 23},{190,  0,255},{  0,249,242},{255, 82, 35},{  3,  0, 23}}  // 14 Seraphs: ultraviolet / aqua / vermilion
 };
 
+// Portable 8-bit sine for WLED variants that do not expose FastLED hat3_sin8().
+// 0..255 phase -> 0..255 output. Shared helper avoids unavailable symbol errors.
+static inline uint8_t hat3_sin8(uint8_t phase) {
+  const float angle = (float)phase * (6.28318530718f / 256.0f);
+  return (uint8_t)(127.5f + 127.5f * sinf(angle));
+}
+
 static inline uint8_t hat3_mix8(uint8_t a, uint8_t b, uint8_t amount) {
   return (uint8_t)(((uint16_t)a * (255 - amount) + (uint16_t)b * amount + 127U) / 255U);
 }
@@ -3424,7 +3431,7 @@ static void hat3_spot(uint8_t row, int16_t x, uint8_t radius, uint8_t scheme, ui
 }
 static void hat3_back(uint8_t scheme, uint8_t phase, uint8_t gain) {
   for (uint8_t i = 51; i <= 92; i++) {
-    uint8_t q = sin8((uint8_t)(i * 12 + phase));
+    uint8_t q = hat3_sin8((uint8_t)(i * 12 + phase));
     uint8_t value = scale8(q, gain);
     hat3_add(i, scheme, (uint8_t)(phase + i * 3), value);
   }
@@ -3439,7 +3446,7 @@ static void mode_hat3_prism_guillotine(void) {
   const uint16_t period = 3200U - (uint16_t)SEGMENT.speed * 7U;
   const uint16_t tick = t % period;
   const uint8_t phase = (uint32_t)tick * 255U / period;
-  const uint8_t bend = sin8((uint8_t)(phase * 2));
+  const uint8_t bend = hat3_sin8((uint8_t)(phase * 2));
   for (uint8_t row = 0; row < 2; row++) {
     for (uint8_t x = 0; x < 51; x++) {
       uint8_t brightness = 4;
@@ -3453,13 +3460,13 @@ static void mode_hat3_prism_guillotine(void) {
         brightness = qadd8(brightness, qadd8(core, scale8(dispersion, 90)));
         if (core > 160) idx = (uint8_t)(blade * 85 + bend / 2 + row * 41);
       }
-      uint8_t facets = sin8((uint8_t)(x * 25 - phase * 2 + bend / 4));
+      uint8_t facets = hat3_sin8((uint8_t)(x * 25 - phase * 2 + bend / 4));
       brightness = qadd8(brightness, scale8(facets, 20));
       hat3_add(hat3_rowpos(row,x), 0, idx, brightness);
     }
   }
-  hat3_spot(0,23,7,0,(uint8_t)(phase + 162),scale8(sin8(phase*3),115));
-  hat3_spot(1,23,7,0,(uint8_t)(phase + 162),scale8(sin8(phase*3),115));
+  hat3_spot(0,23,7,0,(uint8_t)(phase + 162),scale8(hat3_sin8(phase*3),115));
+  hat3_spot(1,23,7,0,(uint8_t)(phase + 162),scale8(hat3_sin8(phase*3),115));
   hat3_back(0, phase, 43);
 }
 
@@ -3475,7 +3482,7 @@ static void mode_hat3_hypernova_bloom(void) {
     uint8_t rp = phase + row * 32;
     for (uint8_t x = 0; x < 51; x++) {
       uint8_t r = (uint8_t)abs((int)x - 23);
-      uint8_t aura = scale8(sin8((uint8_t)(r * 9 + phase / 2 + row * 67)), 43);
+      uint8_t aura = scale8(hat3_sin8((uint8_t)(r * 9 + phase / 2 + row * 67)), 43);
       uint8_t light = aura;
       uint8_t hue = (uint8_t)(r * 7 + phase + row * 28);
       for (uint8_t wave = 0; wave < 3; wave++) {
@@ -3505,9 +3512,9 @@ static void mode_hat3_quantum_braids(void) {
   for (uint8_t row = 0; row < 2; row++) {
     for (uint8_t x = 0; x < 51; x++) {
       uint8_t xx = x * 7;
-      uint8_t s0 = sin8(xx + phase);
-      uint8_t s1 = sin8(xx * 2 - phase * 2 + row * 71);
-      uint8_t s2 = sin8(xx * 3 + phase * 3 + row * 37);
+      uint8_t s0 = hat3_sin8(xx + phase);
+      uint8_t s1 = hat3_sin8(xx * 2 - phase * 2 + row * 71);
+      uint8_t s2 = hat3_sin8(xx * 3 + phase * 3 + row * 37);
       uint8_t knot = qadd8(scale8(s0,s1), scale8(s1,s2));
       uint8_t crest = (knot > (210 - (SEGMENT.intensity >> 4))) ? qsub8(knot,155) : 0;
       uint8_t energy = qadd8(scale8(s0,74),qadd8(scale8(s2,45),scale8(crest,255)));
@@ -3526,14 +3533,14 @@ static void mode_hat3_chromatic_vortex(void) {
   SEGMENT.fill(BLACK);
   uint32_t t = strip.now;
   uint8_t slow = (uint8_t)(t/(26+((255-SEGMENT.speed)>>4)));
-  int16_t eye = 23 + ((int16_t)sin8(slow) - 128) / 15;
+  int16_t eye = 23 + ((int16_t)hat3_sin8(slow) - 128) / 15;
   for (uint8_t row = 0; row < 2; row++) {
     for (uint8_t x = 0; x < 51; x++) {
       int16_t dx = (int16_t)x - eye;
       uint8_t d = abs(dx);
-      uint8_t swirl = sin8((uint8_t)(d * 17 + slow * 2 + (dx < 0 ? 53 : 0) + row * 115));
-      uint8_t twist = sin8((uint8_t)(x * 11 - slow * 3 + row * 41));
-      uint8_t corona = hat3_peak((int16_t)d - (7 + (sin8(slow*2)>>6)),5);
+      uint8_t swirl = hat3_sin8((uint8_t)(d * 17 + slow * 2 + (dx < 0 ? 53 : 0) + row * 115));
+      uint8_t twist = hat3_sin8((uint8_t)(x * 11 - slow * 3 + row * 41));
+      uint8_t corona = hat3_peak((int16_t)d - (7 + (hat3_sin8(slow*2)>>6)),5);
       uint8_t depth = (d < 3) ? 7 : scale8(qadd8(swirl,twist),150);
       uint8_t val = qadd8(depth, scale8(corona,185));
       uint8_t hue = (uint8_t)(swirl + 2 * x + slow + row * 34);
@@ -3573,7 +3580,7 @@ static void mode_hat3_dragonfire(void) {
   for (uint8_t row=0;row<2;row++) {
     for (uint8_t x=0;x<51;x++) {
       uint8_t h = a[row*51+x];
-      uint8_t turbulence = sin8((uint8_t)(x*23 + t/35 + row*83));
+      uint8_t turbulence = hat3_sin8((uint8_t)(x*23 + t/35 + row*83));
       uint8_t b = qadd8(scale8(h,240),scale8(turbulence,22));
       uint8_t hue = (uint8_t)(h/2 + x*3 + (t/80) + row*39);
       hat3_add(hat3_rowpos(row,x),4,hue,b);
@@ -3667,7 +3674,7 @@ static void mode_hat3_aurora_cathedral(void) {
     uint8_t organ=hat3_peak((int16_t)n2-180,70);
     uint8_t hue=(uint8_t)(curtain+n1/2+t/125);
     for (uint8_t row=0;row<2;row++) {
-      uint8_t shimmer=sin8((uint8_t)(x*13+t/59+row*72));
+      uint8_t shimmer=hat3_sin8((uint8_t)(x*13+t/59+row*72));
       uint8_t bright=qadd8(scale8(curtain,175),qadd8(scale8(organ,95),scale8(shimmer,35)));
       if (row) bright=scale8(bright,205);
       hat3_add(hat3_rowpos(row,x),7,hue+row*55,bright);
@@ -3771,9 +3778,9 @@ static void mode_hat3_hologram_scanner(void) {
   uint16_t epoch=(uint16_t)(t/960);
   for (uint8_t row=0;row<2;row++) {
     for(uint8_t x=0;x<51;x++) {
-      uint8_t carrier=sin8((uint8_t)(x*29+phase+row*93));
-      uint8_t upper=sin8((uint8_t)(x*7-phase*3+row*127));
-      uint8_t gate=sin8((uint8_t)(x*2+phase*2+row*41));
+      uint8_t carrier=hat3_sin8((uint8_t)(x*29+phase+row*93));
+      uint8_t upper=hat3_sin8((uint8_t)(x*7-phase*3+row*127));
+      uint8_t gate=hat3_sin8((uint8_t)(x*2+phase*2+row*41));
       uint8_t cross=scale8(carrier,upper);
       uint8_t light=qadd8(scale8(gate,63),qadd8(scale8(cross,154),scale8(upper,45)));
       uint8_t h=(uint8_t)(x*6+phase+upper/3+row*27);
@@ -3852,7 +3859,7 @@ static void mode_hat3_electric_tessellation(void) {
     uint8_t edgeA=qsub8(triA,170);
     uint8_t edgeB=qsub8(triB,170);
     uint8_t moire=qadd8(scale8(edgeA,205),scale8(edgeB,205));
-    uint8_t planes=scale8(sin8(c),56);
+    uint8_t planes=scale8(hat3_sin8(c),56);
     uint8_t intersection=scale8(edgeA,edgeB);
     uint8_t light=qadd8(qadd8(planes,moire),scale8(intersection,220));
     uint8_t h=(uint8_t)(a+b/2+phase+row*47);
@@ -3881,23 +3888,23 @@ static void mode_hat3_crown_of_seraphs(void) {
     uint8_t v=0;
     if (act==0) { // Seed energy spirals inward to front
       int16_t q=25-(uint16_t)p*25U/255U;
-      v=qadd8(hat3_peak((int16_t)d-q,5),scale8(sin8((uint8_t)(d*19+t/68)),46));
+      v=qadd8(hat3_peak((int16_t)d-q,5),scale8(hat3_sin8((uint8_t)(d*19+t/68)),46));
     } else if (act==1) { // Rising gold ribs climb toward sides
-      v=qadd8(hat3_peak((int16_t)d-(int16_t)((uint16_t)p*27U/255U),5),scale8(sin8((uint8_t)(x*23-p*3)),77));
+      v=qadd8(hat3_peak((int16_t)d-(int16_t)((uint16_t)p*27U/255U),5),scale8(hat3_sin8((uint8_t)(x*23-p*3)),77));
       h+=80;
     } else if(act==2) { // Dark eclipse with fluorescent diffraction rim
-      int16_t eye=9+(sin8(p*2)>>5);
-      v=qadd8(hat3_peak((int16_t)d-eye,4),scale8(sin8((uint8_t)(x*13+t/31)),43));
+      int16_t eye=9+(hat3_sin8(p*2)>>5);
+      v=qadd8(hat3_peak((int16_t)d-eye,4),scale8(hat3_sin8((uint8_t)(x*13+t/31)),43));
       if (d<eye-3) v=6;
       h+=143;
     } else if(act==3) { // Pattern fragments into crystalline flashes
       uint8_t n=hat3_hash(x+row*71,t/80);
-      v=(n>210)?qadd8(n,40):scale8(sin8((uint8_t)(x*31+p*3)),93);
+      v=(n>210)?qadd8(n,40):scale8(hat3_sin8((uint8_t)(x*31+p*3)),93);
       h+=n;
     } else { // Wide cathedral crown, white-gold focal radiance
-      uint8_t arch=sin8((uint8_t)(d*14+p/3));
+      uint8_t arch=hat3_sin8((uint8_t)(d*14+p/3));
       v=qadd8(scale8(arch,180),scale8(hat3_peak((int16_t)d-12,9),130));
-      if (d<4) v=qadd8(v,scale8(sin8(p),105));
+      if (d<4) v=qadd8(v,scale8(hat3_sin8(p),105));
       h+=196;
     }
     // Seamlessly soften each act boundary instead of sudden all-pixel flashes.
