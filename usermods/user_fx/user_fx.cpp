@@ -2633,123 +2633,17 @@ static inline uint16_t hat_dist(uint16_t a, uint16_t b) {
 
 // 1) Front Brake — fast along the strip, eases near each front-center LED,
 // then accelerates again. A bright comet head leaves a soft tail.
-struct HatBrakeState {
-  float pos;
-  uint32_t last;
-};
-static void mode_hat_front_brake(void) {
-  if (SEGLEN < 144) { FX_FALLBACK_STATIC; }
-  if (!SEGENV.allocateData(sizeof(HatBrakeState))) { FX_FALLBACK_STATIC; }
-  HatBrakeState* s = reinterpret_cast<HatBrakeState*>(SEGENV.data);
-  if (SEGENV.call == 0) {
-    s->pos = 0.0f;
-    s->last = strip.now;
-    SEGMENT.fill(BLACK);
-  }
-
-  uint32_t now = strip.now;
-  uint32_t dt = now - s->last;
-  if (dt > 100) dt = 100;
-  s->last = now;
-
-  float p = s->pos;
-  // Slow zones around the two front-center LEDs (zero-based 23 and 116).
-  float dTop = fabsf(p - 23.0f);
-  float dBottom = fabsf(p - 116.0f);
-  float nearCenter = 1.0f - (min(dTop, dBottom) / 13.0f);
-  if (nearCenter < 0.0f) nearCenter = 0.0f;
-  float speedFactor = 1.0f - 0.82f * nearCenter * nearCenter;
-  float baseSpeed = 35.0f + (SEGMENT.speed * 0.95f); // LEDs/second
-  s->pos += baseSpeed * speedFactor * (dt / 1000.0f);
-  if (s->pos >= 144.0f) s->pos -= 144.0f;
-
-  SEGMENT.fadeToBlackBy(48);
-  int head = (int)s->pos;
-  uint8_t hue = (uint8_t)(strip.now / 22);
-  for (int tail = 0; tail < 13; tail++) {
-    uint16_t px = hat_wrap(head - tail);
-    uint8_t bri = 255 - (tail * 19);
-    if (tail == 0) bri = 255;
-    SEGMENT.setPixelColor(px, hat_palette(hue + tail * 3, bri));
-  }
-}
-
 // 2) Twin Front Comets — matching comets launch from the front centers and
 // travel toward opposite sides of both rows, giving a mirrored two-row look.
-static void mode_hat_twin_comets(void) {
-  if (SEGLEN < 144) { FX_FALLBACK_STATIC; }
-  SEGMENT.fill(BLACK);
-  uint32_t t = strip.now;
-  float phase = fmodf(t * (0.00025f + SEGMENT.speed * 0.0000025f), 1.0f);
-  int travel = (int)(phase * 27.0f);
-  int width = 8 + (SEGMENT.intensity >> 5);
 
-  // Top row: front center LED 24 (index 23), outward toward 1 and 51.
-  // Bottom row: front center LED 117 (index 116), outward toward 94 and 144.
-  for (int side = -1; side <= 1; side += 2) {
-    int top = 23 + side * travel;
-    int bottom = 116 + side * travel;
-    for (int d = -width; d <= width; d++) {
-      uint8_t bri = hat_falloff(abs(d), width + 1);
-      if (bri < 3) continue;
-      SEGMENT.setPixelColor(hat_wrap(top + d), hat_palette((uint8_t)(t / 30 + d * 4), bri));
-      SEGMENT.setPixelColor(hat_wrap(bottom + d), hat_palette((uint8_t)(t / 30 + 90 + d * 4), bri));
-    }
-  }
-  // Keep the connecting rear arc dimly alive so the rows feel connected.
-  for (int i = 51; i <= 92; i++) {
-    uint8_t wave = (uint8_t)(25 + 25 * (1.0f + sinf(t * 0.002f + i * 0.12f)));
-    SEGMENT.setPixelColor(i, hat_palette((uint8_t)(t / 45 + i * 2), wave));
-  }
-}
 
 // 3) Liquid Aurora — slow flowing color bands across both rows, with a
 // stronger luminous pool at the two front-center LEDs. Smooth, non-flashing.
-static void mode_hat_liquid_aurora(void) {
-  if (SEGLEN < 144) { FX_FALLBACK_STATIC; }
-  uint32_t t = strip.now;
-  for (uint16_t i = 0; i < 144; i++) {
-    float wave = sinf(t * (0.0010f + SEGMENT.speed * 0.000004f) + i * 0.105f);
-    float wave2 = sinf(t * 0.0007f - i * 0.061f);
-    uint8_t hue = (uint8_t)(t / 65 + i * 2 + (wave2 + 1.0f) * 30.0f);
-    uint8_t bri = (uint8_t)(75 + (wave + 1.0f) * 75.0f);
 
-    // Boost the front-center locations and their nearby LEDs.
-    uint16_t d1 = hat_dist(i, 23);
-    uint16_t d2 = hat_dist(i, 116);
-    uint16_t d = min(d1, d2);
-    if (d < 12) bri = qadd8(bri, hat_falloff(d, 12) / 2);
-    SEGMENT.setPixelColor(i, hat_palette(hue, bri));
-  }
-}
 
 // 4) Plasma Fork — a hot pulse travels along the top row, splits across the
 // front into the bottom row, and sends a secondary ripple around the rear arc.
-static void mode_hat_plasma_fork(void) {
-  if (SEGLEN < 144) { FX_FALLBACK_STATIC; }
-  uint32_t t = strip.now;
-  SEGMENT.fadeToBlackBy(42);
 
-  uint16_t headA = (uint16_t)((uint32_t)(t * (0.018f + SEGMENT.speed * 0.00012f)) % 51U);
-  uint16_t headB = (uint16_t)((uint32_t)(t * (0.014f + SEGMENT.speed * 0.00009f)) % 51U);
-  uint16_t topPos = headA;
-  uint16_t bottomPos = 93 + headB;
-
-  for (int d = -10; d <= 10; d++) {
-    uint8_t bri = hat_falloff(abs(d), 11);
-    if (bri < 3) continue;
-    SEGMENT.setPixelColor(hat_wrap(topPos + d), hat_palette((uint8_t)(t / 12 + 5), bri));
-    SEGMENT.setPixelColor(hat_wrap(bottomPos + d), hat_palette((uint8_t)(t / 12 + 110), bri));
-  }
-
-  // A traveling shimmer across the connecting section (indices 51..92).
-  for (int i = 51; i <= 92; i++) {
-    float x = (float)(i - 51) / 41.0f;
-    float wave = 0.5f + 0.5f * sinf(t * 0.004f - x * 6.28318f);
-    uint8_t bri = (uint8_t)(18 + wave * 105);
-    SEGMENT.setPixelColor(i, hat_palette((uint8_t)(t / 20 + i * 3), bri));
-  }
-}
 
 // 5) Front-Center Ripple — concentric-looking waves radiate away from both
 // front-center points along the two visible rows. The rear connector glows
@@ -2776,14 +2670,10 @@ static void mode_hat_front_ripple(void) {
   }
 }
 
-static const char _data_FX_MODE_HAT_FRONT_BRAKE[] PROGMEM =
-  "Hat - Front Brake@Speed,Trail brightness,,,,;;";
-static const char _data_FX_MODE_HAT_TWIN_COMETS[] PROGMEM =
-  "Hat - Twin Front Comets@Speed,Comet width,,,,;;";
-static const char _data_FX_MODE_HAT_LIQUID_AURORA[] PROGMEM =
-  "Hat - Liquid Aurora@Speed,Color flow,,,,;;";
-static const char _data_FX_MODE_HAT_PLASMA_FORK[] PROGMEM =
-  "Hat - Plasma Fork@Speed,Energy,Trail,,,,;;";
+
+
+
+
 static const char _data_FX_MODE_HAT_FRONT_RIPPLE[] PROGMEM =
   "Hat - Front-Center Ripple@Speed,Wave width,,,,;;";
 
@@ -2914,24 +2804,7 @@ static void mode_hat_brake_comet(void) {
 // Because each one slows at the front center, the train visibly bunches up
 // there and then stretches back out as the cars speed away.
 // ---------------------------------------------------------------------------
-static void mode_hat_brake_train(void) {
-  if (SEGLEN < 144) { FX_FALLBACK_STATIC; }
-  SEGMENT.fill(BLACK);
-  uint32_t t = strip.now;
-  uint8_t cars = 3 + (SEGMENT.intensity >> 7);   // 3 or 4
-  float base = hat_brake_phase();
 
-  hat_connector_glow((uint8_t)(t / 40), 26);
-  for (uint8_t k = 0; k < cars; k++) {
-    float u = base + (float)k / (float)cars;
-    if (u >= 1.0f) u -= 1.0f;
-    float x = hat_brake_pos(u);
-    int tail = 3 + (int)(7.0f * hat_brake_speed(x));
-    uint8_t hue = (uint8_t)(t / 30 + k * (255 / cars));
-    hat_row_comet(HAT_TOP_BASE, x, 1, hue, tail);
-    hat_row_comet(HAT_BOT_BASE, x, 1, (uint8_t)(hue + 128), tail);
-  }
-}
 
 // ---------------------------------------------------------------------------
 // BRAKE 3 - Hat - Brake Wake
@@ -2940,30 +2813,7 @@ static void mode_hat_brake_train(void) {
 // so the wake is compressed and bright through the slow front-center zone and
 // stretched thin through the fast zones.
 // ---------------------------------------------------------------------------
-static void mode_hat_brake_wake(void) {
-  if (SEGLEN < 144) { FX_FALLBACK_STATIC; }
-  SEGMENT.fill(BLACK);
-  uint32_t t = strip.now;
-  float u = hat_brake_phase();
-  float total = hat_brake_total();
-  float span = 0.30f + (SEGMENT.intensity / 255.0f) * 0.55f;   // how long the wake lasts
-  float acc = 0.0f;
 
-  hat_connector_glow((uint8_t)(t / 50), 34);
-  for (int x = 0; x < HAT_ROW_LEN; x++) {
-    float arrive = acc / total;
-    acc += 1.0f / hat_brake_speed((float)x);
-    float age = u - arrive;
-    if (age < 0.0f) age += 1.0f;
-    if (age >= span) continue;
-    float f = 1.0f - age / span;
-    uint8_t b = (uint8_t)(f * f * 255.0f);
-    if (b < 3) continue;
-    uint8_t hue = (uint8_t)((int)(t / 30) + (int)(age * 180.0f));
-    SEGMENT.setPixelColor(HAT_TOP_BASE + x, hat_palette(hue, b));
-    SEGMENT.setPixelColor(HAT_BOT_BASE + x, hat_palette((uint8_t)(hue + 128), b));
-  }
-}
 
 // ---------------------------------------------------------------------------
 // BRAKE 4 - Hat - Brake Opposing
@@ -2972,20 +2822,7 @@ static void mode_hat_brake_wake(void) {
 // front at exactly the same moment, so the two heads "meet" and linger at the
 // front of the hat, then fly apart.
 // ---------------------------------------------------------------------------
-static void mode_hat_brake_opposing(void) {
-  if (SEGLEN < 144) { FX_FALLBACK_STATIC; }
-  SEGMENT.fill(BLACK);
-  uint32_t t = strip.now;
-  float x = hat_brake_pos(hat_brake_phase());
-  float xb = 46.0f - x;                       // mirror about x = 23
-  int tail = 5 + (int)(14.0f * hat_brake_speed(x)) + (SEGMENT.intensity >> 5);
-  uint8_t hue = (uint8_t)(t / 22);
 
-  hat_center_glow((uint8_t)(hue + 40), 44);
-  hat_connector_glow(hue, 30);
-  hat_row_comet(HAT_TOP_BASE, x, 1, hue, tail);
-  hat_row_comet(HAT_BOT_BASE, xb, -1, (uint8_t)(hue + 128), tail);
-}
 
 // ---------------------------------------------------------------------------
 // BRAKE 5 - Hat - Brake Burst
@@ -2993,52 +2830,14 @@ static void mode_hat_brake_opposing(void) {
 // glittering sparks into the surrounding LEDs, scaled by how slow it is, then
 // the sparks fade out as it accelerates away.
 // ---------------------------------------------------------------------------
-static void mode_hat_brake_burst(void) {
-  if (SEGLEN < 144) { FX_FALLBACK_STATIC; }
-  SEGMENT.fadeToBlackBy(60);
-  uint32_t t = strip.now;
-  float x = hat_brake_pos(hat_brake_phase());
-  uint8_t hue = (uint8_t)(t / 28);
-  hat_row_comet(HAT_TOP_BASE, x, 1, hue, 7);
-  hat_row_comet(HAT_BOT_BASE, x, 1, (uint8_t)(hue + 128), 7);
 
-  float near = 1.0f - fabsf(x - HAT_CENTER_X) / 7.0f;
-  if (near > 0.0f) {
-    uint8_t chance = (uint8_t)(near * (90 + (SEGMENT.intensity >> 1)));
-    for (uint8_t s = 0; s < 3; s++) {
-      if (hw_random8() < chance) {
-        int off = (int)hw_random8(13) - 6;
-        uint8_t b = 110 + hw_random8(120);
-        uint8_t h = (uint8_t)(hue + hw_random8(70));
-        hat_add(23 + off,  hat_palette(h, b));
-        hat_add(116 + off, hat_palette((uint8_t)(h + 128), b));
-      }
-    }
-  }
-}
 
 // ---------------------------------------------------------------------------
 // Hat - Lighthouse
 // A wide soft beam sweeps the full 144-LED loop at a steady pace over a dim
 // colour-drifting ambient glow. Simple, clean, reads well from a distance.
 // ---------------------------------------------------------------------------
-static void mode_hat_lighthouse(void) {
-  if (SEGLEN < 144) { FX_FALLBACK_STATIC; }
-  uint32_t t = strip.now;
-  uint32_t P = 6500U - (uint32_t)SEGMENT.speed * 18U;
-  if (P < 1600U) P = 1600U;
-  float c = ((float)(t % P) / (float)P) * 144.0f;
-  uint16_t width = 20 + (SEGMENT.intensity >> 3);
 
-  for (uint16_t i = 0; i < 144; i++) {
-    float dd = fabsf((float)i - c);
-    if (dd > 72.0f) dd = 144.0f - dd;
-    uint8_t beam = hat_falloff((uint16_t)dd, width);
-    uint8_t amb = (uint8_t)(14 + 8 * sinf((float)(t % 6283U) * 0.0007f + i * 0.2f));
-    uint8_t b = qadd8(beam, amb);
-    SEGMENT.setPixelColor(i, hat_palette((uint8_t)(t / 45 + i), b));
-  }
-}
 
 // ---------------------------------------------------------------------------
 // Hat - Halo Orbit
@@ -3046,26 +2845,7 @@ static void mode_hat_lighthouse(void) {
 // alternating directions. Where they overlap their colours add together, so
 // you get slow-moving bright merges that split apart again.
 // ---------------------------------------------------------------------------
-static void mode_hat_halo_orbit(void) {
-  if (SEGLEN < 144) { FX_FALLBACK_STATIC; }
-  SEGMENT.fill(BLACK);
-  uint32_t t = strip.now;
-  uint32_t baseP = 8000U - (uint32_t)SEGMENT.speed * 22U;
-  if (baseP < 2400U) baseP = 2400U;
-  int w = 9 + (SEGMENT.intensity >> 4);
 
-  for (uint8_t b = 0; b < 3; b++) {
-    uint32_t P = baseP + (baseP * b) / 3U;
-    float u = (float)(t % P) / (float)P;
-    if (b & 1) u = 1.0f - u;
-    int pos = (int)((u * 144.0f) + b * 48.0f);
-    for (int d = -w; d <= w; d++) {
-      uint8_t br = hat_falloff(abs(d), w + 1);
-      if (br < 3) continue;
-      hat_add(hat_wrap(pos + d), hat_palette((uint8_t)(b * 85 + t / 50), br));
-    }
-  }
-}
 
 // ---------------------------------------------------------------------------
 // Hat - Mirror Bloom
@@ -3128,21 +2908,7 @@ static inline float hat_bump(float ph, float c, float w) {
   return 0.5f + 0.5f * cosf(3.14159f * d / w);
 }
 
-static void mode_hat_heartbeat(void) {
-  if (SEGLEN < 144) { FX_FALLBACK_STATIC; }
-  uint32_t t = strip.now;
-  uint32_t P = 2400U - (uint32_t)SEGMENT.speed * 4U;       // >= ~1.38 s
-  float ph = (float)(t % P) / (float)P;
-  float beat = max(hat_bump(ph, 0.10f, 0.12f), 0.65f * hat_bump(ph, 0.34f, 0.12f));
-  uint16_t width = 14 + (SEGMENT.intensity >> 4) + (uint16_t)(beat * 26.0f);
-  uint8_t amp = (uint8_t)(beat * 255.0f);
 
-  for (uint16_t i = 0; i < 144; i++) {
-    uint16_t d = min(hat_dist(i, 23), hat_dist(i, 116));
-    uint8_t b = qadd8(scale8(hat_falloff(d, width), amp), 10);
-    SEGMENT.setPixelColor(i, hat_palette((uint8_t)(t / 60 + d * 2), b));
-  }
-}
 
 // ---------------------------------------------------------------------------
 // Hat - Meteor Rain
@@ -3290,65 +3056,29 @@ static void mode_hat_pendulum(void) {
 // colour worlds with a slow wave of its own - like two threads weaving
 // through each other around the hat.
 // ---------------------------------------------------------------------------
-static void mode_hat_rail_weave(void) {
-  if (SEGLEN < 144) { FX_FALLBACK_STATIC; }
-  uint32_t t = strip.now;
-  uint32_t P = 3600U - (uint32_t)SEGMENT.speed * 9U;
-  if (P < 1400U) P = 1400U;
-  float tt = 6.28318f * (float)(t % P) / (float)P;
-  float freq = 0.26f + (SEGMENT.intensity >> 5) * 0.02f;
-  uint8_t hue = (uint8_t)(t / 40);
 
-  for (uint16_t i = 0; i < 144; i++) {
-    float s;
-    uint8_t h;
-    if (i <= 50) {
-      s = sinf(i * freq - tt);
-      h = (uint8_t)(hue + i * 2);
-    } else if (i >= 93) {
-      float x = (float)(i - 93);
-      s = sinf(x * freq + tt);
-      h = (uint8_t)((int)hue + 128 + (int)(x * 2.0f));
-    } else {
-      float f = (float)(i - 51) / 41.0f;
-      s = sinf(f * 9.42f + tt * 0.5f);
-      h = (uint8_t)((int)hue + (int)(f * 128.0f));
-    }
-    float crest = 0.5f + 0.5f * s;
-    uint8_t b = (uint8_t)(15 + crest * crest * 240.0f);
-    SEGMENT.setPixelColor(i, hat_palette(h, b));
-  }
-}
 
 // ----- Effect metadata (name@sliders;colors;palette;flags;defaults) -----
 static const char _data_FX_MODE_HAT_BRAKE_COMET[] PROGMEM =
   "Hat - Brake Comet@Speed,Tail;!,!;!;1;sx=128,ix=128,pal=11";
-static const char _data_FX_MODE_HAT_BRAKE_TRAIN[] PROGMEM =
-  "Hat - Brake Train@Speed,Cars;!,!;!;1;sx=128,ix=128,pal=11";
-static const char _data_FX_MODE_HAT_BRAKE_WAKE[] PROGMEM =
-  "Hat - Brake Wake@Speed,Wake length;!,!;!;1;sx=128,ix=128,pal=11";
-static const char _data_FX_MODE_HAT_BRAKE_OPPOSING[] PROGMEM =
-  "Hat - Brake Opposing@Speed,Tail;!,!;!;1;sx=128,ix=128,pal=11";
-static const char _data_FX_MODE_HAT_BRAKE_BURST[] PROGMEM =
-  "Hat - Brake Burst@Speed,Sparks;!,!;!;1;sx=128,ix=160,pal=11";
-static const char _data_FX_MODE_HAT_LIGHTHOUSE[] PROGMEM =
-  "Hat - Lighthouse@Speed,Beam width;!,!;!;1;sx=100,ix=128,pal=11";
-static const char _data_FX_MODE_HAT_HALO_ORBIT[] PROGMEM =
-  "Hat - Halo Orbit@Speed,Halo size;!,!;!;1;sx=110,ix=128,pal=11";
+
+
+
+
+
+
 static const char _data_FX_MODE_HAT_MIRROR_BLOOM[] PROGMEM =
   "Hat - Mirror Bloom@Speed,Ring width;!,!;!;1;sx=110,ix=128,pal=11";
 static const char _data_FX_MODE_HAT_DOUBLE_HELIX[] PROGMEM =
   "Hat - Double Helix@Speed,Twist;!,!;!;1;sx=120,ix=100,pal=11";
-static const char _data_FX_MODE_HAT_HEARTBEAT[] PROGMEM =
-  "Hat - Heartbeat@Speed,Spread;!,!;!;1;sx=120,ix=128,pal=35";
+
 static const char _data_FX_MODE_HAT_METEOR_RAIN[] PROGMEM =
   "Hat - Meteor Rain@Speed,Spawn rate;!,!;!;1;sx=140,ix=128,pal=11";
 static const char _data_FX_MODE_HAT_FIRE_CROWN[] PROGMEM =
   "Hat - Fire Crown@Cooling,Sparks;;;1;sx=120,ix=140";
 static const char _data_FX_MODE_HAT_PENDULUM[] PROGMEM =
   "Hat - Pendulum@Speed,Bob size;!,!;!;1;sx=120,ix=128,pal=11";
-static const char _data_FX_MODE_HAT_RAIL_WEAVE[] PROGMEM =
-  "Hat - Rail Weave@Speed,Wave density;!,!;!;1;sx=120,ix=100,pal=11";
+
 
 
 // ============================================================================
@@ -3368,7 +3098,7 @@ static const uint8_t hat3_gradients[15][5][3] PROGMEM = {
   {{  1,  7, 32},{  0, 88,255},{142, 12,255},{255, 62, 90},{  1,  7, 32}}, // 3 Vortex: blue / purple / coral
   {{  6,  0, 31},{160,  4,255},{255, 28,153},{255,121,  6},{  6,  0, 31}}, // 4 Dragonfire: violet / magenta / ember
   {{  2, 17, 36},{  0,239,255},{ 61, 68,255},{227, 30,255},{  2, 17, 36}}, // 5 Diamonds: cyan / sapphire / amethyst
-  {{  4,  6, 37},{  0,242,185},{255,  8, 96},{252,246,210},{  4,  6, 37}}, // 6 Collider: mint / hot red / white gold
+  {{ 18,  0, 25},{108,  0, 63},{255, 12,116},{255,111, 32},{ 18,  0, 25}}, // 6 Collider: aubergine, ruby, hot pink, molten amber; no cyan or white
   {{  0, 17, 28},{  0,191,218},{ 71,255,112},{173, 55,255},{  0, 17, 28}}, // 7 Aurora: teal / lime / orchid
   {{  3,  1, 27},{  0, 97,245},{246,  7,207},{255,168, 40},{  3,  1, 27}}, // 8 Julia: electric / violet / amber
   {{  4,  0, 31},{255, 34,185},{  0,231,255},{211,255, 88},{  4,  0, 31}}, // 9 Ink: pink / aqua / chartreuse
@@ -3472,123 +3202,19 @@ static void mode_hat3_prism_guillotine(void) {
 
 // 02 — HYPERNOVA BLOOM. Unequally spaced radial shells erupt at both center
 // points with lingering chromatic shock fronts and fine star-shot particles.
-static void mode_hat3_hypernova_bloom(void) {
-  if (SEGLEN < 144) FX_FALLBACK_STATIC;
-  SEGMENT.fill(BLACK);
-  uint32_t t = strip.now;
-  uint16_t period = 4100U - (uint16_t)SEGMENT.speed * 8U;
-  uint8_t phase = (uint32_t)(t % period) * 255U / period;
-  for (uint8_t row = 0; row < 2; row++) {
-    uint8_t rp = phase + row * 32;
-    for (uint8_t x = 0; x < 51; x++) {
-      uint8_t r = (uint8_t)abs((int)x - 23);
-      uint8_t aura = scale8(hat3_sin8((uint8_t)(r * 9 + phase / 2 + row * 67)), 43);
-      uint8_t light = aura;
-      uint8_t hue = (uint8_t)(r * 7 + phase + row * 28);
-      for (uint8_t wave = 0; wave < 3; wave++) {
-        uint8_t a = (uint8_t)(rp + wave * 89);
-        int16_t shell = (uint16_t)a * 40U / 255U;
-        uint8_t glow = hat3_peak((int16_t)r - shell, 4 + (SEGMENT.intensity >> 7));
-        light = qadd8(light, scale8(glow, 235 - wave * 40));
-        if (glow > 130) hue = (uint8_t)(wave * 78 + phase / 3 + row * 25);
-      }
-      if (hat3_hash(x + row*51, t / 105) > 250) light = qadd8(light, 130);
-      hat3_add(hat3_rowpos(row,x), 1, hue, light);
-    }
-  }
-  uint8_t flash = hat3_peak((int16_t)phase, 24);
-  hat3_spot(0,23,9,1,162,flash);
-  hat3_spot(1,23,9,1,162,flash);
-  hat3_back(1,phase,32 + scale8(flash,55));
-}
+
 
 // 03 — QUANTUM BRAIDS. Three counterpropagating, phase-modulated strands
 // weave into knots which collapse into narrow cyan-white interference crests.
-static void mode_hat3_quantum_braids(void) {
-  if (SEGLEN < 144) FX_FALLBACK_STATIC;
-  SEGMENT.fill(BLACK);
-  uint32_t t = strip.now;
-  uint8_t phase = (uint8_t)(t / (16 + ((255-SEGMENT.speed)>>4)));
-  for (uint8_t row = 0; row < 2; row++) {
-    for (uint8_t x = 0; x < 51; x++) {
-      uint8_t xx = x * 7;
-      uint8_t s0 = hat3_sin8(xx + phase);
-      uint8_t s1 = hat3_sin8(xx * 2 - phase * 2 + row * 71);
-      uint8_t s2 = hat3_sin8(xx * 3 + phase * 3 + row * 37);
-      uint8_t knot = qadd8(scale8(s0,s1), scale8(s1,s2));
-      uint8_t crest = (knot > (210 - (SEGMENT.intensity >> 4))) ? qsub8(knot,155) : 0;
-      uint8_t energy = qadd8(scale8(s0,74),qadd8(scale8(s2,45),scale8(crest,255)));
-      uint8_t h = (uint8_t)(s1 + x * 4 + (s2 >> 2));
-      hat3_add(hat3_rowpos(row,x),2,h,energy);
-      if (crest > 65 && (x % 5 == 0)) hat3_add(hat3_rowpos(row,x),2,174,115);
-    }
-  }
-  hat3_back(2,phase,59);
-}
+
 
 // 04 — CHROMATIC VORTEX. A front-anchored rotating lens distorts four color
 // currents; a wandering dark eye reveals crystalline rims and broad caustics.
-static void mode_hat3_chromatic_vortex(void) {
-  if (SEGLEN < 144) FX_FALLBACK_STATIC;
-  SEGMENT.fill(BLACK);
-  uint32_t t = strip.now;
-  uint8_t slow = (uint8_t)(t/(26+((255-SEGMENT.speed)>>4)));
-  int16_t eye = 23 + ((int16_t)hat3_sin8(slow) - 128) / 15;
-  for (uint8_t row = 0; row < 2; row++) {
-    for (uint8_t x = 0; x < 51; x++) {
-      int16_t dx = (int16_t)x - eye;
-      uint8_t d = abs(dx);
-      uint8_t swirl = hat3_sin8((uint8_t)(d * 17 + slow * 2 + (dx < 0 ? 53 : 0) + row * 115));
-      uint8_t twist = hat3_sin8((uint8_t)(x * 11 - slow * 3 + row * 41));
-      uint8_t corona = hat3_peak((int16_t)d - (7 + (hat3_sin8(slow*2)>>6)),5);
-      uint8_t depth = (d < 3) ? 7 : scale8(qadd8(swirl,twist),150);
-      uint8_t val = qadd8(depth, scale8(corona,185));
-      uint8_t hue = (uint8_t)(swirl + 2 * x + slow + row * 34);
-      hat3_add(hat3_rowpos(row,x),3,hue,val);
-    }
-  }
-  hat3_back(3,slow*2,45);
-}
+
 
 // 05 — DRAGONFIRE. A persistent heat field with front-side fuel injection,
 // advection, curl-like turbulence, cooling and shifting violet/orange flames.
-static void mode_hat3_dragonfire(void) {
-  if (SEGLEN < 144) FX_FALLBACK_STATIC;
-  if (!SEGENV.allocateData(204)) FX_FALLBACK_STATIC;
-  uint8_t* a = SEGENV.data;        // 2 rows * 51
-  uint8_t* b = SEGENV.data + 102;
-  uint32_t t = strip.now;
-  if (SEGENV.call == 0) { memset(a,0,204); SEGENV.step = t; }
-  if (t - SEGENV.step >= 35) {
-    SEGENV.step = t;
-    for (uint8_t row = 0; row < 2; row++) {
-      for (uint8_t x = 0; x < 51; x++) {
-        uint8_t i = row*51+x;
-        uint8_t l = a[row*51+(x?x-1:0)];
-        uint8_t r = a[row*51+(x<50?x+1:50)];
-        uint8_t n = a[i];
-        uint8_t adv = (x<23) ? r : l;
-        uint16_t heat = (uint16_t)n*2 + l + r + adv*2;
-        uint8_t cool = 3 + (hw_random8(12) >> 2) + ((uint8_t)abs((int)x-23)>>3);
-        b[i] = qsub8((uint8_t)(heat/6),cool);
-        if (abs((int)x-23)<5 && hw_random8() < 32 + (SEGMENT.intensity >> 1))
-          b[i] = qadd8(b[i],hw_random8(95,255));
-      }
-    }
-    memcpy(a,b,102);
-  }
-  for (uint8_t row=0;row<2;row++) {
-    for (uint8_t x=0;x<51;x++) {
-      uint8_t h = a[row*51+x];
-      uint8_t turbulence = hat3_sin8((uint8_t)(x*23 + t/35 + row*83));
-      uint8_t b = qadd8(scale8(h,240),scale8(turbulence,22));
-      uint8_t hue = (uint8_t)(h/2 + x*3 + (t/80) + row*39);
-      hat3_add(hat3_rowpos(row,x),4,hue,b);
-      if (h>222) hat3_add(hat3_rowpos(row,x),4,180,scale8(h-222,245));
-    }
-  }
-  hat3_back(4,(uint8_t)(t/42),32);
-}
+
 
 // 06 — DIAMOND RAIN. Persistent refractive crystals accelerate across the
 // arcs; faceted halos and broken rainbow reflections follow every crossing.
@@ -3634,7 +3260,7 @@ static void mode_hat3_diamond_rain(void) {
 // intersections create bright multi-ring annihilation bursts and afterglow.
 static void mode_hat3_supercollider(void) {
   if (SEGLEN < 144) FX_FALLBACK_STATIC;
-  SEGMENT.fadeToBlackBy(82);
+  SEGMENT.fadeToBlackBy(105);
   uint32_t t=strip.now;
   uint16_t cycle=3100U-(uint16_t)SEGMENT.speed*6U;
   uint16_t u=t%cycle;
@@ -3645,18 +3271,18 @@ static void mode_hat3_supercollider(void) {
     int16_t a=23-(uint16_t)motion*23U/255U;
     int16_t b=23+(uint16_t)motion*27U/255U;
     uint8_t hue=(uint8_t)(t/47+row*59);
-    hat3_spot(row,a,5,6,hue,225);
-    hat3_spot(row,b,5,6,hue+116,225);
+    hat3_spot(row,a,5,6,hue,190);
+    hat3_spot(row,b,5,6,hue+116,190);
     if (phase>110 && phase<180) {
       uint8_t expand=(uint16_t)(phase-110)*38U/70U;
-      uint8_t fire=(phase<145)?255:(uint16_t)(180-phase)*255U/35U;
+      uint8_t fire=(phase<145)?212:(uint16_t)(180-phase)*212U/35U;
       for (uint8_t x=0;x<51;x++) {
         uint8_t ripple=hat3_peak(abs((int)x-23)-(int16_t)expand,4);
         hat3_add(hat3_rowpos(row,x),6,(uint8_t)(phase+x*4+row*35),scale8(ripple,fire));
       }
     }
   }
-  hat3_back(6,(uint8_t)(t/35),50);
+  hat3_back(6,(uint8_t)(t/35),23);
 }
 
 // 08 — AURORA CATHEDRAL. Three-octave flowing noise, vertically coupled
@@ -3917,10 +3543,10 @@ static void mode_hat3_crown_of_seraphs(void) {
 // WLED metadata. "Use WLED palette" is OFF by default; each effect uses its
 // own neon gradient until toggled. Choose intensity/speed defaults for motion.
 static const char _data_FX_MODE_HAT3_PRISM_GUILLOTINE[] PROGMEM = "Hat III - Prism Guillotine@Blade speed,Width,,,,WLED palette;!,!;!;1;sx=158,ix=165,o1=0";
-static const char _data_FX_MODE_HAT3_HYPERNOVA_BLOOM[] PROGMEM = "Hat III - Hypernova Bloom@Expansion,Shell width,,,,WLED palette;!,!;!;1;sx=145,ix=168,o1=0";
-static const char _data_FX_MODE_HAT3_QUANTUM_BRAIDS[] PROGMEM = "Hat III - Quantum Braids@Phase velocity,Knot density,,,,WLED palette;!,!;!;1;sx=125,ix=150,o1=0";
-static const char _data_FX_MODE_HAT3_CHROMATIC_VORTEX[] PROGMEM = "Hat III - Chromatic Vortex@Spin velocity,Corona,,,,WLED palette;!,!;!;1;sx=138,ix=160,o1=0";
-static const char _data_FX_MODE_HAT3_DRAGONFIRE[] PROGMEM = "Hat III - Dragonfire@Cooling,Fuel,,,,WLED palette;!,!;!;1;sx=163,ix=183,o1=0";
+
+
+
+
 static const char _data_FX_MODE_HAT3_DIAMOND_RAIN[] PROGMEM = "Hat III - Diamond Rain@Velocity,Crystal density,,,,WLED palette;!,!;!;1;sx=142,ix=172,o1=0";
 static const char _data_FX_MODE_HAT3_SUPERCOLLIDER[] PROGMEM = "Hat III - Supercollider@Approach speed,Burst,,,,WLED palette;!,!;!;1;sx=149,ix=165,o1=0";
 static const char _data_FX_MODE_HAT3_AURORA_CATHEDRAL[] PROGMEM = "Hat III - Aurora Cathedral@Flow,Depth,,,,WLED palette;!,!;!;1;sx=112,ix=155,o1=0";
@@ -3990,36 +3616,31 @@ strip.addEffect(255, &mode_z_prism_cascade, _data_FX_MODE_Z_PRISM_CASCADE);
     strip.addEffect(255, &mode_z_infinite_corridor, _data_FX_MODE_Z_INFINITE_CORRIDOR);
 
     // Z - Hat FX Pack (144 physical LEDs; use these effects on the hat controller)
-    strip.addEffect(255, &mode_hat_front_brake, _data_FX_MODE_HAT_FRONT_BRAKE);
-    strip.addEffect(255, &mode_hat_twin_comets, _data_FX_MODE_HAT_TWIN_COMETS);
-    strip.addEffect(255, &mode_hat_liquid_aurora, _data_FX_MODE_HAT_LIQUID_AURORA);
-    strip.addEffect(255, &mode_hat_plasma_fork, _data_FX_MODE_HAT_PLASMA_FORK);
+
+
     strip.addEffect(255, &mode_hat_front_ripple, _data_FX_MODE_HAT_FRONT_RIPPLE);
 
     // Hat FX Pack II - five "brake" effects (fast -> slow at front center -> fast)
     strip.addEffect(255, &mode_hat_brake_comet, _data_FX_MODE_HAT_BRAKE_COMET);
-    strip.addEffect(255, &mode_hat_brake_train, _data_FX_MODE_HAT_BRAKE_TRAIN);
-    strip.addEffect(255, &mode_hat_brake_wake, _data_FX_MODE_HAT_BRAKE_WAKE);
-    strip.addEffect(255, &mode_hat_brake_opposing, _data_FX_MODE_HAT_BRAKE_OPPOSING);
-    strip.addEffect(255, &mode_hat_brake_burst, _data_FX_MODE_HAT_BRAKE_BURST);
+
+
+
 
     // Hat FX Pack II - nine more
-    strip.addEffect(255, &mode_hat_lighthouse, _data_FX_MODE_HAT_LIGHTHOUSE);
-    strip.addEffect(255, &mode_hat_halo_orbit, _data_FX_MODE_HAT_HALO_ORBIT);
+
+
     strip.addEffect(255, &mode_hat_mirror_bloom, _data_FX_MODE_HAT_MIRROR_BLOOM);
     strip.addEffect(255, &mode_hat_double_helix, _data_FX_MODE_HAT_DOUBLE_HELIX);
-    strip.addEffect(255, &mode_hat_heartbeat, _data_FX_MODE_HAT_HEARTBEAT);
+
     strip.addEffect(255, &mode_hat_meteor_rain, _data_FX_MODE_HAT_METEOR_RAIN);
     strip.addEffect(255, &mode_hat_fire_crown, _data_FX_MODE_HAT_FIRE_CROWN);
     strip.addEffect(255, &mode_hat_pendulum, _data_FX_MODE_HAT_PENDULUM);
-    strip.addEffect(255, &mode_hat_rail_weave, _data_FX_MODE_HAT_RAIL_WEAVE);
+
 
     // New Hat Spectacular III suite: 15 curated, multi-layer effects.
     strip.addEffect(255, &mode_hat3_prism_guillotine, _data_FX_MODE_HAT3_PRISM_GUILLOTINE);
-    strip.addEffect(255, &mode_hat3_hypernova_bloom, _data_FX_MODE_HAT3_HYPERNOVA_BLOOM);
-    strip.addEffect(255, &mode_hat3_quantum_braids, _data_FX_MODE_HAT3_QUANTUM_BRAIDS);
-    strip.addEffect(255, &mode_hat3_chromatic_vortex, _data_FX_MODE_HAT3_CHROMATIC_VORTEX);
-    strip.addEffect(255, &mode_hat3_dragonfire, _data_FX_MODE_HAT3_DRAGONFIRE);
+
+
     strip.addEffect(255, &mode_hat3_diamond_rain, _data_FX_MODE_HAT3_DIAMOND_RAIN);
     strip.addEffect(255, &mode_hat3_supercollider, _data_FX_MODE_HAT3_SUPERCOLLIDER);
     strip.addEffect(255, &mode_hat3_aurora_cathedral, _data_FX_MODE_HAT3_AURORA_CATHEDRAL);
