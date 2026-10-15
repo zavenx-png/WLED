@@ -2975,29 +2975,25 @@ static void mode_hat_fire_crown(void) {
 // opposite rhythm of the Brake effects. The two rows swing half a period
 // apart, and the bob's colour shifts with its velocity.
 // ---------------------------------------------------------------------------
+// HAT VIII PENDULUM: rendering helper below keeps both moving heads on their
+// real 47-LED physical front-to-back paths. No imaginary second rear strip.
+static void hat8_pendulum_draw(uint8_t row,float p,uint8_t hue,uint8_t power);
+// Pendulum VIII: both moving heads actually traverse the shared rear point,
+// one from the top front (LED25) and one from lower front (LED117). Smooth
+// cosine turns at LED71; lower path visits 116..93..92..70, not just 93..143.
 static void mode_hat_pendulum(void) {
-  if (SEGLEN < 144) { FX_FALLBACK_STATIC; }
-  SEGMENT.fadeToBlackBy(60);
-  uint32_t t = strip.now;
-  uint32_t P = 3800U - (uint32_t)SEGMENT.speed * 8U;
-  if (P < 1700U) P = 1700U;
-  float u = (float)(t % P) / (float)P;
-  int w = 2 + (SEGMENT.intensity >> 7);
-
-  for (uint8_t row = 0; row < 2; row++) {
-    float ph = 6.28318f * u + row * 3.14159f;
-    float x = (float)hat_row_center(row) + (float)hat_row_center(row) * sinf(ph);
-    float vel = cosf(ph);
-    uint8_t hue = (uint8_t)((int)(150 + vel * 60.0f) + row * 90);
-    uint16_t base = row ? HAT_BOT_BASE : HAT_TOP_BASE;
-    int xc = (int)roundf(x);
-    for (int d = -w; d <= w; d++) {
-      int xi = xc + d;
-      if (xi < 0 || xi >= HAT_ROW_LEN) continue;
-      SEGMENT.setPixelColor(base + xi, hat_palette(hue, hat_falloff(abs(d), w + 1)));
-    }
+  if (SEGLEN<144) FX_FALLBACK_STATIC;
+  SEGMENT.fadeToBlackBy(98);
+  const uint32_t t=strip.now;
+  const uint32_t period=5400U-(uint32_t)SEGMENT.speed*11U;
+  const float angle=6.28318530718f*(float)(t%period)/(float)period;
+  for(uint8_t row=0;row<2;row++){
+    float phase=angle+(row?3.14159265f:0.0f);
+    float position=23.0f*(1.0f-cosf(phase)); // position 0..46
+    float velocity=sinf(phase);
+    uint8_t hue=(uint8_t)(116U+row*73U+(uint32_t)t/105U+(velocity>0?20U:97U));
+    hat8_pendulum_draw(row,position,hue,(uint8_t)(205U+(SEGMENT.intensity>>3)));
   }
-  hat_connector_glow((uint8_t)(t / 60), 22);
 }
 
 // ---------------------------------------------------------------------------
@@ -3704,6 +3700,244 @@ static const char _data_FX_MODE_HAT7_SATIN_DUET[] PROGMEM =
 static const char _data_FX_MODE_HAT7_PETAL_GLITTERFALL[] PROGMEM =
   "Hat VII - Petal Glitterfall@Fall speed,Shimmer,,,,WLED palette;!,!;!;1;sx=132,ix=185,o1=0";
 
+
+// ============================================================================
+// HAT VIII — METEOR CHOREOGRAPHY
+// Physical paths, zero-based:
+//    UPPER front 24 -> [25..50] -> [51..70] rear common pixel
+//    LOWER front 116 -> [115..93] -> [92..70] same rear common pixel
+// Entire wired LED chain is 0..143, with one back connector, not two.
+// Four effects share a curated warm palette renderer and fractional-pixel
+// feathering. Every meteor is fade-gated across its launch/reset boundary.
+// ============================================================================
+// Velvet ruby / pink / copper / champagne: 4 unique fixed palettes.
+static const uint8_t hat8_palettes[4][5][3] PROGMEM={
+  {{ 11, 0, 23},{125, 4, 83},{255,20,142},{255,151, 60},{ 11, 0, 23}}, // twin: damson / hot rose / honey
+  {{ 18, 0, 18},{148, 6, 57},{244,32,108},{253,120, 68},{ 18, 0, 18}}, // rear bounce: cherry / coral / copper
+  {{ 13, 0, 27},{107, 5,116},{222,26,187},{245,157, 75},{ 13, 0, 27}}, // crossover: mulberry / orchid / champagne
+  {{ 18, 1, 18},{160, 7, 45},{255,41,134},{255,180, 71},{ 18, 1, 18}}  // full circuit: garnet / lipstick / gold
+};
+static inline uint32_t hat8_color(uint8_t scheme,uint8_t hue,uint8_t power){
+  if(SEGMENT.check1)return color_fade(SEGMENT.color_from_palette(hue,true,true,0),power);
+  uint16_t scaled=(uint16_t)hue*4U;uint8_t k=scaled>>8;uint8_t f=(uint8_t)scaled;
+  uint8_t r=hat3_mix8(pgm_read_byte(&hat8_palettes[scheme][k][0]),pgm_read_byte(&hat8_palettes[scheme][k+1][0]),f);
+  uint8_t g=hat3_mix8(pgm_read_byte(&hat8_palettes[scheme][k][1]),pgm_read_byte(&hat8_palettes[scheme][k+1][1]),f);
+  uint8_t b=hat3_mix8(pgm_read_byte(&hat8_palettes[scheme][k][2]),pgm_read_byte(&hat8_palettes[scheme][k+1][2]),f);
+  return RGBW32(scale8(r,power),scale8(g,power),scale8(b,power),0);
+}
+static inline void hat8_add(uint16_t led,uint8_t scheme,uint8_t hue,uint8_t power){
+  if(led>=144||power<2)return;
+  uint32_t c=hat8_color(scheme,hue,power),old=SEGMENT.getPixelColor(led);
+  SEGMENT.setPixelColor(led,RGBW32(
+    R(old)>R(c)?R(old):R(c),
+    G(old)>G(c)?G(old):G(c),
+    B(old)>B(c)?B(old):B(c),0));
+}
+static inline uint8_t hat8_feather(float delta,float radius,uint8_t power){
+  float x=1.0f-fabsf(delta)/radius;
+  if(x<=0.0f)return 0;
+  x=x*x*(3.0f-2.0f*x);
+  return (uint8_t)((float)power*x);
+}
+static inline float hat8_ease(float t) {return t*t*(3.0f-2.0f*t);}
+static inline uint8_t hat8_envelope(float p) {
+  // Ramps are dark at cycle boundaries, so reset/reseeding never teleports.
+  float v=sinf(3.14159265f*p);
+  if(v<0.0f)v=0.0f;
+  return (uint8_t)(v*255.0f);
+}
+static inline uint16_t hat8_path(uint8_t row,uint8_t n){
+  return row?(uint16_t)(116U-n):(uint16_t)(24U+n);
+}
+static void hat8_stroke_path(uint8_t row,float pos,float radius,uint8_t scheme,uint8_t hue,uint8_t power){
+  int16_t a=(int16_t)floorf(pos-radius),b=(int16_t)ceilf(pos+radius);
+  if(a<0)a=0;if(b>46)b=46;
+  for(int16_t n=a;n<=b;n++)
+    hat8_add(hat8_path(row,(uint8_t)n),scheme,(uint8_t)(hue+n*3),
+             hat8_feather((float)n-pos,radius,power));
+}
+static void hat8_stroke_front(uint8_t row,float x,float radius,uint8_t scheme,uint8_t hue,uint8_t power){
+  int16_t a=(int16_t)floorf(x-radius),b=(int16_t)ceilf(x+radius);
+  if(a<0)a=0;if(b>50)b=50;
+  for(int16_t n=a;n<=b;n++)
+    hat8_add((row?93U:0U)+(uint16_t)n,scheme,(uint8_t)(hue+n*3),
+             hat8_feather((float)n-x,radius,power));
+}
+static void hat8_stroke_full(float x,float radius,uint8_t scheme,uint8_t hue,uint8_t power){
+  int16_t a=(int16_t)floorf(x-radius),b=(int16_t)ceilf(x+radius);
+  if(a<0)a=0;if(b>143)b=143;
+  for(int16_t n=a;n<=b;n++)
+    hat8_add((uint16_t)n,scheme,(uint8_t)(hue+n*2),
+             hat8_feather((float)n-x,radius,power));
+}
+// Complete continuous upper-front -> common-back -> lower-front route.
+static inline uint16_t hat8_bridge(uint8_t step){
+  return (step<=46U)?(uint16_t)(24U+step):(uint16_t)(70U+step-46U);
+}
+static void hat8_stroke_bridge(float x,float radius,uint8_t scheme,uint8_t hue,uint8_t power){
+  int16_t a=(int16_t)floorf(x-radius),b=(int16_t)ceilf(x+radius);
+  if(a<0)a=0;if(b>92)b=92;
+  for(int16_t n=a;n<=b;n++)
+    hat8_add(hat8_bridge((uint8_t)n),scheme,(uint8_t)(hue+n*2),
+             hat8_feather((float)n-x,radius,power));
+}
+static void hat8_tail_path(uint8_t row,float head,bool forward,uint8_t scheme,
+                           uint8_t hue,uint8_t power){
+  hat8_stroke_path(row,head,3.2f,scheme,hue,power);
+  for(uint8_t k=1;k<=6;k++){
+    float offset=forward?(head-2.0f*(float)k):(head+2.0f*(float)k);
+    uint8_t v=(uint8_t)((uint16_t)power*(uint16_t)(7U-k)*(uint16_t)(7U-k)/130U);
+    hat8_stroke_path(row,offset,2.5f,scheme,(uint8_t)(hue+k*10U),v);
+  }
+}
+// Pendulum's actual physical route renderer. Unlike the previous version,
+// the lower pendulum does not stop at bottom-row LED94.
+static void hat8_pendulum_draw(uint8_t row,float p,uint8_t hue,uint8_t power) {
+  for(uint8_t k=0;k<3;k++){
+    float x=p-(float)k*2.4f;
+    float radius=k?2.8f:4.8f;
+    uint8_t light=k?scale8(power,(uint8_t)(122U-k*38U)):power;
+    int16_t a=(int16_t)floorf(x-radius),b=(int16_t)ceilf(x+radius);
+    if(a<0)a=0;if(b>46)b=46;
+    for(int16_t n=a;n<=b;n++){
+      uint8_t fade=hat8_feather((float)n-x,radius,light);
+      uint16_t led=hat8_path(row,(uint8_t)n);
+      uint32_t newc=hat_palette((uint8_t)(hue+n*2U),fade);
+      uint32_t prev=SEGMENT.getPixelColor(led);
+      SEGMENT.setPixelColor(led,RGBW32(
+        R(newc)>R(prev)?R(newc):R(prev),
+        G(newc)>G(prev)?G(newc):G(prev),
+        B(newc)>B(prev)?B(newc):B(prev),0));
+    }
+  }
+}
+
+// 01 METEOR TWIN SYNC (replaces the original Meteor Rain):
+// Synchronized head/tail pairs launch from the OVERLAPPING front straps in
+// precisely the same direction and frame. Paired local positions are upper
+// center x24 and lower center x23; optional dim rear echoes arrive together.
+// Random-seeded launch direction changes only during black-frame envelope.
+static void mode_hat_meteor_rain(void) {
+  if(SEGLEN<144)FX_FALLBACK_STATIC;
+  SEGMENT.fill(BLACK);
+  uint32_t t=strip.now;
+  uint32_t cycle=4400U-(uint32_t)SEGMENT.speed*9U;
+  for(uint8_t id=0;id<4;id++){
+    uint32_t local=t+(uint32_t)id*cycle/4U;
+    uint32_t epoch=local/cycle;
+    float p=(float)(local%cycle)/(float)cycle;
+    uint8_t envelope=hat8_envelope(p);
+    uint8_t strength=scale8(envelope,(uint8_t)(183U+(SEGMENT.intensity>>2)));
+    if(strength<3)continue;
+    int8_t side=(hat3_hash(id+29U,(uint16_t)epoch)&1U)?1:-1;
+    float travel=31.0f*hat8_ease(p);
+    uint8_t hue=(uint8_t)(95U+id*41U+epoch*17U);
+    for(uint8_t row=0;row<2;row++){
+      float x=(float)hat_row_center(row)+(float)side*travel;
+      // Same x offset and same color timing on both overlapping front straps.
+      hat8_stroke_front(row,x,3.5f,0,(uint8_t)(hue+row*6U),strength);
+      for(uint8_t k=1;k<=4;k++)
+        hat8_stroke_front(row,x-(float)side*(float)k*2.5f,2.4f,0,
+                          (uint8_t)(hue+k*9U),scale8(strength,(uint8_t)(110U-k*22U)));
+    }
+    // Pair-synchronized back crossing, at the same temporal phase.
+    if(side<0){
+      float back=46.0f*hat8_ease(p);
+      hat8_stroke_path(0,back,2.0f,0,(uint8_t)(hue+75U),scale8(strength,90));
+      hat8_stroke_path(1,back,2.0f,0,(uint8_t)(hue+75U),scale8(strength,90));
+    }
+  }
+}
+
+// 02 METEOR REAR RICOCHET: independent luminous packets glide from each
+// overlapping front anchor to the SAME real rear pixel, bounce smoothly and
+// return. Staggered dance timing: they do not look like cloned front twins.
+static void mode_hat8_meteor_rear_ricochet(void) {
+  if(SEGLEN<144)FX_FALLBACK_STATIC;
+  SEGMENT.fadeToBlackBy(117);
+  uint32_t t=strip.now;
+  uint32_t period=5650U-(uint32_t)SEGMENT.speed*10U;
+  float theta=6.28318530718f*(float)(t%period)/(float)period;
+  for(uint8_t row=0;row<2;row++)for(uint8_t id=0;id<3;id++){
+    float angle=theta+(float)id*2.0943951f+(row?0.83f:0.0f);
+    float pos=23.0f*(1.0f-cosf(angle));
+    bool goingRear=sinf(angle)>0.0f;
+    uint8_t hue=(uint8_t)(89U+id*62U+row*29U+t/174U);
+    uint8_t power=(uint8_t)(183U+(SEGMENT.intensity>>2));
+    hat8_tail_path(row,pos,goingRear,1,hue,power);
+    // Only trigger glint at the rear when one head physically gets there.
+    if(pos>44.0f)hat8_stroke_path(row,pos,2.3f,1,189,228);
+  }
+}
+
+// 03 METEOR CROSSOVER: a single traveling route joins TOP front, SHARED REAR
+// and BOTTOM front. Three dancers trade sides through actual LED71 without
+// teleportation. Cross-fades and variable path speeds change how they weave.
+static void mode_hat8_meteor_crossover(void) {
+  if(SEGLEN<144)FX_FALLBACK_STATIC;
+  SEGMENT.fadeToBlackBy(108);
+  uint32_t t=strip.now;
+  uint32_t cycle=8400U-(uint32_t)SEGMENT.speed*14U;
+  float theta=6.28318530718f*(float)(t%cycle)/(float)cycle;
+  for(uint8_t k=0;k<3;k++){
+    float phase=theta+(float)k*2.0943951f;
+    float pos=46.0f*(1.0f-cosf(phase)); // 0..92
+    bool forward=sinf(phase)>0.0f;
+    uint8_t hue=(uint8_t)(105U+k*71U+t/270U);
+    uint8_t power=(uint8_t)(202U+(SEGMENT.intensity>>3));
+    hat8_stroke_bridge(pos,3.7f,2,hue,power);
+    // Trailing facets extend along the actual connected 93-LED route.
+    for(uint8_t tail=1;tail<=5;tail++){
+      float behind=pos+(forward?-1.0f:1.0f)*(float)tail*2.8f;
+      uint8_t light=scale8(power,(uint8_t)(145U-tail*21U));
+      hat8_stroke_bridge(behind,2.5f,2,(uint8_t)(hue+tail*11U),light);
+    }
+    if(fabsf(pos-46.0f)<2.5f)
+      hat8_stroke_bridge(pos,2.5f,2,195,224);
+  }
+}
+
+// 04 METEOR WHOLE CIRCUIT: the meteor finally travels the ENTIRE 144-pixel
+// physically wired strip (both far ends, both overlapping front centers,
+// and the one rear connector), reversing gently at strip endpoints.
+// Multiple head/tail trains follow the full chain, so none of the hat goes dark.
+static void mode_hat8_meteor_whole_circuit(void) {
+  if(SEGLEN<144)FX_FALLBACK_STATIC;
+  SEGMENT.fadeToBlackBy(107);
+  uint32_t t=strip.now;
+  uint32_t period=12500U-(uint32_t)SEGMENT.speed*23U;
+  float theta=6.28318530718f*(float)(t%period)/(float)period;
+  for(uint8_t k=0;k<4;k++){
+    float a=theta+(float)k*1.57079633f;
+    float pos=71.5f*(1.0f-cosf(a)); // physical indexes 0 through 143
+    bool forward=sinf(a)>0.0f;
+    uint8_t hue=(uint8_t)(91U+k*43U+t/190U);
+    uint8_t power=(uint8_t)(210U+(SEGMENT.intensity>>3));
+    hat8_stroke_full(pos,4.0f,3,hue,power);
+    for(uint8_t tail=1;tail<=7;tail++){
+      float behind=pos+(forward?-1.0f:1.0f)*(float)tail*2.6f;
+      hat8_stroke_full(behind,2.8f,3,(uint8_t)(hue+tail*9U),
+                        scale8(power,(uint8_t)(160U-tail*18U)));
+    }
+    // The wearer sees coincident impact flashes only while the head is
+    // actually close to the two OVERLAPPING front centers (24 and 116).
+    float near24=fabsf(pos-24.0f),near116=fabsf(pos-116.0f);
+    if(near24<3.0f||near116<3.0f){
+      float n=(near24<near116)?near24:near116;
+      uint8_t flash=(uint8_t)((3.0f-n)*55.0f);
+      hat8_stroke_full(24.0f,2.3f,3,184,flash);
+      hat8_stroke_full(116.0f,2.3f,3,184,flash);
+    }
+  }
+}
+
+static const char _data_FX_MODE_HAT8_METEOR_REAR_RICOCHET[] PROGMEM =
+ "Hat VIII - Meteor Rear Ricochet@Bounce speed,Dramatic trails,,,,WLED palette;!,!;!;1;sx=136,ix=180,o1=0";
+static const char _data_FX_MODE_HAT8_METEOR_CROSSOVER[] PROGMEM =
+ "Hat VIII - Meteor Crossover@Crossover speed,Trail depth,,,,WLED palette;!,!;!;1;sx=129,ix=187,o1=0";
+static const char _data_FX_MODE_HAT8_METEOR_WHOLE_CIRCUIT[] PROGMEM =
+ "Hat VIII - Meteor Whole Circuit@Orbit speed,Full-strip shimmer,,,,WLED palette;!,!;!;1;sx=146,ix=192,o1=0";
+
 class UserFxUsermod : public Usermod {
  private:
  public:
@@ -3796,6 +4030,11 @@ strip.addEffect(255, &mode_z_prism_cascade, _data_FX_MODE_Z_PRISM_CASCADE);
     strip.addEffect(255, &mode_hat7_velvet_switchblade, _data_FX_MODE_HAT7_VELVET_SWITCHBLADE);
     strip.addEffect(255, &mode_hat7_satin_duet, _data_FX_MODE_HAT7_SATIN_DUET);
     strip.addEffect(255, &mode_hat7_petal_glitterfall, _data_FX_MODE_HAT7_PETAL_GLITTERFALL);
+
+    // Hat VIII — Three additional physical-layout meteor dances.
+    strip.addEffect(255, &mode_hat8_meteor_rear_ricochet, _data_FX_MODE_HAT8_METEOR_REAR_RICOCHET);
+    strip.addEffect(255, &mode_hat8_meteor_crossover, _data_FX_MODE_HAT8_METEOR_CROSSOVER);
+    strip.addEffect(255, &mode_hat8_meteor_whole_circuit, _data_FX_MODE_HAT8_METEOR_WHOLE_CIRCUIT);
 
   }
 
