@@ -2910,54 +2910,9 @@ static inline float hat_bump(float ph, float c, float w) {
 // toward either side, trailing long fading tails. Spawn rate and speed are
 // adjustable. Uses a small persistent pool of meteors.
 // ---------------------------------------------------------------------------
-struct HatMeteor {
-  float x;
-  int8_t dir;
-  uint8_t hue;
-  uint8_t row;       // 0 = top, 1 = bottom
-  bool active;
-};
-constexpr uint8_t HAT_MAX_METEORS = 8;
+// Meteor Rain is now rendered by the Hat VIII synchronized meteor family.
 
-static void mode_hat_meteor_rain(void) {
-  if (SEGLEN < 144) { FX_FALLBACK_STATIC; }
-  if (!SEGENV.allocateData(sizeof(HatMeteor) * HAT_MAX_METEORS)) { FX_FALLBACK_STATIC; }
-  HatMeteor* m = reinterpret_cast<HatMeteor*>(SEGENV.data);
 
-  uint32_t now = strip.now;
-  if (SEGENV.call == 0) {
-    for (uint8_t i = 0; i < HAT_MAX_METEORS; i++) m[i].active = false;
-    SEGENV.step = now;
-  }
-  uint32_t dt = now - SEGENV.step;
-  if (dt > 100) dt = 100;
-  SEGENV.step = now;
-
-  // Spawn
-  if (hw_random8() < (3 + (SEGMENT.intensity >> 5))) {
-    for (uint8_t i = 0; i < HAT_MAX_METEORS; i++) {
-      if (!m[i].active) {
-        m[i].active = true;
-        m[i].dir = hw_random8(2) ? 1 : -1;
-        m[i].hue = hw_random8();
-        m[i].row = hw_random8(2);
-        m[i].x = (float)hat_row_center(m[i].row);
-        break;
-      }
-    }
-  }
-
-  SEGMENT.fill(BLACK);
-  float v = 20.0f + SEGMENT.speed * 0.35f;                  // LEDs per second
-  for (uint8_t i = 0; i < HAT_MAX_METEORS; i++) {
-    if (!m[i].active) continue;
-    m[i].x += m[i].dir * v * (dt / 1000.0f);
-    if (m[i].x < -14.0f || m[i].x > (float)(HAT_ROW_LEN - 1) + 14.0f) { m[i].active = false; continue; }
-    uint16_t base = m[i].row ? HAT_BOT_BASE : HAT_TOP_BASE;
-    hat_row_comet(base, m[i].x, m[i].dir, m[i].hue, 13);
-  }
-  hat_rear_stage((uint8_t)(strip.now/32U),219);
-}
 
 // ---------------------------------------------------------------------------
 // Hat - Fire Crown
@@ -3068,7 +3023,7 @@ static const char _data_FX_MODE_HAT_DOUBLE_HELIX[] PROGMEM =
   "Hat - Double Helix@Speed,Twist;!,!;!;1;sx=120,ix=100,pal=11";
 
 static const char _data_FX_MODE_HAT_METEOR_RAIN[] PROGMEM =
-  "Hat - Meteor Rain@Speed,Spawn rate;!,!;!;1;sx=140,ix=128,pal=11";
+  "Hat VIII - Meteor Twin Sync@Meteor velocity,Paired density,,,,WLED palette;!,!;!;1;sx=140,ix=165,o1=0";
 static const char _data_FX_MODE_HAT_FIRE_CROWN[] PROGMEM =
   "Hat - Fire Crown@Cooling,Sparks;;;1;sx=120,ix=140";
 static const char _data_FX_MODE_HAT_PENDULUM[] PROGMEM =
@@ -3214,98 +3169,34 @@ struct Hat3Diamond { int16_t pos; int8_t velocity; uint8_t row,hue,life; };
 // actually merge at one rear pixel (LED 71). Cosine easing turns them around
 // without jumps or teleports; subpixel interpolated beams animate through all
 // intermediate connector LEDs. Colors stay ruby / fuchsia / amber / plum.
-static inline void hat3_collider_pixel(uint16_t px,uint8_t hue,uint8_t power) {
-  if(px>=144 || power<3)return;
-  uint32_t c=hat3_color(6,hue,power);
-  uint32_t previous=SEGMENT.getPixelColor(px);
-  // Channel-wise maximum avoids blinding white where the two paths overlap.
-  SEGMENT.setPixelColor(px,RGBW32(
-    R(previous)>R(c)?R(previous):R(c),
-    G(previous)>G(c)?G(previous):G(c),
-    B(previous)>B(c)?B(previous):B(c),0));
-}
-static void hat3_collider_path(uint8_t row,float progress,bool headingRear,
-                               uint8_t hue,uint8_t headPower,uint8_t tailLength) {
-  const float head=progress*46.0f;
-  // Each route is 47 physical LEDs inclusive, front 0 to common rear 46.
-  for(uint8_t n=0;n<=46;n++) {
-    float distance=fabsf((float)n-head);
-    float trailing=headingRear ? (head-(float)n) : ((float)n-head);
-    uint8_t light=0;
-    if(distance<3.0f) {
-      float shape=1.0f-distance/3.0f;
-      light=(uint8_t)(headPower*shape*shape);
-    }
-    if(trailing>=0.0f && trailing<(float)tailLength) {
-      float w=1.0f-trailing/(float)tailLength;
-      uint8_t tail=(uint8_t)(96.0f*w*w);
-      if(tail>light)light=tail;
-    }
-    if(light<3)continue;
-    uint16_t px=row?(uint16_t)(116-n):(uint16_t)(24+n);
-    uint8_t strokeHue=(uint8_t)(hue+(int16_t)n*3+(row?36:0));
-    hat3_collider_pixel(px,strokeHue,light);
-  }
-}
+
+
 static void mode_hat3_supercollider(void) {
-  if(SEGLEN<144)FX_FALLBACK_STATIC;
+  if (SEGLEN < 144) FX_FALLBACK_STATIC;
+  SEGMENT.fadeToBlackBy(105);
   uint32_t t=strip.now;
-  // 4.9s -> 2.35s total front-back-front cycle, determined by speed.
-  uint32_t cycle=4900U-(uint32_t)SEGMENT.speed*10U;
-  float phase=6.28318530718f*(float)(t%cycle)/(float)cycle;
-  // 0=both front centers, 1=one shared rear center, 0=front again.
-  float progress=0.5f-0.5f*cosf(phase);
-  bool headingRear=(t%cycle)<cycle/2U;
-  uint8_t hue=(uint8_t)(94+t/130U);
-  uint8_t headPower=(uint8_t)(176U+(SEGMENT.intensity>>2));
-  uint8_t tailLength=(uint8_t)(7U+(SEGMENT.intensity>>5));
-
-  SEGMENT.fadeToBlackBy(103);
-  hat3_collider_path(0,progress,headingRear,hue,headPower,tailLength);
-  hat3_collider_path(1,progress,headingRear,(uint8_t)(hue+65U),
-                     headPower,tailLength);
-
-  // Front consists of TWO superposed light strips, not one LED.
-  // A brief ruby-pink impact accent happens only at the actual turnaround.
-  if(progress<0.065f){
-    uint8_t focus=(uint8_t)((0.065f-progress)*255.0f/0.065f);
-    uint8_t energy=scale8(focus,(uint8_t)(165U+(SEGMENT.intensity>>3)));
-    hat3_collider_pixel(24,187,energy);
-    hat3_collider_pixel(116,190,energy);
-    for(uint8_t row=0;row<2;row++){
-      uint16_t center=row?116:24;
-      for(int8_t delta=-3;delta<=3;delta++){
-        int16_t idx=(int16_t)center+delta;
-        if(idx>=0&&idx<144)
-          hat3_collider_pixel((uint16_t)idx,(uint8_t)(175+delta*8),
-                              scale8(energy,hat3_peak(delta,4)));
+  uint16_t cycle=3100U-(uint16_t)SEGMENT.speed*6U;
+  uint16_t u=t%cycle;
+  uint8_t phase=(uint32_t)u*255U/cycle;
+  for (uint8_t row=0;row<2;row++) {
+    // mirror in time: approach -> impact -> explosion
+    uint8_t motion=(phase<115)?(115-phase)*255U/115U:(phase-115)*255U/140U;
+    const int16_t center=hat_row_center(row);
+    int16_t a=center-(uint16_t)motion*center/255U;
+    int16_t b=center+(uint16_t)motion*(50-center)/255U;
+    uint8_t hue=(uint8_t)(t/47+row*59);
+    hat3_spot(row,a,5,6,hue,190);
+    hat3_spot(row,b,5,6,hue+116,190);
+    if (phase>110 && phase<180) {
+      uint8_t expand=(uint16_t)(phase-110)*38U/70U;
+      uint8_t fire=(phase<145)?212:(uint16_t)(180-phase)*212U/35U;
+      for (uint8_t x=0;x<51;x++) {
+        uint8_t ripple=hat3_peak(abs((int)x-center)-(int16_t)expand,4);
+        hat3_add(hat3_rowpos(row,x),6,(uint8_t)(phase+x*4+row*35),scale8(ripple,fire));
       }
     }
   }
-  // Rear is a SINGLE LED arc shared by both paths. Make the convergence
-  // unmistakable, but do not paint an always-on or separate rear spotlight.
-  if(progress>0.925f){
-    uint8_t focus=(uint8_t)((progress-0.925f)*255.0f/0.075f);
-    uint8_t energy=scale8(focus,230);
-    hat3_collider_pixel(HAT_BACK_CENTER,194,energy);
-    for(int8_t delta=-4;delta<=4;delta++){
-      int16_t idx=HAT_BACK_CENTER+delta;
-      if(idx>=51&&idx<=92)
-        hat3_collider_pixel((uint16_t)idx,(uint8_t)(195+delta*8),
-                            scale8(energy,hat3_peak(delta,5)));
-    }
-  }
-  // Side arc edges (top 0..23 and lower 117..143) receive sparse reflected
-  // kinetic color, while the primary, brightly animated routes stay dominant.
-  uint8_t ambient=(uint8_t)(14+(SEGMENT.intensity>>5));
-  for(uint8_t x=0;x<24;x++){
-    uint8_t micro=hat3_sin8((uint8_t)(x*17+t/41));
-    hat3_collider_pixel(x,(uint8_t)(90+x*6+t/176),scale8(micro,ambient));
-  }
-  for(uint8_t x=117;x<144;x++){
-    uint8_t micro=hat3_sin8((uint8_t)((x-117)*17-t/43));
-    hat3_collider_pixel(x,(uint8_t)(142+x*4+t/182),scale8(micro,ambient));
-  }
+  hat3_back(6,(uint8_t)(t/35),23);
 }
 
 
@@ -3746,120 +3637,22 @@ static void mode_hat7_satin_duet(void){
 // 03 ORCHID MINUET — two opposing waltz trios rock from side to side across
 // the upper/lower crowns, with the back in a third counterpoint rhythm.
 // Elliptical harmonic paths + anti-aliased light spill create a flowing dance.
-static void mode_hat7_orchid_minuet(void){
-  if(SEGLEN<144)FX_FALLBACK_STATIC;
-  SEGMENT.fill(BLACK);
-  const uint32_t t=strip.now;
-  const uint32_t period=7600U-(uint32_t)SEGMENT.speed*16U;
-  const float theta=6.28318530718f*(float)(t%period)/(float)period;
-  for(uint8_t row=0;row<2;row++){
-    for(uint8_t k=0;k<3;k++){
-      float a=theta+(float)k*2.094395f+(row?2.34f:0.0f);
-      float x=(float)hat_row_center(row)+17.8f*sinf(a)+3.0f*sinf(2.0f*a+1.10f);
-      uint8_t hue=(uint8_t)(67U+k*58U+row*36U+t/215U);
-      hat7_beam_row(row,x,4.0f,2,hue,218);
-      hat7_beam_row(row,x-3.5f*sinf(a+1.2f),2.5f,2,(uint8_t)(hue+53),68);
-      // Only beat-specific crossing produces glitter, not a pinned center.
-      if(fabsf(x-(float)hat_row_center(row))<1.4f)
-        hat7_beam_row(row,x,2.1f,2,(uint8_t)(hue+96),233);
-    }
-  }
-  hat7_rear_dance(2,theta+2.0f,208,(uint8_t)(178U+t/210U));
-}
+
 
 // 04 CHAMPAGNE STARDUST — uncorrelated warm scintillation across BOTH front
 // arcs and all 42 rear pixels. Each star grows and decays with a fourth-power
 // symmetric envelope: never frame-to-frame random toggling or full-white flash.
-static void mode_hat7_champagne_stardust(void){
-  if(SEGLEN<144)FX_FALLBACK_STATIC;
-  SEGMENT.fill(BLACK);
-  const uint32_t t=strip.now;
-  const uint8_t density=(uint8_t)(95U+(SEGMENT.intensity>>2));
-  // 38 stable star locations; the rear receives 12 guaranteed independent ones.
-  for(uint8_t id=0;id<38;id++){
-    uint16_t px;
-    if(id<13)px=(uint16_t)((id*19U+hat3_hash(id,7))%51U);
-    else if(id<26)px=(uint16_t)(93U+(id*23U+hat3_hash(id,11))%51U);
-    else px=(uint16_t)(51U+((id-26U)*13U+hat3_hash(id,21))%42U);
-    uint8_t energy=hat7_pulse(t,id,(uint16_t)(1700U+(id%5U)*370U),37);
-    energy=scale8(energy,(uint8_t)(175U+(density>>1)));
-    if(energy>7)hat7_glint(px,3,(uint8_t)(90U+id*29U+t/234U),energy);
-  }
-  // Soft champagne nebula travels across the rear, but the center is not a
-  // constant glowing "beacon".
-  float phase=6.28318530718f*(float)(t%8700U)/8700.0f;
-  hat7_rear_dance(3,phase,75,189);
-}
+
 
 // 05 AMETHYST FIREFLIES — drifting points that float, dim, and rekindle,
 // different motion on top, lower and rear arcs. All positions are fractional,
 // and occasional luminous clusters bloom where fireflies physically converge.
-static void mode_hat7_amethyst_fireflies(void){
-  if(SEGLEN<144)FX_FALLBACK_STATIC;
-  SEGMENT.fill(BLACK);
-  const uint32_t t=strip.now;
-  // Different whole cycles for each firefly prevent all creatures reversing in sync.
-  const uint32_t basePeriod=16500U-(uint32_t)SEGMENT.speed*22U;
-  for(uint8_t row=0;row<2;row++){
-    for(uint8_t id=0;id<11;id++){
-      uint32_t duration=basePeriod+(uint32_t)(id%5U)*1790U;
-      float phase=6.28318530718f*(float)(t%duration)/(float)duration
-                 +(float)id*2.399963f+row*1.4f;
-      float x=(float)hat_row_center(row)+
-        20.0f*sinf(phase)+2.8f*sinf(2.0f*phase+id);
-      uint8_t tw=hat7_pulse(t,id+row*23U,(uint16_t)(2400U+id*140U),73);
-      uint8_t power=qadd8(48U,scale8(tw,(uint8_t)(146U+(SEGMENT.intensity>>2))));
-      hat7_beam_row(row,x,2.5f+(float)(id%3U)*0.4f,4,
-                    (uint8_t)(id*31U+row*72U+t/210U),power);
-    }
-  }
-  for(uint8_t id=0;id<10;id++){
-    uint32_t duration=basePeriod+(uint32_t)(id%6U)*1370U;
-    float phase=6.28318530718f*(float)(t%duration)/(float)duration+id*1.63f;
-    float x=70.0f+17.0f*sinf(phase)+3.0f*sinf(phase*2.0f);
-    uint8_t tw=hat7_pulse(t,id+61U,2100U+(uint16_t)id*175U,41);
-    hat7_beam_rear(x,2.5f,4,(uint8_t)(81U+id*43U+t/164U),
-                   qadd8(57U,scale8(tw,184)));
-  }
-}
+
 
 // 06 GARNET CONSTELLATION — paired shifting star maps, softly connected by
 // disappearing lines of rose-gold dust. Rear stars form their own moving arc;
 // nodes are always changing brightness, not permanent center lights.
-static void mode_hat7_garnet_constellation(void){
-  if(SEGLEN<144)FX_FALLBACK_STATIC;
-  SEGMENT.fill(BLACK);
-  const uint32_t t=strip.now;
-  const float theta=6.28318530718f*(float)(t%13100U)/13100.0f;
-  for(uint8_t row=0;row<2;row++){
-    float prior=0.0f;
-    for(uint8_t id=0;id<7;id++){
-      float offset=((float)id-3.0f)*6.5f;
-      float x=(float)hat_row_center(row)+offset+
-                    2.0f*sinf(theta*2.0f+id*1.38f+row*1.2f);
-      uint8_t envelope=hat7_pulse(t,id+row*11U,(uint16_t)(1900U+id*360U),54);
-      uint8_t power=qadd8(74U,scale8(envelope,169));
-      uint8_t hue=(uint8_t)(87U+id*36U+row*26U+t/300U);
-      hat7_beam_row(row,x,2.6f,5,hue,power);
-      // Moving fine-grain threads: dotted luminous nodes between pairs.
-      if(id>0){
-        for(uint8_t link=1;link<5;link++){
-          float at=prior+(x-prior)*(float)link/5.0f;
-          hat7_beam_row(row,at,1.05f,5,(uint8_t)(hue+33U),
-                        (uint8_t)(28U+scale8(envelope,35)));
-        }
-      }
-      prior=x;
-    }
-  }
-  for(uint8_t id=0;id<9;id++){
-    float phase=theta+id*0.7f;
-    float x=52.0f+(float)id*4.6f+1.6f*sinf(phase);
-    uint8_t tw=hat7_pulse(t,id+43U,(uint16_t)(2200U+id*260U),87);
-    hat7_beam_rear(x,2.3f,5,(uint8_t)(153U+id*19U+t/355U),
-                   qadd8(52U,scale8(tw,191)));
-  }
-}
+
 
 // 07 PETAL GLITTERFALL — flecks of gilded petals glide in staggered, smooth
 // streams from the TWO front centers, flow into the ONE rear arc, and dissipate
@@ -3904,14 +3697,10 @@ static const char _data_FX_MODE_HAT7_VELVET_SWITCHBLADE[] PROGMEM =
   "Hat VII - Velvet Switchblade@Dance speed,Blade intensity,,,,WLED palette;!,!;!;1;sx=144,ix=180,o1=0";
 static const char _data_FX_MODE_HAT7_SATIN_DUET[] PROGMEM =
   "Hat VII - Satin Duet@Waltz tempo,Glow,,,,WLED palette;!,!;!;1;sx=136,ix=185,o1=0";
-static const char _data_FX_MODE_HAT7_ORCHID_MINUET[] PROGMEM =
-  "Hat VII - Orchid Minuet@Tempo,Glide intensity,,,,WLED palette;!,!;!;1;sx=125,ix=173,o1=0";
-static const char _data_FX_MODE_HAT7_CHAMPAGNE_STARDUST[] PROGMEM =
-  "Hat VII - Champagne Stardust@Twinkle speed,Density,,,,WLED palette;!,!;!;1;sx=118,ix=172,o1=0";
-static const char _data_FX_MODE_HAT7_AMETHYST_FIREFLIES[] PROGMEM =
-  "Hat VII - Amethyst Fireflies@Drift speed,Glow,,,,WLED palette;!,!;!;1;sx=133,ix=175,o1=0";
-static const char _data_FX_MODE_HAT7_GARNET_CONSTELLATION[] PROGMEM =
-  "Hat VII - Garnet Constellation@Morph tempo,Sparkle,,,,WLED palette;!,!;!;1;sx=105,ix=175,o1=0";
+
+
+
+
 static const char _data_FX_MODE_HAT7_PETAL_GLITTERFALL[] PROGMEM =
   "Hat VII - Petal Glitterfall@Fall speed,Shimmer,,,,WLED palette;!,!;!;1;sx=132,ix=185,o1=0";
 
@@ -4006,10 +3795,6 @@ strip.addEffect(255, &mode_z_prism_cascade, _data_FX_MODE_Z_PRISM_CASCADE);
     // HAT VII — Velvet Motion & Stardust: seven new curated 144-LED effects.
     strip.addEffect(255, &mode_hat7_velvet_switchblade, _data_FX_MODE_HAT7_VELVET_SWITCHBLADE);
     strip.addEffect(255, &mode_hat7_satin_duet, _data_FX_MODE_HAT7_SATIN_DUET);
-    strip.addEffect(255, &mode_hat7_orchid_minuet, _data_FX_MODE_HAT7_ORCHID_MINUET);
-    strip.addEffect(255, &mode_hat7_champagne_stardust, _data_FX_MODE_HAT7_CHAMPAGNE_STARDUST);
-    strip.addEffect(255, &mode_hat7_amethyst_fireflies, _data_FX_MODE_HAT7_AMETHYST_FIREFLIES);
-    strip.addEffect(255, &mode_hat7_garnet_constellation, _data_FX_MODE_HAT7_GARNET_CONSTELLATION);
     strip.addEffect(255, &mode_hat7_petal_glitterfall, _data_FX_MODE_HAT7_PETAL_GLITTERFALL);
 
   }
