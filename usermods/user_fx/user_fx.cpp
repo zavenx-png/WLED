@@ -3703,6 +3703,7 @@ static const char _data_FX_MODE_HAT7_PETAL_GLITTERFALL[] PROGMEM =
 
 // ============================================================================
 // HAT VIII — METEOR CHOREOGRAPHY (ESP8266 / nodemcuv2)
+// CI refresh: verify the four meteor effects and corrected Pendulum on ESP8266.
 // Physical paths, zero-based:
 //    UPPER front 24 -> [25..50] -> [51..70] rear common pixel
 //    LOWER front 116 -> [115..93] -> [92..70] same rear common pixel
