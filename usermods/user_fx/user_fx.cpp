@@ -2823,6 +2823,8 @@ static const char _data_FX_MODE_Z_METEOR_ECHO_RAIN[] PROGMEM =
 //   op 4: power on; op 5: power off
 //   op 6: brightness +16; op 7: brightness -16
 //   op 8: ping (does not change lights)
+//   op 9: select Nth registered Z - effect (0-based)
+//   op 10: set speed 0..255; op 11: set intensity 0..255
 // ACK: broadcast 13 bytes:
 //   [0..3] "ZHA1"; [4] version=1; [5] echoed operation;
 //   [6] status (0=accepted, 1=invalid command); [7] brightness;
@@ -2903,6 +2905,32 @@ static void zh_radio_process(void) {
         stateUpdated(CALL_MODE_BUTTON);
         break;
       case 8: // ping / connection test
+        break;
+      case 9: { // 0-based index among registered Z - effects
+        uint8_t found=0;
+        bool applied=false;
+        for (uint16_t mode=0; mode<strip.getModeCount(); ++mode) {
+          const char* desc=strip.getModeData(mode);
+          if (!desc || strncmp_P(desc,PSTR("Z -"),3)!=0) continue;
+          if (found++ == val) {
+            changeEffect((uint8_t)mode);
+            stateUpdated(CALL_MODE_BUTTON);
+            applied=true;
+            break;
+          }
+        }
+        if (!applied) status=1;
+        break;
+      }
+      case 10: // absolute speed
+        effectSpeed=val;
+        applyValuesToSelectedSegs();
+        stateUpdated(CALL_MODE_BUTTON);
+        break;
+      case 11: // absolute intensity
+        effectIntensity=val;
+        applyValuesToSelectedSegs();
+        stateUpdated(CALL_MODE_BUTTON);
         break;
       default:
         status=1;
