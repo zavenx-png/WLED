@@ -2627,6 +2627,299 @@ static const char _data_FX_MODE_Z_INFINITE_CORRIDOR[] PROGMEM =
   "Z - Infinite Corridor@Speed,Spacing,Floor,;!,!;!;01";
 
 
+// ============================================================================
+// HARNESS METEOR BALLET — inspired by Hat VIII's smooth, feathered meteors.
+// All movement is on the 595-position 20-section virtual path. No hat midpoint,
+// 144-LED length, rear crossover, or hat-specific physical coordinates are used.
+// Revisited physical sections are combined by per-channel MAX, not added.
+// ============================================================================
+static const uint8_t zm_warm_palettes[5][5][3] PROGMEM = {
+  {{ 11, 0, 23},{125, 4, 83},{255,20,142},{255,151, 60},{ 11, 0, 23}},
+  {{ 18, 0, 18},{148, 6, 57},{244,32,108},{253,120, 68},{ 18, 0, 18}},
+  {{ 13, 0, 27},{107, 5,116},{222,26,187},{245,157, 75},{ 13, 0, 27}},
+  {{ 18, 1, 18},{160, 7, 45},{255,41,134},{255,180, 71},{ 18, 1, 18}},
+  {{  9, 2, 30},{ 82, 9,136},{195,45,232},{252,144,120},{  9, 2, 30}}
+};
+
+static inline uint8_t zm_mix8(uint8_t a, uint8_t b, uint8_t f) {
+  return (uint8_t)((((uint16_t)a * (255U-f)) + ((uint16_t)b * f) + 127U) / 255U);
+}
+static inline uint32_t zm_color(uint8_t scheme, uint8_t hue, uint8_t power) {
+  if (SEGMENT.check1)
+    return color_fade(SEGMENT.color_from_palette(hue, true, true, 0), power);
+  uint16_t u = (uint16_t)hue * 4U;
+  uint8_t k = (uint8_t)(u >> 8);
+  uint8_t f = (uint8_t)u;
+  uint8_t r = zm_mix8(pgm_read_byte(&zm_warm_palettes[scheme][k][0]),
+                       pgm_read_byte(&zm_warm_palettes[scheme][k+1][0]), f);
+  uint8_t g = zm_mix8(pgm_read_byte(&zm_warm_palettes[scheme][k][1]),
+                       pgm_read_byte(&zm_warm_palettes[scheme][k+1][1]), f);
+  uint8_t b = zm_mix8(pgm_read_byte(&zm_warm_palettes[scheme][k][2]),
+                       pgm_read_byte(&zm_warm_palettes[scheme][k+1][2]), f);
+  return RGBW32(scale8(r,power),scale8(g,power),scale8(b,power),0);
+}
+static inline void zm_add(uint16_t virtualLed, uint8_t scheme,
+                          uint8_t hue, uint8_t power) {
+  if (power < 2U || virtualLed >= CHUNCHUN_HARNESS_PATH_LEN) return;
+  uint16_t logical = zh_path_led(virtualLed);
+  uint32_t c = zm_color(scheme, hue, power);
+  uint32_t prev = SEGMENT.getPixelColor(logical);
+  SEGMENT.setPixelColor(logical, RGBW32(
+    R(prev)>R(c)?R(prev):R(c),
+    G(prev)>G(c)?G(prev):G(c),
+    B(prev)>B(c)?B(prev):B(c), 0));
+}
+static inline uint8_t zm_feather(float distance, float radius, uint8_t power) {
+  float x = 1.0f - fabsf(distance)/radius;
+  if (x <= 0.0f) return 0;
+  x = x*x*(3.0f-2.0f*x);
+  return (uint8_t)((float)power*x);
+}
+static inline float zm_ease(float t) { return t*t*(3.0f-2.0f*t); }
+static inline uint8_t zm_envelope(float p) {
+  float s=sinf(3.1415926535f*p);
+  return (s>0.0f)?(uint8_t)(255.0f*s):0U;
+}
+static inline uint32_t zm_hash(uint32_t v) {
+  v ^= v>>16; v *= 0x7feb352dU; v ^= v>>15;
+  v *= 0x846ca68bU; v ^= v>>16; return v;
+}
+static void zm_stroke(float pos, float radius, uint8_t scheme,
+                      uint8_t hue, uint8_t power, bool wrap) {
+  const int32_t L = CHUNCHUN_HARNESS_PATH_LEN;
+  int32_t a=(int32_t)floorf(pos-radius), b=(int32_t)ceilf(pos+radius);
+  // Limit work to the small tail/head neighborhood even when off-strip.
+  for (int32_t n=a; n<=b; n++) {
+    int32_t at = n;
+    if (wrap) { at %= L; if (at<0) at+=L; }
+    else if (at<0 || at>=L) continue;
+    zm_add((uint16_t)at,scheme,(uint8_t)(hue+(n&15)*2),
+           zm_feather((float)n-pos,radius,power));
+  }
+}
+static void zm_tail(float pos, int8_t direction, uint8_t scheme,
+                    uint8_t hue, uint8_t power, uint8_t tailLength, bool wrap) {
+  zm_stroke(pos,3.8f,scheme,hue,power,wrap);
+  for (uint8_t k=1; k<=tailLength; k++) {
+    float behind=pos-(float)direction*(2.7f*(float)k);
+    uint16_t amount=(uint16_t)(tailLength+1-k);
+    uint16_t denom=(uint16_t)(tailLength+1)*(uint16_t)(tailLength+1);
+    uint8_t light=(uint8_t)((uint32_t)power*amount*amount/denom);
+    zm_stroke(behind,2.7f,scheme,(uint8_t)(hue+k*11U),light,wrap);
+  }
+}
+
+// 1. Continuous wrap-around meteors. The full 595 virtual positions are used,
+//    including the final six repeated sections and all original overlaps.
+static void mode_z_meteor_circuit(void) {
+  if (SEGLEN < 291) FX_FALLBACK_STATIC;
+  SEGMENT.fill(BLACK);
+  const uint16_t L=CHUNCHUN_HARNESS_PATH_LEN;
+  const uint32_t cycle=13500U-(uint32_t)SEGMENT.speed*29U;
+  const float phase=(float)(strip.now%cycle)/(float)cycle;
+  uint8_t trains=(SEGMENT.intensity<110)?2U:((SEGMENT.intensity<205)?3U:4U);
+  for (uint8_t k=0; k<trains; k++) {
+    float head=(float)L*(phase+(float)k/(float)trains);
+    if (head>=L) head-=L;
+    zm_tail(head,1,3,(uint8_t)(94U+k*53U+strip.now/350U),235U,8U,true);
+  }
+}
+static const char _data_FX_MODE_Z_METEOR_CIRCUIT[] PROGMEM =
+  "Z - Meteor Circuit@Speed,Trains,,,,Use palette;!,!;!;1;sx=143,ix=175,o1=0";
+
+// 2. Two matched meteors reverse together from opposite ends of the virtual
+//    path. Repeated P0/P2/P3 LEDs form synchronized physical echoes.
+static void mode_z_meteor_twin_sync(void) {
+  if (SEGLEN < 291) FX_FALLBACK_STATIC;
+  SEGMENT.fill(BLACK);
+  const uint32_t cycle=6900U-(uint32_t)SEGMENT.speed*15U;
+  float theta=6.283185307f*(float)(strip.now%cycle)/(float)cycle;
+  float p=0.5f*(1.0f-cosf(theta));
+  float end=(float)(CHUNCHUN_HARNESS_PATH_LEN-1U);
+  int8_t forward=(sinf(theta)>=0.0f)?1:-1;
+  uint8_t power=(uint8_t)(180U+(SEGMENT.intensity>>2));
+  zm_tail(p*end,forward,0,(uint8_t)(97U+strip.now/420U),power,7U,false);
+  zm_tail(end*(1.0f-p),-forward,0,(uint8_t)(102U+strip.now/420U),power,7U,false);
+}
+static const char _data_FX_MODE_Z_METEOR_TWIN_SYNC[] PROGMEM =
+  "Z - Meteor Twin Sync@Speed,Glow,,,,Use palette;!,!;!;1;sx=136,ix=165,o1=0";
+
+// 3. Staggered heads bounce smoothly at the ends, inspired by Hat VIII's
+//    rear ricochet; no physical hat rear midpoint is assumed.
+static void mode_z_meteor_ricochet(void) {
+  if (SEGLEN < 291) FX_FALLBACK_STATIC;
+  SEGMENT.fill(BLACK);
+  const float end=(float)(CHUNCHUN_HARNESS_PATH_LEN-1U);
+  const uint32_t cycle=9850U-(uint32_t)SEGMENT.speed*22U;
+  float theta=6.283185307f*(float)(strip.now%cycle)/(float)cycle;
+  uint8_t count=(SEGMENT.intensity<160)?2U:3U;
+  for (uint8_t i=0; i<count; i++) {
+    float a=theta+(6.283185307f*(float)i/(float)count);
+    float p=0.5f*(1.0f-cosf(a));
+    int8_t dir=(sinf(a)>=0.0f)?1:-1;
+    zm_tail(p*end,dir,1,(uint8_t)(85U+i*68U+strip.now/500U),230U,8U,false);
+  }
+}
+static const char _data_FX_MODE_Z_METEOR_RICOCHET[] PROGMEM =
+  "Z - Meteor Ricochet@Speed,Heads,,,,Use palette;!,!;!;1;sx=126,ix=175,o1=0";
+
+// 4. Opposing comet trains glide past each other at offset phases. Overlapping
+//    virtual passes are blended by MAX on the same logical physical LEDs.
+static void mode_z_meteor_crossover(void) {
+  if (SEGLEN < 291) FX_FALLBACK_STATIC;
+  SEGMENT.fill(BLACK);
+  const float L=(float)CHUNCHUN_HARNESS_PATH_LEN;
+  const uint32_t cycle=11300U-(uint32_t)SEGMENT.speed*24U;
+  const float p=(float)(strip.now%cycle)/(float)cycle;
+  uint8_t count=(SEGMENT.intensity<160)?3U:4U;
+  for (uint8_t i=0; i<count; i++) {
+    float x=p+(float)i/(float)count;
+    x-=floorf(x);
+    int8_t dir=(i&1U)?-1:1;
+    float pos=(dir>0)?(x*L):((1.0f-x)*L);
+    zm_tail(pos,dir,2,(uint8_t)(101U+i*62U+strip.now/600U),224U,8U,true);
+  }
+}
+static const char _data_FX_MODE_Z_METEOR_CROSSOVER[] PROGMEM =
+  "Z - Meteor Crossover@Speed,Weave,,,,Use palette;!,!;!;1;sx=136,ix=184,o1=0";
+
+// 5. Traveling bursts with soft spawn/despawn envelopes, no jumps or flashes.
+//    Different epochs get deterministic warm colors and forward/backward runs.
+static void mode_z_meteor_echo_rain(void) {
+  if (SEGLEN < 291) FX_FALLBACK_STATIC;
+  SEGMENT.fill(BLACK);
+  const float L=(float)CHUNCHUN_HARNESS_PATH_LEN;
+  const uint32_t cycle=9200U-(uint32_t)SEGMENT.speed*18U;
+  const uint8_t count=3U+(SEGMENT.intensity>>6);
+  for (uint8_t i=0;i<count;i++) {
+    uint32_t shifted=strip.now+(uint32_t)i*cycle/count;
+    uint32_t epoch=shifted/cycle;
+    float p=(float)(shifted%cycle)/(float)cycle;
+    uint32_t seed=zm_hash((epoch+1U)*8191U+(uint32_t)i*997U);
+    int8_t dir=(seed&1U)?1:-1;
+    float travel=zm_ease(p);
+    float head=(dir>0)?(L*travel):(L*(1.0f-travel));
+    uint8_t envelope=zm_envelope(p);
+    uint8_t power=scale8(envelope,245U);
+    if (power<3U) continue;
+    zm_tail(head,dir,4,(uint8_t)(seed>>12),power,7U,false);
+  }
+}
+static const char _data_FX_MODE_Z_METEOR_ECHO_RAIN[] PROGMEM =
+  "Z - Meteor Echo Rain@Speed,Density,,,,Use palette;!,!;!;1;sx=147,ix=175,o1=0";
+
+// ============================================================================
+// STOPWATCH ESP-NOW REMOTE PROTOCOL V1
+// WLED handles Wi-Fi / ESP-NOW lifecycle and forwarding to this usermod.
+// A remote must be paired under WLED > Config > WiFi Setup > Remote List.
+// This receiver is inert until "Enable ESP-NOW" is activated in WiFi Setup.
+//
+// TX command: 12 bytes
+//   [0..3] "ZHR1"; [4] version=1; [5] operation; [6] value; [7] reserved=0;
+//   [8..11] incrementing sequence number, little-endian.
+//   op 1: recall preset 1..250 (a playlist may also be saved as a preset)
+//   op 2: set brightness 0..255
+//   op 3: toggle power
+//   op 4: power on; op 5: power off
+//   op 6: brightness +16; op 7: brightness -16
+//   op 8: ping (does not change lights)
+// ACK: broadcast 13 bytes:
+//   [0..3] "ZHA1"; [4] version=1; [5] echoed operation;
+//   [6] status (0=accepted, 1=invalid command); [7] brightness;
+//   [8] WLED currentPreset; [9..12] echoed sequence, little-endian.
+//
+// Callbacks only queue bytes. Changes to WLED state and ACK transmissions run
+// from the main WLED loop, not from the ESP-NOW receive callback.
+// ============================================================================
+#if defined(ARDUINO_ARCH_ESP32) && !defined(WLED_DISABLE_ESPNOW)
+static portMUX_TYPE zh_radio_mux = portMUX_INITIALIZER_UNLOCKED;
+static uint8_t zh_radio_packet[12] = {0};
+static uint8_t zh_radio_sender[6] = {0};
+static bool zh_radio_pending = false;
+static uint8_t zh_radio_last_sender[6] = {0};
+static uint32_t zh_radio_last_seq = 0;
+static bool zh_radio_have_last = false;
+
+static inline bool zh_radio_is_paired(const uint8_t* sender) {
+  char mac[13];
+  snprintf(mac, sizeof(mac), "%02x%02x%02x%02x%02x%02x",
+           sender[0],sender[1],sender[2],sender[3],sender[4],sender[5]);
+  for (const auto& known : linked_remotes) {
+    if (strcmp(known.data(), mac) == 0) return true;
+  }
+  return false;
+}
+static inline uint32_t zh_radio_seq(const uint8_t* pkt) {
+  return ((uint32_t)pkt[8]) | ((uint32_t)pkt[9]<<8)
+       | ((uint32_t)pkt[10]<<16) | ((uint32_t)pkt[11]<<24);
+}
+static void zh_radio_process(void) {
+  uint8_t data[12], sender[6];
+  bool available = false;
+  portENTER_CRITICAL(&zh_radio_mux);
+  if (zh_radio_pending) {
+    memcpy(data, zh_radio_packet, sizeof(data));
+    memcpy(sender, zh_radio_sender, sizeof(sender));
+    zh_radio_pending = false;
+    available = true;
+  }
+  portEXIT_CRITICAL(&zh_radio_mux);
+  if (!available || statusESPNow != ESP_NOW_STATE_ON) return;
+  // A queued command could have been unpaired since receipt.
+  if (!zh_radio_is_paired(sender)) return;
+
+  const uint8_t op=data[5], val=data[6];
+  const uint32_t seq=zh_radio_seq(data);
+  uint8_t status=0;
+  const bool duplicate = zh_radio_have_last
+                       && seq==zh_radio_last_seq
+                       && memcmp(sender,zh_radio_last_sender,6)==0;
+  if (!duplicate) {
+    switch (op) {
+      case 1:
+        if (val<1U || val>250U) { status=1; break; }
+        applyPreset(val,CALL_MODE_BUTTON_PRESET);
+        break;
+      case 2:
+        bri=val;
+        stateUpdated(CALL_MODE_BUTTON);
+        break;
+      case 3:
+        toggleOnOff();
+        stateUpdated(CALL_MODE_BUTTON);
+        break;
+      case 4:
+        if (!bri) { toggleOnOff(); stateUpdated(CALL_MODE_BUTTON); }
+        break;
+      case 5:
+        if (bri) { toggleOnOff(); stateUpdated(CALL_MODE_BUTTON); }
+        break;
+      case 6:
+        bri=(bri>=239U)?255U:(uint8_t)(bri+16U);
+        stateUpdated(CALL_MODE_BUTTON);
+        break;
+      case 7:
+        bri=(bri<=16U)?1U:(uint8_t)(bri-16U);
+        stateUpdated(CALL_MODE_BUTTON);
+        break;
+      case 8: // ping / connection test
+        break;
+      default:
+        status=1;
+        break;
+    }
+    memcpy(zh_radio_last_sender,sender,6);
+    zh_radio_last_seq=seq;
+    zh_radio_have_last=true;
+  }
+  // Acknowledgments use WLED's existing broadcast peer, avoiding a second
+  // esp_now_init() and avoiding unicast peer-registration races on V5.
+  uint8_t ack[13]={'Z','H','A','1',1U,op,status,bri,currentPreset,
+                   (uint8_t)seq,(uint8_t)(seq>>8),(uint8_t)(seq>>16),(uint8_t)(seq>>24)};
+  wled::espNow.send(ESPNOW_BROADCAST_ADDRESS,ack,sizeof(ack));
+}
+#endif
+
 /////////////////
 //  UserMod Class  //
 /////////////////////
@@ -2686,6 +2979,13 @@ strip.addEffect(255, &mode_z_prism_cascade, _data_FX_MODE_Z_PRISM_CASCADE);
     strip.addEffect(255, &mode_z_gravity_lens, _data_FX_MODE_Z_GRAVITY_LENS);
     strip.addEffect(255, &mode_z_quiet_storm, _data_FX_MODE_Z_QUIET_STORM);
     strip.addEffect(255, &mode_z_infinite_corridor, _data_FX_MODE_Z_INFINITE_CORRIDOR);
+
+    // Five new smooth meteor effects on the 20-section harness virtual path.
+    strip.addEffect(255, &mode_z_meteor_circuit, _data_FX_MODE_Z_METEOR_CIRCUIT);
+    strip.addEffect(255, &mode_z_meteor_twin_sync, _data_FX_MODE_Z_METEOR_TWIN_SYNC);
+    strip.addEffect(255, &mode_z_meteor_ricochet, _data_FX_MODE_Z_METEOR_RICOCHET);
+    strip.addEffect(255, &mode_z_meteor_crossover, _data_FX_MODE_Z_METEOR_CROSSOVER);
+    strip.addEffect(255, &mode_z_meteor_echo_rain, _data_FX_MODE_Z_METEOR_ECHO_RAIN);
   }
 
 
@@ -2706,7 +3006,23 @@ strip.addEffect(255, &mode_z_prism_cascade, _data_FX_MODE_Z_PRISM_CASCADE);
   //   return configComplete;
   // }
 
-  void loop() override {} // nothing to do in the loop
+#if defined(ARDUINO_ARCH_ESP32) && !defined(WLED_DISABLE_ESPNOW)
+  bool onEspNowMessage(uint8_t* sender, uint8_t* payload, uint8_t len) override {
+    if (len != 12U || memcmp(payload,"ZHR1",4) != 0) return false;
+    if (payload[4] != 1U || !zh_radio_is_paired(sender)) return true;
+    portENTER_CRITICAL(&zh_radio_mux);
+    memcpy(zh_radio_sender,sender,6);
+    memcpy(zh_radio_packet,payload,12);
+    zh_radio_pending=true;
+    portEXIT_CRITICAL(&zh_radio_mux);
+    return true; // This is our command, don't interpret it as WiZmote or sync.
+  }
+#endif
+  void loop() override {
+#if defined(ARDUINO_ARCH_ESP32) && !defined(WLED_DISABLE_ESPNOW)
+    zh_radio_process();
+#endif
+  }
   uint16_t getId() override { return USERMOD_ID_USER_FX; }
 };
 
