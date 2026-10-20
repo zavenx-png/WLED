@@ -2911,9 +2911,10 @@ static void zh_radio_process(void) {
         bool applied=false;
         for (uint16_t mode=0; mode<strip.getModeCount(); ++mode) {
           const char* desc=strip.getModeData(mode);
-          if (!desc || strncmp_P(desc,PSTR("Z -"),3)!=0) continue;
+          if (!desc || strncmp_P("Z -",desc,3)!=0) continue;
           if (found++ == val) {
-            changeEffect((uint8_t)mode);
+            strip.getMainSegment().setMode((uint8_t)mode);
+            setValuesFromMainSeg();
             stateUpdated(CALL_MODE_BUTTON);
             applied=true;
             break;
