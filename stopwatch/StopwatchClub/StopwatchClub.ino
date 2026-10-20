@@ -14,7 +14,7 @@ constexpr int FFT_N = 512;
 constexpr int SAMPLE_RATE = 16000;
 constexpr int BANDS = 32;
 constexpr int VISUAL_COUNT = 20;
-constexpr int Z_COUNT = 26;
+constexpr int Z_COUNT = 28;
 constexpr float PI2 = 6.2831853071795864769f;
 static_assert((FFT_N & (FFT_N - 1)) == 0, "FFT_N must be a power of two");
 
@@ -31,7 +31,7 @@ static const char* const visualNames[VISUAL_COUNT] = {
 // This order is exactly the Z - effect registration order in the harness branch.
 // Command 9 finds the Nth "Z -" effect on the harness: no WLED presets required.
 static const char* const zNames[Z_COUNT] = {
-  "Neural Pulse", "Plasma Veins", "Electric Organism", "Gravity Well",
+  "Nokia Snake", "Chunchun Harness", "Neural Pulse", "Plasma Veins", "Electric Organism", "Gravity Well",
   "Wormhole", "Rainbow Fracture", "Starlight Nervous System",
   "Phoenix Flight", "Comet Storm", "Deep Current",
   "Tidal Interference", "Ember Drift", "Orbital Waltz",
