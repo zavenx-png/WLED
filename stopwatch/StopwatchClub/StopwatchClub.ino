@@ -196,7 +196,7 @@ void neonDot(float x,float y,float size,uint16_t c) {
 void ring(float radius,uint16_t col,int thickness=1) {
   for(int t=0;t<thickness;t++)canvas.drawCircle(CX,CY,int(radius)+t,col);
 }
-void drawNeedleVU(float t) {
+void drawNeedleVU() {
   // McIntosh-inspired blue analog meter, physical needle with logarithmic ticks.
   uint16_t cyan=color565(9,162,245), gold=color565(250,189,86);
   canvas.fillRoundRect(CX-184,CY-136,368,274,26,color565(2,24,48));
@@ -326,7 +326,7 @@ void drawRadial(){
   }
   ring(67,color565(78,135,245),2);
   canvas.setTextDatum(middle_center);canvas.setTextColor(TFT_WHITE);
-  canvas.drawString(String(int(bass*100))+" Hz*",CX,CY,2); // artistic level cue, not frequency estimate
+  canvas.drawString(String("BASS ")+String(int(bass*100))+"%",CX,CY,2); // artistic level cue, not frequency estimate
 }
 void drawHeart(){
   float beat=clampf(1.f-(millis()-beatWhen)/480.f);
@@ -582,6 +582,7 @@ void drawRemote(){
     canvas.drawString("2.4 GHz CHANNEL "+String(channel),CX,228,3);
     canvas.setTextColor(color565(176,194,229));
     canvas.drawString("TAP CENTER: NEXT CHANNEL",CX,279,2);
+    pill(CX-98,380,196,42,"POWER TOGGLE",color565(250,164,80));
     canvas.drawString("WLED CHANNEL MUST MATCH",CX,321,2);
     canvas.drawString("LAST ACK: "+String(ackOK?"YES":"NO"),CX,359,2);
   }
@@ -661,6 +662,8 @@ void remoteTouch(int x,int y){
       if(band==2){remoteIntensity=val;radioSend(11,val);}
       haptic(110,32);
     }
+  } else if(page==3 && y>374&&y<433) {
+    radioSend(3,0);haptic(170,75);
   } else if(page==3 && y>190&&y<310) {
     channel=channel>=11?1:channel+1;
     nv.putUChar("channel",channel);radioOK=startRadio();haptic(180,85);
