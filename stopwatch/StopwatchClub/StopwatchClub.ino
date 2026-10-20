@@ -582,9 +582,9 @@ void drawRemote(){
     canvas.drawString("2.4 GHz CHANNEL "+String(channel),CX,228,3);
     canvas.setTextColor(color565(176,194,229));
     canvas.drawString("TAP CENTER: NEXT CHANNEL",CX,279,2);
-    pill(CX-98,380,196,42,"POWER TOGGLE",color565(250,164,80));
-    canvas.drawString("WLED CHANNEL MUST MATCH",CX,321,2);
-    canvas.drawString("LAST ACK: "+String(ackOK?"YES":"NO"),CX,359,2);
+    pill(CX-98,347,196,31,"POWER TOGGLE",color565(250,164,80));
+    canvas.drawString("WLED CHANNEL MUST MATCH",CX,305,2);
+    canvas.drawString("LAST ACK: "+String(ackOK?"YES":"NO"),CX,331,2);
   }
   pill(CX-105,H-71,210,48,"PAGE "+String(page+1)+"/4",color565(92,97,211));
   canvas.setTextDatum(middle_center);
@@ -662,7 +662,7 @@ void remoteTouch(int x,int y){
       if(band==2){remoteIntensity=val;radioSend(11,val);}
       haptic(110,32);
     }
-  } else if(page==3 && y>374&&y<433) {
+  } else if(page==3 && y>340&&y<378) {
     radioSend(3,0);haptic(170,75);
   } else if(page==3 && y>190&&y<310) {
     channel=channel>=11?1:channel+1;
