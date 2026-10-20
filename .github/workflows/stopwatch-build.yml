@@ -1,0 +1,36 @@
+name: StopWatch Club firmware
+on:
+  push:
+    branches: [stopwatch-club-visualizer-espnow]
+    paths:
+      - 'stopwatch/**'
+      - '.github/workflows/stopwatch-build.yml'
+  workflow_dispatch:
+jobs:
+  arduino-stopwatch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: arduino/setup-arduino-cli@v2
+      - name: Install official M5Stack core and graphics libraries
+        run: |
+          arduino-cli config init
+          arduino-cli config add board_manager.additional_urls https://static-cdn.m5stack.com/resource/arduino/package_m5stack_index.json
+          arduino-cli core update-index
+          arduino-cli core install m5stack:esp32
+          arduino-cli lib install M5Unified
+          arduino-cli lib install M5GFX
+      - name: Compile StopWatch ESP32-S3 application
+        run: |
+          mkdir -p build/stopwatch
+          arduino-cli compile --fqbn m5stack:esp32:m5stack_stopwatch --output-dir build/stopwatch --warnings all stopwatch/StopwatchClub
+          ls -lh build/stopwatch/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: StopwatchClub-M5StopWatch-ESP32S3
+          path: |
+            build/stopwatch/*.bin
+            build/stopwatch/*.elf
+            build/stopwatch/*.map
+          if-no-files-found: error
