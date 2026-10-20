@@ -1,0 +1,33 @@
+name: Harness ESP32 OTA
+on:
+  push:
+    branches: [stopwatch-club-visualizer-espnow]
+    paths:
+      - 'usermods/user_fx/user_fx.cpp'
+      - '.github/workflows/harness-esp32-build.yml'
+  workflow_dispatch:
+jobs:
+  harness-esp32:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+          cache: npm
+      - run: npm ci
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Build GLEDOPTO ESP32 WLED OTA image
+        run: pio run -e esp32dev
+      - name: Show output
+        run: ls -lh build_output/release/*.bin
+      - uses: actions/upload-artifact@v4
+        with:
+          name: WLED-Harness-ESP32-StopwatchRemote
+          path: build_output/release/*.bin
+          if-no-files-found: error
