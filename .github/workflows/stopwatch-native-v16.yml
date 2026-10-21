@@ -1,0 +1,37 @@
+name: StopWatch Native31 V16 firmware
+on:
+  push:
+    branches: [stopwatch-native31-v16-build]
+    paths:
+      - 'stopwatch/StopWatchNative31V16/**'
+      - '.github/workflows/stopwatch-native-v16.yml'
+  workflow_dispatch:
+jobs:
+  arduino-native31-v16:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: arduino/setup-arduino-cli@v2
+      - name: Install official StopWatch target and libraries
+        run: |
+          arduino-cli config init
+          arduino-cli config add board_manager.additional_urls https://static-cdn.m5stack.com/resource/arduino/package_m5stack_index.json
+          arduino-cli core update-index
+          arduino-cli core install m5stack:esp32
+          arduino-cli lib install M5Unified
+          arduino-cli lib install M5GFX
+      - name: Compile Native31 V16 for StopWatch ESP32-S3
+        run: |
+          mkdir -p build/native-v16
+          arduino-cli compile --fqbn m5stack:esp32:m5stack_stopwatch --output-dir build/native-v16 --warnings all stopwatch/StopWatchNative31V16
+          ls -lh build/native-v16/
+          sha256sum build/native-v16/*.bin
+      - uses: actions/upload-artifact@v4
+        with:
+          name: StopWatch-Native31-V16-C152
+          path: |
+            build/native-v16/*.bin
+            build/native-v16/*.elf
+            build/native-v16/*.map
+          if-no-files-found: error
