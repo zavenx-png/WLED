@@ -278,10 +278,11 @@ static bool fidelityClassic167(uint8_t id){
   for(int j=1;j<=9;j++){float v=j/9.f,y=307+161*v*v;
    line(CX-235*v,y,CX+235*v,y,tint(rgb(155,85,235),.28f+.22f*v));
   }
-  for(int k=0;k<18;k++){
-   int x=8+k*25;int h=15+int(band(k+3)*120);
-   cv.fillRect(x,H-15-h,13,h,fxInk(k*.055f+t*.016f,.20f+.28f*band(k+3)));
-  }
+  // Match the shorter EQ geometry of final effect 23.
+  for(int j=0;j<20;j++)
+   cv.fillRect(6+j*23,H-25-int(55*band(j+2)),15,
+               8+int(55*band(j+2)),
+               tint(hue(.55f+j*.055f),.20f+.30f*energy));
   figure(150,303,1.f,beatClock+.2f,rgb(255,104,214));
   figure(318,303,1.f,beatClock+2.f,rgb(77,226,255));
   return true;
