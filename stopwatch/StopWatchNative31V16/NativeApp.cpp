@@ -172,6 +172,15 @@ bool brightnessEntryHold=false,batteryEntryHold=false;
 uint8_t candidateBrightness=52;float candidateBpm=125;
 uint32_t batteryHudUntil=0,batteryLastPoll=0,batteryKeyCooldown=0,batteryPowerPollAt=0;
 int batteryHudPercent=0,batteryHudVoltage=0;bool batteryHudCharging=false;
+// A small RAM-only rolling discharge history. No NVS writes or background radio.
+// Estimate is deliberately hidden until the watch has OBSERVED a measurable
+// battery drop at its current brightness / render profile.
+static constexpr uint8_t BATTERY_HISTORY_CAP=90;
+struct BatteryDrainSample{uint32_t ms;uint8_t percent;};
+BatteryDrainSample batteryDrain[BATTERY_HISTORY_CAP]={};
+uint8_t batteryDrainCount=0,batteryDrainNext=0,batteryDrainMode=255;
+uint32_t batteryDrainLast=0;
+int batteryEstimatedMinutes=-1;
 // Persistent, compact NVS-backed favorites and complete per-scene parameters.
 static constexpr uint64_t FAVORITE_DEFAULT=(1ULL<<4)|(1ULL<<7)|(1ULL<<17)|(1ULL<<22);
 static constexpr uint32_t SCENE_MAGIC=0x3253435A; // "ZCS1" scene format version
@@ -1154,8 +1163,48 @@ static void refreshBatteryHud(){
  batteryHudVoltage=M5.Power.getBatteryVoltage();
  batteryHudCharging=(int)M5.Power.isCharging()==1;
 }
+static void sampleBatteryDrain(bool force=false){
+ uint32_t now=millis();
+ if(!force && batteryDrainLast && now-batteryDrainLast<60000UL)return;
+ batteryDrainLast=now;
+ refreshBatteryHud();
+ // A discharge estimate while charging or changing power modes is misleading.
+ const uint8_t mode=(uint8_t)(brightness/10+profile*16+(remote?64:0));
+ if(batteryHudCharging||batteryHudPercent<=0||batteryHudPercent>=100){
+  batteryDrainCount=0;batteryDrainNext=0;batteryDrainMode=mode;
+  batteryEstimatedMinutes=-1;return;
+ }
+ if(mode!=batteryDrainMode){
+  batteryDrainCount=0;batteryDrainNext=0;batteryDrainMode=mode;
+  batteryEstimatedMinutes=-1;
+ }
+ // Ignore up to one point of capacity jitter; a larger upward jump means
+ // the watch was connected to power, so begin a new discharge interval.
+ if(batteryDrainCount){
+  uint8_t previous=(batteryDrainNext+BATTERY_HISTORY_CAP-1)%BATTERY_HISTORY_CAP;
+  if(batteryHudPercent>batteryDrain[previous].percent){
+   if(batteryHudPercent==batteryDrain[previous].percent+1)return;
+   batteryDrainCount=0;batteryDrainNext=0;batteryEstimatedMinutes=-1;
+  }
+ }
+ batteryDrain[batteryDrainNext]={now,(uint8_t)batteryHudPercent};
+ batteryDrainNext=(batteryDrainNext+1)%BATTERY_HISTORY_CAP;
+ if(batteryDrainCount<BATTERY_HISTORY_CAP)batteryDrainCount++;
+ batteryEstimatedMinutes=-1;
+ if(batteryDrainCount<2)return;
+ // Last ~90 minutes maximum. Earlier entries rotate out naturally.
+ uint8_t oldest=(batteryDrainNext+BATTERY_HISTORY_CAP-batteryDrainCount)%BATTERY_HISTORY_CAP;
+ uint8_t latest=(batteryDrainNext+BATTERY_HISTORY_CAP-1)%BATTERY_HISTORY_CAP;
+ uint32_t observedMs=batteryDrain[latest].ms-batteryDrain[oldest].ms;
+ int drop=(int)batteryDrain[oldest].percent-(int)batteryDrain[latest].percent;
+ if(observedMs<15UL*60000UL || drop<2)return;
+ float dischargePerMinute=(float)drop*60000.f/(float)observedMs;
+ if(dischargePerMinute<.003f||dischargePerMinute>.25f)return;
+ int estimate=(int)lroundf(batteryHudPercent/dischargePerMinute);
+ batteryEstimatedMinutes=clampi(estimate,1,48*60);
+}
 static void openBatteryHud(bool haptic=true){
- refreshBatteryHud();batteryHudUntil=millis()+4300;overlay=BATTERY;
+ sampleBatteryDrain();refreshBatteryHud();batteryHudUntil=millis()+4300;overlay=BATTERY;
  if(haptic)vibration(124,28);
 }
 static void renderBatteryHud(){
@@ -1179,7 +1228,7 @@ static void renderBatteryHud(){
  cv.drawString(String(batteryHudPercent)+"%",CX,CY-7);
  cv.setTextSize(1.f);
  cv.setFont(&lgfx::fonts::FreeSansBold12pt7b);
- cv.setTextColor(tint(color,.9f));cv.drawString("BATTERY",CX,104);
+ cv.setTextColor(tint(color,.9f));cv.drawString("BATTERY",CX,135); // V17.4 lower, clear of circular upper rim
  cv.setFont(&lgfx::fonts::Font0);
  // V17.3: much larger, crisp NATIVE bold letters instead of small
  // built-in Font 3. The new height is approximately 40% greater.
@@ -1189,7 +1238,15 @@ static void renderBatteryHud(){
  cv.setFont(&lgfx::fonts::Font0);
  if(batteryHudVoltage>2500&&batteryHudVoltage<5000)
   textC(String(batteryHudVoltage/1000.f,2)+" V",CX,331,rgb(153,194,211),2);
- textC("A / B OR TAP TO CLOSE",CX,374,rgb(111,151,177),2);
+ // ETA uses measured discharge, NOT a fixed guess from the percent.
+ if(batteryHudCharging)
+  textC("CHARGING - NO ETA",CX,358,rgb(131,201,219),2);
+ else if(batteryEstimatedMinutes>=0){
+  int h=batteryEstimatedMinutes/60,m=batteryEstimatedMinutes%60;
+  String eta=String("EST. ")+String(h)+"H "+String(m)+"M LEFT";
+  textC(eta,CX,358,rgb(165,252,229),2);
+ }else textC("ESTIMATING RUNTIME",CX,358,rgb(131,172,197),2);
+ textC("A / B OR TAP TO CLOSE",CX,404,rgb(111,151,177),2);
 }
 static void renderOverlay(){
  if(overlay==NONE)return;
@@ -1600,6 +1657,7 @@ void setup(){
  Serial.printf("Framebuffer OK. Free PSRAM=%u bytes\n",(unsigned)ESP.getFreePsram());
  initArtwork();
  // V17.1: boot directly into the final effect; do not cover it with the battery HUD.
+ sampleBatteryDrain(true);
  M5.BtnA.setHoldThresh(730);M5.BtnB.setHoldThresh(850);
  M5.Power.setVibration(0);
  WiFi.mode(WIFI_OFF); // radio ONLY when harness remote enabled
@@ -1610,6 +1668,7 @@ void setup(){
 }
 void loop(){
  M5.update();vibrationTick();
+ sampleBatteryDrain();
  // M5PM1 sends 2 for a short key press when it can be caught without a
  // PMIC reset; the same HUD also appears after the reset/boot path.
  uint32_t powerNow=millis();
