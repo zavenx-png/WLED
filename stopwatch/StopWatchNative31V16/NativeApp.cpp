@@ -1162,14 +1162,18 @@ static void renderBatteryHud(){
  float pulse=.5f+.5f*sinf(millis()*.0021f);
  circ(CX,CY,177,tint(color,.09f+.09f*pulse),2);
  cv.setFont(&lgfx::fonts::FreeSansBold24pt7b);
- cv.setTextSize(2.0f);cv.setTextColor(rgb(243,253,255));
+ cv.setTextSize(1.4f);cv.setTextColor(rgb(243,253,255)); // V17.2: 30% smaller battery percentage
  cv.setTextDatum(middle_center);
  cv.drawString(String(batteryHudPercent)+"%",CX,CY-7);
  cv.setTextSize(1.f);
  cv.setFont(&lgfx::fonts::FreeSansBold12pt7b);
  cv.setTextColor(tint(color,.9f));cv.drawString("BATTERY",CX,104);
  cv.setFont(&lgfx::fonts::Font0);
- textC(batteryHudCharging?"CHARGING":"REMAINING",CX,290,tint(color,.85f),3);
+ // V17.2: 40% larger label, using the original Font 3 at 1.4x.
+ cv.setTextFont(3);cv.setTextSize(1.4f);
+ cv.setTextDatum(middle_center);cv.setTextColor(tint(color,.85f));
+ cv.drawString(batteryHudCharging?"CHARGING":"REMAINING",CX,290);
+ cv.setTextSize(1.f);cv.setTextFont(1);
  if(batteryHudVoltage>2500&&batteryHudVoltage<5000)
   textC(String(batteryHudVoltage/1000.f,2)+" V",CX,331,rgb(153,194,211),2);
  textC("A / B OR TAP TO CLOSE",CX,374,rgb(111,151,177),2);
