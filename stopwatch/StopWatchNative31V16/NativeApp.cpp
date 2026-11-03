@@ -817,8 +817,8 @@ static void effectsClassic(uint8_t id){
    for(int j=0;j<20;j++)cv.fillRect(6+j*23,H-25-int(55*band(j+2)),15,8+int(55*band(j+2)),tint(hue(.55f+j*.055f),.20f+.30f*energy));
    if(fore<0){figure(xPink,yPink,.96f,beatClock+2,rgb(255,86,188),true);figure(xBlue,yBlue,.96f,beatClock,rgb(72,222,255),true);}
    else {figure(xBlue,yBlue,.96f,beatClock,rgb(72,222,255),true);figure(xPink,yPink,.96f,beatClock+2,rgb(255,86,188),true);}
-   if(blueRobot.length())textC(blueRobot,(int)xBlue,(int)(yBlue-178),rgb(109,233,255),2);
-   if(pinkRobot.length())textC(pinkRobot,(int)xPink,(int)(yPink-178),rgb(255,144,207),2);
+   if(blueRobot.length())textC(blueRobot,(int)xBlue,(int)(yBlue-116),rgb(109,233,255),4);
+   if(pinkRobot.length())textC(pinkRobot,(int)xPink,(int)(yPink-116),rgb(255,144,207),4);
   break;}
  }
 }
