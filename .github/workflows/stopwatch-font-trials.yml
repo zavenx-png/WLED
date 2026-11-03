@@ -1,0 +1,49 @@
+name: StopWatch C152 V16.5 typography trials
+on:
+  push:
+    branches: [stopwatch-v16-5-typography-trials]
+    paths:
+      - 'stopwatch/StopWatchNative31V16/**'
+      - '.github/workflows/stopwatch-font-trials.yml'
+  workflow_dispatch:
+jobs:
+  build-three-font-engines:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        method: [1, 2, 3]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: arduino/setup-arduino-cli@v2
+      - name: Install M5Stack C152 target and graphics libraries
+        run: |
+          arduino-cli config init
+          arduino-cli config add board_manager.additional_urls https://static-cdn.m5stack.com/resource/arduino/package_m5stack_index.json
+          arduino-cli core update-index
+          arduino-cli core install m5stack:esp32
+          arduino-cli lib install M5Unified
+          arduino-cli lib install M5GFX
+      - name: Select isolated text-rendering method
+        env:
+          TRIAL: ${{ matrix.method }}
+        run: |
+          sed -i -E "s/^#define STOPWATCH_FONT_TRIAL [0-9]+/#define STOPWATCH_FONT_TRIAL ${TRIAL}/" stopwatch/StopWatchNative31V16/assets/FontTrial.h
+          grep '^#define STOPWATCH_FONT_TRIAL' stopwatch/StopWatchNative31V16/assets/FontTrial.h
+      - name: Compile M5Stack StopWatch C152 application
+        env:
+          TRIAL: ${{ matrix.method }}
+        run: |
+          mkdir -p "build/trial_${TRIAL}"
+          arduino-cli compile --fqbn m5stack:esp32:m5stack_stopwatch --output-dir "build/trial_${TRIAL}" --warnings all stopwatch/StopWatchNative31V16
+          cp "build/trial_${TRIAL}/StopWatchNative31V16.ino.bin" "build/trial_${TRIAL}/StopWatch_V16_5_Trial_${TRIAL}.app.bin"
+          sha256sum "build/trial_${TRIAL}/StopWatch_V16_5_Trial_${TRIAL}.app.bin" | tee "build/trial_${TRIAL}/SHA256.txt"
+          ls -lh "build/trial_${TRIAL}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: StopWatch-V16-5-Trial-${{ matrix.method }}-C152
+          path: |
+            build/trial_${{ matrix.method }}/*.app.bin
+            build/trial_${{ matrix.method }}/SHA256.txt
+          if-no-files-found: error
