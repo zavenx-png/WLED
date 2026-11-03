@@ -143,7 +143,7 @@ static bool renderBrowserFive(uint8_t id){
    float osc=.5f+.5f*sinf(hb*.5f+i*1.38f);
    float x=CX+(i-(n-1)*.5f)*gap;
    float y=214-((m*.8f+osc*.20f)*112.f-50.f);
-   b5Char(word[i],x,y,1.70f*(font/78.f)*(n<=6?2.65f:fmaxf(1.15f,12.f/n)),cols[i%5]);
+   b5Char(word[i],x,y,0.80f*1.70f*(font/78.f)*(n<=6?2.65f:fmaxf(1.15f,12.f/n)),cols[i%5]);
    line(x,318,x,302-m*59,cols[i%5],2);
   }
   break;}
