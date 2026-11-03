@@ -1,0 +1,46 @@
+name: StopWatch C152 V16.9 D QWERTY + Auto Mic
+on:
+  push:
+    branches: [stopwatch-v16-9-full-qwerty-auto-mic]
+    paths:
+      - 'stopwatch/StopWatchNative31V16/**'
+      - '.github/workflows/stopwatch-v16-9-feedback.yml'
+  workflow_dispatch:
+jobs:
+  build-v16-9-direct-native-text:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: arduino/setup-arduino-cli@v2
+      - name: Install M5Stack C152 board and official graphics libraries
+        run: |
+          arduino-cli config init
+          arduino-cli config add board_manager.additional_urls https://static-cdn.m5stack.com/resource/arduino/package_m5stack_index.json
+          arduino-cli core update-index
+          arduino-cli core install m5stack:esp32
+          arduino-cli lib install M5Unified
+          arduino-cli lib install M5GFX
+      - name: Verify text engine, menu and no accessible gain UI
+        run: |
+          sed -i -E "s/^#define STOPWATCH_FONT_TRIAL [0-9]+/#define STOPWATCH_FONT_TRIAL 2/" stopwatch/StopWatchNative31V16/assets/FontTrial.h
+          grep '^#define STOPWATCH_FONT_TRIAL 2' stopwatch/StopWatchNative31V16/assets/FontTrial.h
+          grep -Fq 'VIS_COUNT=24' stopwatch/StopWatchNative31V16/NativeApp.cpp
+          grep -Fq 'AUTO_BUCKETS=40' stopwatch/StopWatchNative31V16/NativeApp.cpp
+          grep -Fq 'qwertyHit' stopwatch/StopWatchNative31V16/NativeApp.cpp
+          if grep -q 'overlay=GAIN' stopwatch/StopWatchNative31V16/NativeApp.cpp; then exit 1; fi
+      - name: Compile StopWatch V16.9 D app for C152
+        run: |
+          mkdir -p build/v16-9-d
+          arduino-cli compile --fqbn m5stack:esp32:m5stack_stopwatch --output-dir build/v16-9-d --warnings all stopwatch/StopWatchNative31V16
+          cp build/v16-9-d/StopWatchNative31V16.ino.bin build/v16-9-d/StopWatch_V16_9_D_24_Effects.app.bin
+          cd build/v16-9-d
+          sha256sum StopWatch_V16_9_D_24_Effects.app.bin > SHA256SUMS.txt
+          ls -lh StopWatch_V16_9_D_24_Effects.app.bin
+      - uses: actions/upload-artifact@v4
+        with:
+          name: StopWatch-V16-9-D-24-Effects-C152
+          path: |
+            build/v16-9-d/StopWatch_V16_9_D_24_Effects.app.bin
+            build/v16-9-d/SHA256SUMS.txt
+          if-no-files-found: error
