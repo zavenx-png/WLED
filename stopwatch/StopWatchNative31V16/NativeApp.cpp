@@ -1280,12 +1280,25 @@ void setup(){
    binEnd[k]=clampi((int)roundf(powf(255.f,(float)(k+1)/NBANDS)),binBegin[k]+1,255);
  }
  M5.Display.setBrightness((uint8_t)(brightness*255/100));
+ // Hotfix: the 16-bit full-screen sprite exceeds the ESP32-S3 internal heap.
+ // LovyanGFX must be explicitly told to allocate the sprite from OPI PSRAM.
+ const size_t frameBytes=(size_t)W*(size_t)H*2;
+ Serial.printf("Frame request=%u, PSRAM total=%u, free=%u, largest=%u bytes\n",
+    (unsigned)frameBytes,(unsigned)ESP.getPsramSize(),(unsigned)ESP.getFreePsram(),
+    (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM));
  cv.setColorDepth(16);
- if(!cv.createSprite(W,H)){
+ cv.setPsram(true); // Must run BEFORE createSprite().
+ if(ESP.getPsramSize()==0 || !cv.createSprite(W,H)){
+   Serial.printf("PSRAM SPRITE ERROR: total=%u free=%u largest=%u need=%u\n",
+       (unsigned)ESP.getPsramSize(),(unsigned)ESP.getFreePsram(),
+       (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM),(unsigned)frameBytes);
    M5.Display.fillScreen(TFT_BLACK);M5.Display.setTextColor(TFT_RED);
-   M5.Display.drawString("PSRAM SPRITE ERROR",22,H/2);while(true)delay(1000);
+   M5.Display.drawString("PSRAM SPRITE ERROR",22,H/2-20);
+   M5.Display.drawString(ESP.getPsramSize()==0?"PSRAM NOT DETECTED":"CHECK SERIAL LOG",22,H/2+10);
+   while(true)delay(1000);
  }
  fb=(uint16_t*)cv.getBuffer();
+ Serial.printf("Framebuffer OK. Free PSRAM=%u bytes\n",(unsigned)ESP.getFreePsram());
  initArtwork();
  M5.BtnA.setHoldThresh(730);M5.BtnB.setHoldThresh(850);
  M5.Power.setVibration(0);
