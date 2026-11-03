@@ -153,9 +153,12 @@ static void setGainManual(uint8_t id,bool manual){
  prefs.putBytes("micmodes",&micManualMask,sizeof(micManualMask));
 }
 String userText[VIS_COUNT];String blueRobot="",pinkRobot="";static const String DEFAULT_WORD="zaven";
-enum Overlay : uint8_t {NONE,NAME,GAIN,BRIGHTNESS,RHYTHM,LIBRARY};
+enum Overlay : uint8_t {NONE,NAME,BRIGHTNESS,RHYTHM,LIBRARY};
 Overlay overlay=NONE;
-String inputName="";uint8_t robotField=0;uint8_t keyboardPage=0;
+String inputName="";uint8_t robotField=0;
+String keyboardPopup="";int keyboardPopupX=0,keyboardPopupY=0;
+uint32_t keyboardPopupUntil=0,brightnessRepeatAt=0;
+bool brightnessEntryHold=false;
 uint8_t candidateBrightness=52;float candidateBpm=125;
 // Persistent, compact NVS-backed favorites and complete per-scene parameters.
 static constexpr uint64_t FAVORITE_DEFAULT=(1ULL<<4)|(1ULL<<7)|(1ULL<<17)|(1ULL<<23);
@@ -1030,23 +1033,34 @@ static void uiBar(int y,int x0,int x1,float value,uint16_t color){
  cv.fillRoundRect(x0,y,x1-x0,12,6,rgb(26,41,60));cv.fillRoundRect(x0,y,(int)((x1-x0)*clampf(value)),12,6,color);
  dot(x0+(x1-x0)*clampf(value),y+6,8,rgb(239,250,255));
 }
+// Full-width one-screen QWERTY; exact same hit geometry used for rendering and touch.
+static bool qwertyHit(int x,int y,char &out,int &cx,int &cy){
+ const char *rows[3]={"qwertyuiop","asdfghjkl","zxcvbnm"};
+ const int lefts[3]={24,45,87},tops[3]={183,246,309};
+ for(int row=0;row<3;row++){
+  if(y<tops[row]||y>=tops[row]+53)continue;
+  int off=x-lefts[row];if(off<0)continue;
+  int col=off/42;
+  const int n=strlen(rows[row]);
+  if(col>=n||off%42>=39)continue;
+  out=rows[row][col];cx=lefts[row]+col*42+19;cy=tops[row]+26;
+  return true;
+ }
+ return false;
+}
 static void renderOverlay(){
  if(overlay==NONE)return;
  const uint16_t CYAN=rgb(88,229,245), PINK=rgb(255,113,207), GRAY=rgb(169,206,230);
  switch(overlay){
- case BRIGHTNESS:{panelBg("BRIGHTNESS");
-  textC(String(candidateBrightness)+" %",CX,201,rgb(255,255,255),7);
-  uiBar(254,80,W-80,candidateBrightness/100.f,CYAN);
-  labelSmall("A: DIM    B: BRIGHTEN",CX,310,GRAY);
-  uiButton(102,343,115,54,"CANCEL");uiButton(242,343,125,54,"OK",true);
-  break;}
- case GAIN:{panelBg("MIC SENSITIVITY");
-  textC(String(gainPct[effectID])+" %",CX,166,rgb(255,255,255),7);
-  labelSmall(gainIsManual(effectID)?"MANUAL - SAVED":"AUTO - LIVE",CX,216,gainIsManual(effectID)?PINK:CYAN);
-  uiBar(258,77,W-77,(gainPct[effectID]-20)/230.f,CYAN);
-  uiButton(79,313,176,56,gainIsManual(effectID)?"RETURN AUTO":"AUTO ACTIVE",gainIsManual(effectID));
-  uiButton(267,313,112,56,"DONE",true);
-  labelSmall("SWIPE FOR NAME ENTRY",CX,405,GRAY);break;}
+ case BRIGHTNESS:{
+  black();circ(CX,CY,R-3,rgb(42,92,126),2);
+  textC("BRIGHTNESS",CX,88,CYAN,6);
+  textC(String(candidateBrightness)+"%",CX,184,rgb(252,252,255),7);
+  uiBar(255,65,W-65,candidateBrightness/100.f,CYAN);
+  uiButton(77,309,147,82,"CANCEL");
+  uiButton(241,309,147,82,"OK",true);
+  break;
+ }
  case RHYTHM:{panelBg("AUTO BEAT ENGINE");
   textC(String((int)roundf(bpm))+" BPM",CX,169,rgb(255,255,255),6);
   textC(String((int)(beatConfidence*100))+"% CONFIDENCE",CX,229,PINK,3);
@@ -1079,28 +1093,35 @@ static void renderOverlay(){
   break;}
  case NAME:{
   black();circ(CX,CY,R-3,rgb(42,92,126),2);
-  textC(originalEffect(effectID)==22?"ROBOT NAMES":"EDIT NAME",CX,56,CYAN,4);
+  // No EDIT NAME header. Give the full circular canvas to the keyboard.
+  textC("A CANCEL   B SAVE",CX,56,GRAY,2);
   if(originalEffect(effectID)==22){
-    textC("BLUE: "+(draftBlue.length()?draftBlue:"(none)"),CX,99,robotField==0?CYAN:GRAY,3);
-    textC("PINK: "+(draftPink.length()?draftPink:"(none)"),CX,130,robotField==1?PINK:GRAY,3);
+    textC("BLUE: "+(draftBlue.length()?draftBlue:"(none)"),CX,100,robotField==0?CYAN:GRAY,3);
+    textC("PINK: "+(draftPink.length()?draftPink:"(none)"),CX,139,robotField==1?PINK:GRAY,3);
   }else{
-    textC(inputName.length()?inputName:"(tap letters to type)",CX,115,PINK,inputName.length()>8?3:4);
+    textC(inputName.length()?inputName:"tap to type",CX,128,PINK,inputName.length()>8?3:5);
   }
-  static const char *const pages[3]={"abcdefghijklm","nopqrstuvwxyz","0123456789+-/"};
-  textC(keyboardPage==0?"A - M  (1/3)":keyboardPage==1?"N - Z  (2/3)":"0 - 9 / SYMBOLS  (3/3)",
-        CX,155,GRAY,2);
-  // 5 columns x 3 rows, 62x54 px targets. Old keyboard was ~35x39 px.
-  const String letters(pages[keyboardPage%3]);
-  for(int i=0;i<(int)letters.length();i++){
-    const int col=i%5,row=i/5,x=63+col*69,y=168+row*61;
-    cv.fillRoundRect(x,y,62,54,10,rgb(19,47,77));
-    cv.drawRoundRect(x,y,62,54,10,rgb(104,192,227));
-    textC(letters.substring(i,i+1),x+31,y+27,rgb(238,253,255),4);
+  static const char *const kRows[3]={"qwertyuiop","asdfghjkl","zxcvbnm"};
+  const int kLeft[3]={24,45,87},kTop[3]={183,246,309};
+  for(int row=0;row<3;row++){
+    for(int k=0;k<(int)strlen(kRows[row]);k++){
+      int x=kLeft[row]+k*42,y=kTop[row];
+      cv.fillRoundRect(x,y,39,53,8,rgb(27,55,87));
+      cv.drawRoundRect(x,y,39,53,8,rgb(116,171,211));
+      textC(String(kRows[row][k]),x+19,y+26,rgb(246,250,255),4);
+    }
   }
-  uiButton(94,361,68,47,"DEL");
-  uiButton(165,361,68,47,"PAGE",true);
-  uiButton(236,361,68,47,"CLEAR");
-  uiButton(307,361,68,47,"SAVE",true);
+  // The entire alphabet is visible at once; controls use the lower arc.
+  uiButton(84,373,93,52,"DEL");
+  uiButton(185,373,94,52,"SPACE",true);
+  uiButton(287,373,93,52,"CLEAR");
+  if(keyboardPopup.length() && (touchDown||millis()<keyboardPopupUntil)){
+    int px=clampi(keyboardPopupX-28,16,W-72),py=clampi(keyboardPopupY-105,42,282);
+    cv.fillRoundRect(px,py,72,77,13,rgb(232,243,254));
+    cv.drawRoundRect(px,py,72,77,13,rgb(103,179,229));
+    textC(keyboardPopup,px+36,py+34,rgb(18,37,62),6);
+    cv.fillTriangle(keyboardPopupX-9,py+77,keyboardPopupX+9,py+77,keyboardPopupX,py+87,rgb(232,243,254));
+  }
   break;
  }
  default:break;
@@ -1152,7 +1173,7 @@ static void renderRemote(){
  else if(radioSuccess)textC("APPLIED",CX,365,rgb(117,255,171),2);
 }
 static void showTextEditor(){
- overlay=NAME;inputName=userText[effectID];draftBlue=blueRobot;draftPink=pinkRobot;robotField=0;keyboardPage=0;vibration();
+ overlay=NAME;inputName=userText[effectID];draftBlue=blueRobot;draftPink=pinkRobot;robotField=0;keyboardPopup="";keyboardPopupUntil=0;vibration();
 }
 static void saveNameOverlay(){
  if(originalEffect(effectID)==22){blueRobot=draftBlue;pinkRobot=draftPink;}
@@ -1207,48 +1228,35 @@ static void editorTouch(int x,int y){
    return;
  }
  if(overlay==BRIGHTNESS){
-  if(y>=238&&y<290){candidateBrightness=clampi((x-80)*100/(W-160),8,100);M5.Display.setBrightness((uint8_t)(candidateBrightness*255/100));}
-  else if(y>=333&&y<415){if(x<CX){M5.Display.setBrightness((uint8_t)(brightness*255/100));}
-   else{brightness=candidateBrightness;prefs.putUChar("bright",brightness);}overlay=NONE;vibration(170,50);}
- }else if(overlay==GAIN){
-   if(y>=241&&y<300){
-     gainPct[effectID]=clampi(20+(x-77)*230/(W-154),20,250);
-     micGain=gainPct[effectID]/100.f;setGainManual(effectID,true);
-     // Persist only on explicit touch, never during automatic adjustment.
-     prefs.putBytes("gains",gainPct,sizeof(gainPct));vibration(145,28);
-   }else if(y>=308&&y<386){
-     if(x<260){
-       setGainManual(effectID,false);
-       resetMicHistory(micHist[effectID]);
-       vibration(190,65);
-     }else {overlay=NONE;prefs.putBytes("gains",gainPct,sizeof(gainPct));}
-   }
+  if(y>=233&&y<287){
+    candidateBrightness=clampi((x-65)*100/(W-130),8,100);
+    M5.Display.setBrightness((uint8_t)(candidateBrightness*255/100));
+  }else if(y>=304&&y<399){
+    if(x<CX)M5.Display.setBrightness((uint8_t)(brightness*255/100));
+    else{brightness=candidateBrightness;prefs.putUChar("bright",brightness);}
+    overlay=NONE;vibration(170,50);
+  }
  }else if(overlay==RHYTHM){
    if(y>=300&&y<369){profile=(profile+1)%3;prefs.putUChar("profile",profile);
       setCpuFrequencyMhz(profile==2?160:240);vibration();}
    else if(y>=372)overlay=NONE;
  }else if(overlay==NAME){
-   if(originalEffect(effectID)==22 && y>=82 && y<144){
-     robotField=y<114?0:1;vibration(110,24);return;
+   if(originalEffect(effectID)==22&&y>=83&&y<161){
+     robotField=y<121?0:1;vibration(110,24);return;
    }
-   if(y>=168&&y<344){
-     int row=(y-168)/61,col=(x-63)/69;
-     const char *const pages[3]={"abcdefghijklm","nopqrstuvwxyz","0123456789+-/"};
-     String chars(pages[keyboardPage%3]);
-     int ix=row*5+col;
-     int bx=63+col*69,by=168+row*61;
-     if(row>=0&&row<3&&col>=0&&col<5&&
-        x>=bx&&x<bx+62&&y>=by&&y<by+54&&ix<(int)chars.length()){
-       String &dest=originalEffect(effectID)==22?(robotField==0?draftBlue:draftPink):inputName;
-       if(dest.length()<12){dest+=chars.substring(ix,ix+1);vibration(95,18);}
-     }
-   }else if(y>=361&&y<410){
+   char typed=0;int px=0,py=0;
+   if(qwertyHit(x,y,typed,px,py)){
      String &dest=originalEffect(effectID)==22?(robotField==0?draftBlue:draftPink):inputName;
-     if(x>=94&&x<162){if(dest.length())dest.remove(dest.length()-1);}
-     else if(x>=165&&x<233)keyboardPage=(keyboardPage+1)%3;
-     else if(x>=236&&x<304)dest="";
-     else if(x>=307&&x<375){saveNameOverlay();return;}
-     vibration(110,30);
+     if(dest.length()<12){
+       dest+=typed;keyboardPopup=String(typed);keyboardPopupX=px;keyboardPopupY=py;
+       keyboardPopupUntil=millis()+185;vibration(105,20);
+     }
+   }else if(y>=371&&y<429){
+     String &dest=originalEffect(effectID)==22?(robotField==0?draftBlue:draftPink):inputName;
+     if(x>=84&&x<179){if(dest.length())dest.remove(dest.length()-1);}
+     else if(x>=185&&x<280){if(dest.length()<12)dest+=" ";}
+     else if(x>=287&&x<382)dest="";
+     keyboardPopup="";vibration(115,25);
    }
  }
 }
