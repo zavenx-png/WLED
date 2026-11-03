@@ -1065,19 +1065,24 @@ static void uiBar(int y,int x0,int x1,float value,uint16_t color){
  dot(x0+(x1-x0)*clampf(value),y+6,8,rgb(239,250,255));
 }
 // Full-width one-screen QWERTY; exact same hit geometry used for rendering and touch.
+// One letter per physical contact, picked by the CENTER of the touch blob.
+// The closest physical key wins even if a finger overlaps 2-3 key hitboxes.
 static bool qwertyHit(int x,int y,char &out,int &cx,int &cy){
  const char *rows[3]={"qwertyuiop","asdfghjkl","zxcvbnm"};
  const int lefts[3]={24,45,87},tops[3]={183,246,309};
+ if(x<12||x>454||y<174||y>368)return false;
+ long best=2147483647L;char candidate=0;int bx=0,by=0;
  for(int row=0;row<3;row++){
-  if(y<tops[row]||y>=tops[row]+53)continue;
-  int off=x-lefts[row];if(off<0)continue;
-  int col=off/42;
-  const int n=strlen(rows[row]);
-  if(col>=n||off%42>=39)continue;
-  out=rows[row][col];cx=lefts[row]+col*42+19;cy=tops[row]+26;
-  return true;
+  const int yy=tops[row]+26;
+  if(abs(y-yy)>34)continue;
+  for(int k=0;k<(int)strlen(rows[row]);k++){
+    int xx=lefts[row]+k*42+19;
+    long d=(long)(x-xx)*(x-xx)+(long)(y-yy)*(y-yy);
+    if(d<best){best=d;candidate=rows[row][k];bx=xx;by=yy;}
+  }
  }
- return false;
+ if(!candidate||best>1950)return false;
+ out=candidate;cx=bx;cy=by;return true;
 }
 // Native vector-font drawing, no resampled bitmap scaling. Fits prominent UI
 // labels to the available width while retaining the selected direct-native style.
@@ -1101,23 +1106,31 @@ static void keyboardPop(char letter,int x,int y){
  keyboardPopupStarted=millis();
  keyboardPopupUntil=keyboardPopupStarted+455; // Visible for >10 frames at 30 fps.
 }
+// V16.11 brightness typography: real 18/24pt native glyphs, exactly 1x.
+// No sprite zoom/bitmap resampling, so curves and diagonals stay crisp.
+static void crispBrightnessText(const String &word,int x,int y,uint16_t ink,bool compact=false){
+ if(compact)cv.setFont(&lgfx::fonts::FreeSansBold18pt7b);
+ else cv.setFont(&lgfx::fonts::FreeSansBold24pt7b);
+ cv.setTextSize(1.f);cv.setTextDatum(middle_center);cv.setTextColor(ink);
+ cv.drawString(word,x,y);
+ cv.setFont(&lgfx::fonts::Font0);
+}
 static void renderOverlay(){
  if(overlay==NONE)return;
  const uint16_t CYAN=rgb(88,229,245), PINK=rgb(255,113,207), GRAY=rgb(169,206,230);
  switch(overlay){
  case BRIGHTNESS:{
   black();circ(CX,CY,R-3,rgb(42,92,126),2);
-  // V16.10: the previous built-in size-6 font silently clipped this title.
-  // Fixed-width native bold text fits the visible round screen.
-  drawLargeNativeLabel("BRIGHTNESS",CX,81,330,1.67f,rgb(105,239,253));
-  drawLargeNativeLabel(String(candidateBrightness)+"%",CX,179,276,2.24f,rgb(253,253,255));
+  // User-approved 147x82 button geometry and long-hold behavior are unchanged.
+  crispBrightnessText("BRIGHTNESS",CX,87,rgb(105,239,253));
+  crispBrightnessText(String(candidateBrightness)+"%",CX,181,rgb(253,253,255));
   uiBar(255,65,W-65,candidateBrightness/100.f,CYAN);
   cv.fillRoundRect(77,309,147,82,12,rgb(19,45,73));
   cv.drawRoundRect(77,309,147,82,12,rgb(98,154,184));
   cv.fillRoundRect(241,309,147,82,12,rgb(44,130,151));
   cv.drawRoundRect(241,309,147,82,12,rgb(183,255,255));
-  drawLargeNativeLabel("CANCEL",150,350,131,1.45f,rgb(244,251,255));
-  drawLargeNativeLabel("OK",314,350,119,1.75f,rgb(255,255,255));
+  crispBrightnessText("CANCEL",150,350,rgb(244,251,255),true);
+  crispBrightnessText("OK",314,350,rgb(255,255,255));
   break;
  }
  case RHYTHM:{panelBg("AUTO BEAT ENGINE");
@@ -1159,11 +1172,11 @@ static void renderOverlay(){
    uiButton(241,40,112,43,"PINK",robotField==1);
    String chosen=robotField==0?draftBlue:draftPink;
    if(chosen.length())
-    drawLargeNativeLabel(chosen,CX,132,406,3.15f,robotField==0?CYAN:PINK);
+    drawLargeNativeLabel(chosen,CX,132,406,1.575f,robotField==0?CYAN:PINK);
    else textC("TAP TO TYPE",CX,128,GRAY,3);
   }else{
    if(inputName.length())
-    drawLargeNativeLabel(inputName,CX,116,390,3.15f,PINK);
+    drawLargeNativeLabel(inputName,CX,116,390,1.575f,PINK);
    else textC("TAP TO TYPE",CX,117,GRAY,3);
    textC("A CANCEL    B SAVE",CX,48,GRAY,2);
   }
@@ -1178,9 +1191,8 @@ static void renderOverlay(){
     cv.drawRoundRect(x,y,39,53,8,active?rgb(224,253,255):rgb(116,171,211));
     textC(String(kRows[row][k]),x+19,y+26,rgb(246,250,255),4);
   }
-  uiButton(84,373,93,52,"DEL");
-  uiButton(185,373,94,52,"SPACE",true);
-  uiButton(287,373,93,52,"CLEAR");
+  uiButton(106,376,112,48,"DEL");
+  uiButton(248,376,112,48,"SPACE",true);
   if(popActive){
    // Consistent, unmistakable Apple-style key bubble visible after a short tap.
    const uint32_t elapsed=now-keyboardPopupStarted;
@@ -1323,11 +1335,10 @@ static void editorTouch(int x,int y){
      if(dest.length()<12){
        dest+=typed;keyboardPop(typed,px,py);vibration(105,20);
      }
-   }else if(y>=371&&y<429){
+   }else if(y>=376&&y<424){
      String &dest=originalEffect(effectID)==22?(robotField==0?draftBlue:draftPink):inputName;
-     if(x>=84&&x<179){if(dest.length())dest.remove(dest.length()-1);}
-     else if(x>=185&&x<280){if(dest.length()<12)dest+=" ";}
-     else if(x>=287&&x<382)dest="";
+     if(x>=106&&x<218){if(dest.length())dest.remove(dest.length()-1);}
+     else if(x>=248&&x<360){if(dest.length()<12)dest+=" ";}
      keyboardPopup="";vibration(115,25);
    }
  }
