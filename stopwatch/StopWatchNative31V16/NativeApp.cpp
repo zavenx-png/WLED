@@ -619,6 +619,16 @@ static void eqBars(bool mirrored=false){
     cv.fillRoundRect(x,ground-yy-8,slot-2,8,2,tint(col,.35f+.55f*(float)yy/fmaxf(h,1)));
     if(mirrored)cv.fillRoundRect(x,ground+yy,slot-2,7,2,tint(col,.46f));
   }
+  if(!mirrored){
+    // Extend Prism EQ downward inside the round bezel, following its curved edge.
+    float dx=x+slot*.5f-CX;
+    int bottom=CY+(int)sqrtf(fmaxf(0.f,(float)R*R-dx*dx));
+    for(int yy=ground;yy<bottom;yy+=10){
+      float f=(yy-ground)/fmaxf(1.f,(float)(bottom-ground));
+      uint16_t bottomColor=tint(hue(i*.023f+.43f),.40f-.23f*f+.20f*v);
+      cv.fillRoundRect(x,yy,slot-2,clampi(bottom-yy,1,9),2,bottomColor);
+    }
+  }
  }
 }
 static void scopeLine(uint16_t color,int y0,int amp=105,bool heavy=false){
