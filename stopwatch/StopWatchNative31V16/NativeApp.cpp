@@ -19,7 +19,7 @@
 #undef sq
 #endif
 
-constexpr uint8_t VIS_COUNT=28, Z_COUNT=28, REMOTE_PAGES=5;
+constexpr uint8_t VIS_COUNT=26, Z_COUNT=28, REMOTE_PAGES=5;
 constexpr int NFFT=512, FS=16000, NBANDS=32;
 constexpr float PI_F=3.14159265358979323846f, TAU=6.28318530717958647692f;
 static const char *const EFFECT_NAMES[VIS_COUNT] = {
@@ -28,10 +28,8 @@ static const char *const EFFECT_NAMES[VIS_COUNT] = {
  "zaven Kaleidoscope",
  "zaven Round Resonator",
  "zaven Fibonacci Spiral",
- "zaven Hyperspace Portal",
  "zaven Electric Aurora",
  "zaven Flowing Halo",
- "zaven Orbit Portal",
  "Prism EQ",
  "Psychedelic Bloom",
  "Vapor Scope",
@@ -52,10 +50,19 @@ static const char *const EFFECT_NAMES[VIS_COUNT] = {
  "Ribbon Pirouette",
  "Robot Shuffle",
 };
-static constexpr uint8_t ORIGINAL_EFFECT_ID[VIS_COUNT]={23,24,25,26,27,28,29,30,31,1,2,3,4,6,7,8,9,10,11,12,13,16,17,18,19,20,21,22};
+static constexpr uint8_t ORIGINAL_EFFECT_ID[VIS_COUNT]={23,24,25,26,27,29,30,1,2,3,4,6,7,8,9,10,11,12,13,16,17,18,19,20,21,22};
 static inline uint8_t originalEffect(uint8_t i);
-static constexpr uint8_t V12_INDEX_TO_V13[VIS_COUNT]={9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,0,1,2,3,4,5,6,7,8};
-static inline uint8_t migrateEffectIndex(uint8_t n){return n<VIS_COUNT?V12_INDEX_TO_V13[n]:0;}
+// V12 presentation order -> V13, prior to the two V16.8 effect removals.
+static constexpr uint8_t V12_INDEX_TO_V13[31]={9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,0,1,2,3,4,5,6,7,8,28,29,30};
+// 0xff indicates one of the removed effects, or an old cinematic effect.
+static inline uint8_t v13ToV18(uint8_t n){
+ if(n==5||n==8||n>=28)return 0xff;
+ return n<5?n:(n<8?n-1:n-2);
+}
+static inline uint8_t fromOldEffect(uint8_t n,bool legacyV12){
+ if(legacyV12){if(n>=31)return 0xff;n=V12_INDEX_TO_V13[n];}
+ return v13ToV18(n);
+}
 
 
 static const char *const Z_NAMES[Z_COUNT]={
@@ -144,10 +151,10 @@ static void setGainManual(uint8_t id,bool manual){
 String userText[VIS_COUNT];String blueRobot="",pinkRobot="";static const String DEFAULT_WORD="zaven";
 enum Overlay : uint8_t {NONE,NAME,GAIN,BRIGHTNESS,RHYTHM,LIBRARY};
 Overlay overlay=NONE;
-String inputName="";uint8_t robotField=0;bool keyboardUpper=false;
+String inputName="";uint8_t robotField=0;uint8_t keyboardPage=0;
 uint8_t candidateBrightness=52;float candidateBpm=125;
 // Persistent, compact NVS-backed favorites and complete per-scene parameters.
-static constexpr uint64_t FAVORITE_DEFAULT=(1ULL<<4)|(1ULL<<9)|(1ULL<<19)|(1ULL<<27)|(1ULL<<28)|(1ULL<<29)|(1ULL<<30);
+static constexpr uint64_t FAVORITE_DEFAULT=(1ULL<<4)|(1ULL<<7)|(1ULL<<17)|(1ULL<<25);
 static constexpr uint32_t SCENE_MAGIC=0x3253435A; // "ZCS1" scene format version
 static const char *const SCENE_LABELS[4]={"WARMUP","PEAK HOUR","HYPNOTIC","AFTERHOURS"};
 struct SceneData {
@@ -553,16 +560,16 @@ static void figure(float x,float y,float scale,float t,uint16_t c,bool robot=fal
   dot(hx-4*scale,hy,2,c);dot(hx+4*scale,hy,2,c);}
  else {circ(hx,hy,rr,c,2);}
  float sy=hy+rr+8*scale,hip=sy+55*scale;
- line(shoulderX,sy,hx,hip,c,3);line(shoulderX-21*scale,sy,shoulderX+21*scale,sy,c,2);
+ line(shoulderX,sy,hx,hip,c,robot?4:3);line(shoulderX-21*scale,sy,shoulderX+21*scale,sy,c,robot?3:2);
  float elbowsY=sy+28*scale, handsY=sy+33*scale+28*scale*sinf(TAU*t/4+.8f);
- line(shoulderX-21*scale,sy,shoulderX-39*scale-17*scale*step,elbowsY,c,2);
- line(shoulderX-39*scale-17*scale*step,elbowsY,shoulderX-43*scale-23*scale*step,handsY,c,2);
- line(shoulderX+21*scale,sy,shoulderX+39*scale+17*scale*step,elbowsY,c,2);
- line(shoulderX+39*scale+17*scale*step,elbowsY,shoulderX+43*scale+18*scale*step,sy+2*scale-20*scale*sinf(TAU*t/4),c,2);
+ line(shoulderX-21*scale,sy,shoulderX-39*scale-17*scale*step,elbowsY,c,robot?3:2);
+ line(shoulderX-39*scale-17*scale*step,elbowsY,shoulderX-43*scale-23*scale*step,handsY,c,robot?3:2);
+ line(shoulderX+21*scale,sy,shoulderX+39*scale+17*scale*step,elbowsY,c,robot?3:2);
+ line(shoulderX+39*scale+17*scale*step,elbowsY,shoulderX+43*scale+18*scale*step,sy+2*scale-20*scale*sinf(TAU*t/4),c,robot?3:2);
  float footBase=hip+61*scale;
- line(hx,hip,hx-22*scale-19*scale*step,hip+35*scale-13*scale*fmaxf(0,step),c,3);
+ line(hx,hip,hx-22*scale-19*scale*step,hip+35*scale-13*scale*fmaxf(0,step),c,robot?4:3);
  line(hx-22*scale-19*scale*step,hip+35*scale-13*scale*fmaxf(0,step),hx-32*scale-20*scale*step,footBase-20*scale*fmaxf(0,step),c,3);
- line(hx,hip,hx+22*scale+19*scale*step,hip+35*scale+13*scale*fminf(0,step),c,3);
+ line(hx,hip,hx+22*scale+19*scale*step,hip+35*scale+13*scale*fminf(0,step),c,robot?4:3);
  line(hx+22*scale+19*scale*step,hip+35*scale+13*scale*fminf(0,step),hx+32*scale+20*scale*step,footBase+20*scale*fminf(0,step),c,3);
 }
 static void eqBars(bool mirrored=false){
@@ -719,8 +726,8 @@ static void effectsClassic(uint8_t id){
    float xBlue=CX-96+192*pass,xPink=CX+96-192*pass;
    float yBlue=289+11*fore,yPink=289-11*fore;
    for(int j=0;j<20;j++)cv.fillRect(6+j*23,H-25-int(55*band(j+2)),15,8+int(55*band(j+2)),tint(hue(.55f+j*.055f),.20f+.30f*energy));
-   if(fore<0){figure(xPink,yPink,.80f,beatClock+2,rgb(255,86,188),true);figure(xBlue,yBlue,.80f,beatClock,rgb(72,222,255),true);}
-   else {figure(xBlue,yBlue,.80f,beatClock,rgb(72,222,255),true);figure(xPink,yPink,.80f,beatClock+2,rgb(255,86,188),true);}
+   if(fore<0){figure(xPink,yPink,.96f,beatClock+2,rgb(255,86,188),true);figure(xBlue,yBlue,.96f,beatClock,rgb(72,222,255),true);}
+   else {figure(xBlue,yBlue,.96f,beatClock,rgb(72,222,255),true);figure(xPink,yPink,.96f,beatClock+2,rgb(255,86,188),true);}
    if(blueRobot.length())textC(blueRobot,(int)xBlue,(int)(yBlue-178),rgb(109,233,255),2);
    if(pinkRobot.length())textC(pinkRobot,(int)xPink,(int)(yPink-178),rgb(255,144,207),2);
   break;}
