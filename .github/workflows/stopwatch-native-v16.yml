@@ -1,13 +1,12 @@
-name: StopWatch Native31 V16 firmware
+name: StopWatch Native31 V17 fidelity
 on:
   push:
-    branches: [stopwatch-native31-v16-build]
+    branches: [stopwatch-native31-v17-fidelity]
     paths:
       - 'stopwatch/StopWatchNative31V16/**'
-      - '.github/workflows/stopwatch-native-v16.yml'
   workflow_dispatch:
 jobs:
-  arduino-native31-v16:
+  arduino-native31-v17:
     runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:
@@ -21,17 +20,17 @@ jobs:
           arduino-cli core install m5stack:esp32
           arduino-cli lib install M5Unified
           arduino-cli lib install M5GFX
-      - name: Compile Native31 V16 for StopWatch ESP32-S3
+      - name: Compile Native31 V17 for StopWatch ESP32-S3
         run: |
-          mkdir -p build/native-v16
-          arduino-cli compile --fqbn m5stack:esp32:m5stack_stopwatch --output-dir build/native-v16 --warnings all stopwatch/StopWatchNative31V16
-          ls -lh build/native-v16/
-          sha256sum build/native-v16/*.bin
+          mkdir -p build/native-v17
+          arduino-cli compile --fqbn m5stack:esp32:m5stack_stopwatch --output-dir build/native-v17 --warnings all stopwatch/StopWatchNative31V16
+          ls -lh build/native-v17/
+          sha256sum build/native-v17/*.bin
       - uses: actions/upload-artifact@v4
         with:
-          name: StopWatch-Native31-V16-C152
+          name: StopWatch-Native31-V17-C152
           path: |
-            build/native-v16/*.bin
-            build/native-v16/*.elf
-            build/native-v16/*.map
+            build/native-v17/*.bin
+            build/native-v17/*.elf
+            build/native-v17/*.map
           if-no-files-found: error
