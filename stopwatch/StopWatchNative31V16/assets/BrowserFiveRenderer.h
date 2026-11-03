@@ -170,21 +170,33 @@ static bool renderBrowserFive(uint8_t id){
           (i%2)?rgb(255,189,255):rgb(255,242,254),.075f*sinf(p+i*.6f+t*.15f));
   }
   break;}
- case 25:{ // 03 Kaleidoscope: 40 readable whole words on concentric wedges.
+ case 25:{ // 03 Kaleidoscope: close-fit circle recalculated for every new word
   float p=hb*.07f;
+  const float requestWidth=1.50f*fminf(210.f,wordMask.w*.65f);
+  // D text is native FreeSansBold at discrete size buckets, rather than
+  // the browser mask. Measure that same font instead of using browser widths.
+  float bucket=clampf(roundf(requestWidth/6.f)*6.f,24.f,450.f);
+  float zoom=bucket>=270.f?clampf(bucket/200.f,1.f,1.95f):1.f;
+  if(bucket<90.f)cv.setFont(&lgfx::fonts::FreeSansBold12pt7b);
+  else if(bucket<175.f)cv.setFont(&lgfx::fonts::FreeSansBold18pt7b);
+  else cv.setFont(&lgfx::fonts::FreeSansBold24pt7b);
+  cv.setTextSize(1.f);
+  const float letterW=fminf(452.f,cv.textWidth(word)*zoom);
+  const float letterH=cv.fontHeight()*zoom;
+  cv.setFont(&lgfx::fonts::Font0);
+  int ringR=clampi((int)ceilf(hypotf(letterW*.5f,letterH*.5f)+10.f),49,187);
+  int firstWedge=clampi(ringR+25,94,222);
   for(int slice=0;slice<8;slice++){
    float base=slice*TAU/8.f+p;
-   for(int rr=137;rr<230;rr+=46){
-    float sc=.45f+(rr/220.f)*.15f;
+   for(int rr=firstWedge;rr<230;rr+=46){
     float angle=base+(slice&1?PI_F:0);
     float x=CX+sinf(base)*rr,y=CY-cosf(base)*rr;
-    // Browser uses font 41px, then canvas scaled 0.45–0.60.
     float width=fminf(110.f,rr*.61f);
     b5Stamp(wordMask,x,y,width,angle,b5Hue(frac((slice*36+rr*.25f+t*5)/360.f)),.91f);
    }
   }
-  circ(CX,CY,111,rgb(230,225,255),2);
-  b5Stamp(wordMask,CX,CY,1.50f*fminf(210.f,wordMask.w*.65f),0,rgb(232,211,255),1.f);
+  circ(CX,CY,ringR,rgb(230,225,255),2);
+  b5Stamp(wordMask,CX,CY,requestWidth,0,rgb(232,211,255),1.f);
   break;}
  case 26:{ // 04 Round Resonator: six complete words circulate the rings.
   float p=hb*.065f;
