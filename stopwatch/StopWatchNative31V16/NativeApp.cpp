@@ -1266,25 +1266,25 @@ static void controlButtons(){
  if(remote&&(M5.BtnA.isPressed()||M5.BtnB.isPressed()))lastRemoteActivity=now;
  if(M5.BtnA.wasPressed()){keyADown=now;keyAHeld=false;}
  if(M5.BtnB.wasPressed()){keyBDown=now;keyBHeld=false;}
- if(M5.BtnA.isPressed() && M5.BtnB.isPressed() && !keyChord){
+ if(M5.BtnA.isPressed() && M5.BtnB.isPressed() && !keyChord && overlay!=BRIGHTNESS){
    // Chord has priority over independent button presses.
    keyChord=true;keyAHeld=keyBHeld=true;setRemote(!remote);
    if(remote && !radioReady)startRadio();
    if(!remote){if(radioReady){esp_now_deinit();radioReady=false;}WiFi.mode(WIFI_OFF);setCpuFrequencyMhz(profile==2?160:240);}
  }
- if(M5.BtnA.isPressed() && !keyChord && !keyAHeld && keyADown && now-keyADown>=730){
+ if(M5.BtnA.isPressed() && !keyChord && !keyAHeld && keyADown && now-keyADown>=730 && overlay!=BRIGHTNESS){
   overlay=BRIGHTNESS;candidateBrightness=brightness;keyAHeld=true;vibration(195,60);
  }
- if(M5.BtnB.isPressed() && !keyChord && !keyBHeld && keyBDown && now-keyBDown>=850){
+ if(M5.BtnB.isPressed() && !keyChord && !keyBHeld && keyBDown && now-keyBDown>=850 && overlay!=BRIGHTNESS){
   overlay=LIBRARY;libraryPage=0;keyBHeld=true;vibration(170,45);
  }
  if(M5.BtnA.wasReleased()){
-   if(!keyChord && !keyAHeld){if(overlay==BRIGHTNESS){candidateBrightness=clampi(candidateBrightness-5,8,100);}
+   if(!keyChord && !keyAHeld){if(overlay==BRIGHTNESS){candidateBrightness=clampi(candidateBrightness-5,8,100);M5.Display.setBrightness((uint8_t)(candidateBrightness*255/100));vibration(118,25);}
       else if(overlay==NONE)selectEffect(-1);}
    keyADown=0;
  }
  if(M5.BtnB.wasReleased()){
-   if(!keyChord && !keyBHeld){if(overlay==BRIGHTNESS){candidateBrightness=clampi(candidateBrightness+5,8,100);}
+   if(!keyChord && !keyBHeld){if(overlay==BRIGHTNESS){candidateBrightness=clampi(candidateBrightness+5,8,100);M5.Display.setBrightness((uint8_t)(candidateBrightness*255/100));vibration(118,25);}
       else if(overlay==NONE)selectEffect(+1);}
    keyBDown=0;
  }
