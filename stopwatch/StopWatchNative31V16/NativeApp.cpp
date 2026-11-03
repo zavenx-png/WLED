@@ -1172,7 +1172,7 @@ static void renderBatteryHud(){
  textC(batteryHudCharging?"CHARGING":"REMAINING",CX,290,tint(color,.85f),3);
  if(batteryHudVoltage>2500&&batteryHudVoltage<5000)
   textC(String(batteryHudVoltage/1000.f,2)+" V",CX,331,rgb(153,194,211),2);
- textC("TAP TO CLOSE",CX,374,rgb(111,151,177),2);
+ textC("A / B OR TAP TO CLOSE",CX,374,rgb(111,151,177),2);
 }
 static void renderOverlay(){
  if(overlay==NONE)return;
@@ -1199,30 +1199,6 @@ static void renderOverlay(){
   textC("NO TAP / MANUAL SYNC",CX,260,GRAY,2);
   uiButton(82,306,300,54,String("PROFILE: ")+(profile==0?"SHOW":profile==1?"BALANCED":"ENDURANCE"),true);
   uiButton(153,379,160,45,"DONE");break;}
- case LIBRARY:{
-  black();textC("CLUB LIBRARY",CX,72,CYAN,4);
-  uiButton(65,108,104,43,"FAVS",libraryPage==0);
-  uiButton(180,108,104,43,"SCENES",libraryPage==1);
-  uiButton(295,108,104,43,"POWER",libraryPage==2);
-  if(libraryPage==0){
-   textC(EFFECT_NAMES[effectID],CX,189,GRAY,3);
-   uiButton(91,218,283,48,isFavorite(effectID)?"REMOVE FAVORITE":"ADD FAVORITE",true);
-   uiButton(91,282,283,47,favoritesOnly?"FAVORITES ONLY":(String("ALL ")+String(VIS_COUNT)+" EFFECTS"),favoritesOnly);
-   uiButton(93,350,130,49,"< FAV");uiButton(244,350,130,49,"FAV >");
-  }else if(libraryPage==1){
-    for(uint8_t i=0;i<4;i++){
-      int y=170+i*59;textC(SCENE_LABELS[i],147,y+17,scenes[i].magic==SCENE_MAGIC?rgb(248,251,255):GRAY,2);
-      uiButton(237,y,75,37,"LOAD",scenes[i].magic==SCENE_MAGIC);
-      uiButton(318,y,83,37,"SAVE",true);
-    }
-    textC("HOLD SLOT TO CLEAR",CX,420,GRAY,2);
-  }else{
-    textC(String("BPM ")+String((int)bpm)+" · "+String((int)(beatConfidence*100))+"%",CX,180,GRAY,2);
-    uiButton(94,217,280,49,profile==0?"STAGE / SHOW":profile==1?"BALANCED":"ENDURANCE",true);
-    uiButton(94,281,280,49,adaptiveRender?"ADAPTIVE ON":"ADAPTIVE OFF",adaptiveRender);
-    uiButton(94,346,280,49,String("REMOTE IDLE ")+String(remoteIdleSecs)+"s",true);
-  }
-  break;}
  case NAME:{
   black();circ(CX,CY,R-3,rgb(42,92,126),2);
   // Use the entire available upper arc for the typed-name preview.
@@ -1351,27 +1327,6 @@ static void remoteTouch(int x,int y){
  vibration(100,26);
 }
 static void editorTouch(int x,int y){
- if(overlay==LIBRARY){
-   lastRemoteActivity=millis();
-   if(y>=104&&y<160){libraryPage=clampi((x-55)/119,0,2);vibration();return;}
-   if(libraryPage==0){
-     if(y>=215&&y<279){favoriteBits^=1ULL<<effectID;if(!favoriteBits)favoritesOnly=false;storeLibrary();vibration(155,50);}
-     else if(y>=279&&y<340){if(favoriteBits){favoritesOnly=!favoritesOnly;
-       if(favoritesOnly&&!isFavorite(effectID)){effectID=nextFavorite(effectID,1);persistEffect();}}
-       storeLibrary();vibration();}
-     else if(y>=345&&y<413&&favoriteBits){effectID=nextFavorite(effectID,x<CX?-1:1);persistEffect();vibration();}
-   }else if(libraryPage==1){
-     if(y>=160&&y<412){uint8_t slot=clampi((y-170)/59,0,3);
-      if(x>=313)saveScene(slot);else if(x>=228)loadScene(slot);}
-   }else{
-     if(y>=210&&y<276){profile=(profile+1)%3;prefs.putUChar("profile",profile);
-       if(!remote)setCpuFrequencyMhz(profile==2?160:240);vibration();}
-     else if(y>=279&&y<340){adaptiveRender=!adaptiveRender;prefs.putBool("adaptive",adaptiveRender);vibration();}
-     else if(y>=342&&y<406){remoteIdleSecs=remoteIdleSecs==20?45:remoteIdleSecs==45?0:20;
-       prefs.putUChar("idle",remoteIdleSecs);vibration();}
-   }
-   return;
- }
  if(overlay==BRIGHTNESS){
   if(y>=233&&y<287){
     candidateBrightness=clampi((x-65)*100/(W-130),8,100);
@@ -1422,6 +1377,23 @@ static void controlButtons(){
  if(M5.BtnA.wasPressed()){keyADown=now;keyAHeld=false;brightnessRepeatAt=now;}
  if(M5.BtnB.wasPressed()){keyBDown=now;keyBHeld=false;brightnessRepeatAt=now;}
 
+ // Battery HUD owns both buttons: pressing either returns to the effect.
+ // Ignore the *release* of the B hold which originally opened this overlay.
+ if(overlay==BATTERY){
+   if(batteryEntryHold){
+     if(M5.BtnB.wasReleased()||!M5.BtnB.isPressed()){
+       batteryEntryHold=false;keyBDown=0;
+     }
+     return;
+   }
+   if(M5.BtnA.wasPressed()||M5.BtnB.wasPressed()){
+     overlay=NONE;batteryHudUntil=0;
+     // Consume this button's eventual release; don't change effects.
+     keyAHeld=true;keyBHeld=true;keyADown=0;keyBDown=0;
+     vibration(112,27);
+   }
+   return;
+ }
  // Text editor: physical A discards all edits, physical B saves.
  if(overlay==NAME){
   if(M5.BtnA.wasReleased()){overlay=NONE;inputName="";keyboardPopup="";vibration(170,45);}
@@ -1464,7 +1436,8 @@ static void controlButtons(){
   brightnessRepeatAt=now;keyAHeld=true;vibration(195,60);
  }
  if(M5.BtnB.isPressed()&&!keyChord&&!keyBHeld&&keyBDown&&now-keyBDown>=850&&overlay==NONE){
-  overlay=LIBRARY;libraryPage=0;keyBHeld=true;vibration(170,45);
+  // V17.1: B long press opens battery, never the removed Club Library.
+  openBatteryHud();batteryEntryHold=true;keyBHeld=true;
  }
  if(M5.BtnA.wasReleased()){
   if(!keyChord&&!keyAHeld&&overlay==NONE)selectEffect(-1);keyADown=0;
@@ -1514,12 +1487,6 @@ static void controlTouch(){
    }
    int dx=x-touchStartX;
    touchDown=false;nameTouchSamples=0;
-   if(overlay==LIBRARY&&abs(dx)>58){
-     libraryPage=(libraryPage+(dx<0?1:2))%3;vibration();return;
-   }
-   if(overlay==LIBRARY&&libraryPage==1&&held>800&&y>=160&&y<411){
-     uint8_t slot=clampi((y-170)/59,0,3);clearScene(slot);return;
-   }
    if(displayBlank){
      displayBlank=false;M5.Display.setBrightness((uint8_t)(brightness*255/100));
      lastRemoteActivity=millis();return;
@@ -1594,8 +1561,7 @@ void setup(){
  fb=(uint16_t*)cv.getBuffer();
  Serial.printf("Framebuffer OK. Free PSRAM=%u bytes\n",(unsigned)ESP.getFreePsram());
  initArtwork();
- // Power button can cause a hardware reset; show battery HUD after boot.
- openBatteryHud(false);
+ // V17.1: boot directly into the final effect; do not cover it with the battery HUD.
  M5.BtnA.setHoldThresh(730);M5.BtnB.setHoldThresh(850);
  M5.Power.setVibration(0);
  WiFi.mode(WIFI_OFF); // radio ONLY when harness remote enabled
@@ -1612,7 +1578,7 @@ void loop(){
  if(powerNow-batteryPowerPollAt>=120){
   batteryPowerPollAt=powerNow;
   uint8_t state=M5.Power.getKeyState();
-  if((state&2) && powerNow-batteryKeyCooldown>550){
+  if((state&2) && powerNow>1500 && powerNow-batteryKeyCooldown>550){
    batteryKeyCooldown=powerNow;openBatteryHud();
   }
  }
