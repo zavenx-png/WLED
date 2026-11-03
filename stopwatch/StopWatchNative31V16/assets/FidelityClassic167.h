@@ -176,14 +176,14 @@ static bool fidelityClassic167(uint8_t id){
    }
   }return true;
  }
- case 11:{ // 19 Fibonacci Sunflower: 410 point 230px radius, audio driven
+ case 11:{ // 19 Fibonacci Sunflower: fewer, double-size dots, full circular coverage
   black();
   const float gold=2.39996323f;
-  for(int i=0;i<410;i++){
+  for(int i=0;i<220;i++){
    float a=i*gold+t*.20f;
-   float rr=9.1f*sqrtf((float)i)*(1+.15f*energy)+band((i*11)%32)*30;
+   float rr=15.f*sqrtf((float)i)*(1+.07f*energy)+band((i*11)%32)*12;
    float level=.24f+band((i*11)%32)*.68f;
-   fxPolarDot(rr,a,(i%9)?1.2f:2.6f,fxInk(i*.0618f+t*.036f,level));
+   fxPolarDot(rr,a,(i%9)?2.5f:5.1f,fxInk(i*.0618f+t*.036f,level));
   }return true;
  }
  case 12:{ // 20 Infinity Tunnel: correct 10-sided perspective polygons
@@ -198,37 +198,53 @@ static bool fidelityClassic167(uint8_t id){
   black();
   for(int j=0;j<128;j++){
    float a=TAU*j/128.f,th=a+t*.08f;
-   for(int r=40;r<209;r+=7){
-    float node=sinf(5*a+t*.7f)*cosf(r*.075f)+sinf(8*a-t*.3f)*bass;
-    if(fabsf(node)>.72f)fxPolarDot(r+node*10,th,1.6f,fxInk(.56f+node*.14f+t*.022f,.52f+.35f*bass));
+   for(int r=29;r<222;r+=8){
+    float drive=clampf(.22f+.80f*bass+.65f*energy+.2f*beatPulse());
+    float node=sinf(5*a+t*(.55f+drive))*cosf(r*.075f)+sinf(8*a-t*(.28f+drive*.35f))*(.26f+drive);
+    if(fabsf(node)>.47f){
+      float rr=(r+node*(12+24*drive))*(1+.07f*drive);
+      fxPolarDot(rr,th,2.6f+1.7f*drive,fxInk(.56f+node*.14f+t*.022f,.48f+.4f*drive));
+    }
    }
   }return true;
  }
- case 16:{ // 22 Liquid Chrome: continuous metallic horizontal waves
-  black();
-  for(int k=0;k<15;k++){
-   for(int x=-170;x<170;x+=7){
-    float v=sinf(t+x*.026f+k*.54f),v2=sinf(t+(x+7)*.026f+k*.54f);
-    int bi=clampi((x+170)*31/340,0,31);
-    float y=(k-7)*22+v*(12+energy*45)+band(bi)*35;
-    float y2=(k-7)*22+v2*(12+energy*45)+band(clampi(bi+1,0,31))*35;
-    line(CX+x,CY+y,CX+x+7,CY+y2,fxInk(.57f+v*.064f,.36f+.22f*(v+1)),2);
+ case 16:{ // 22 Liquid Chrome: independent metallic lanes spanning the ROUND screen
+   black();
+   const int tracks=19,step=6;
+   for(int k=0;k<tracks;k++){
+     float yBase=CY+(k-(tracks-1)*.5f)*24.f;
+     float priorX=0,priorY=0;bool previous=false;
+     // Each lane has its own centerline, limited sway to prevent merging.
+     for(int x=-R;x<=R;x+=step){
+       float u=x*.019f+t*.7f+k*.34f;
+       int bi=clampi((x+R)*31/(2*R),0,31);
+       float live=clampf(band(bi)*.60f+.45f*bass+.24f*energy);
+       float sway=(5.5f+3.2f*live)*sinf(u)+(2.2f+2.0f*live)*sinf(u*1.74f-t*.35f);
+       float y=yBase+sway,xx=CX+x;
+       bool inside=sq(xx-CX)+sq(y-CY)<sq((float)R-3.f);
+       if(inside){
+         uint16_t silver=fxInk(.55f+.04f*sinf(u*.7f+k),.36f+.22f*(1+sinf(u))*.5f+.18f*live);
+         if(previous)line(priorX,priorY,xx,y,silver,2);
+         if(k%3==0&&previous)line(priorX,priorY+2,xx,y+2,tint(rgb(229,247,255),.27f+.23f*live));
+       }
+       previous=inside;priorX=xx;priorY=y;
+     }
    }
-  }return true;
+   return true;
  }
  case 17:{ // 23 Orbital Harmonics: rotated elliptical orbits instead of circles
   black();
   for(int o=0;o<13;o++){
-   float tilt=o*.46f+t*.11f,r=46+o*11;
+   float tilt=o*.46f+t*.11f,r=54+o*13;
    float flatten=.31f+.12f*band((o*2)%32);
    for(int j=0;j<90;j+=2){
     float a=j*TAU/90.f,x=cosf(a)*r,y=sinf(a)*r*flatten;
     float xx=x*cosf(tilt)-y*sinf(tilt),yy=x*sinf(tilt)+y*cosf(tilt);
-    dot(CX+xx,CY+yy,1.4f,fxInk(o*.083f+t*.042f,.54f+.3f*band(o*2)));
+    dot(CX+xx,CY+yy,3.2f,fxInk(o*.083f+t*.042f,.54f+.3f*band(o*2)));
    }
    float a=t*(.3f+o*.03f)+o*1.1f,xx=cosf(a)*r,yy=sinf(a)*r*.37f;
    glow(CX+xx*cosf(tilt)-yy*sinf(tilt),CY+xx*sinf(tilt)+yy*cosf(tilt),
-        2+int(band((o*2)%32)*4),fxInk(o*.083f+t*.042f,.74f));
+        3+int(band((o*2)%32)*4),fxInk(o*.083f+t*.042f,.74f));
   }return true;
  }
  case 18:{ // 24 Quantum Moire: two moving polar interference sources
