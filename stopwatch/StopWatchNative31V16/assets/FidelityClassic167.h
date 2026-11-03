@@ -146,7 +146,7 @@ static bool fidelityClassic167(uint8_t id){
   // Opaque central plate prevents radial spokes hiding the labels.
   dot(CX,CY,68,rgb(4,6,18));
   circ(CX,CY,68,rgb(83,126,243),1);
-  textC("BASS",CX,CY-15,rgb(217,231,255),2);
+  textC("BASS",CX,CY-15,rgb(217,231,255),4); // V17.6 double the previous font size
   textC(String(clampi((int)lroundf(clampf(bass)*100),0,100))+"%",CX,CY+18,rgb(227,242,255),4);
   return true;
  }
