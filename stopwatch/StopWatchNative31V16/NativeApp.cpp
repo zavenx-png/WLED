@@ -165,6 +165,7 @@ static const String DEFAULT_WORD="zaven";
 enum Overlay : uint8_t {NONE,NAME,BRIGHTNESS,RHYTHM,BATTERY};
 Overlay overlay=NONE;
 String inputName="";uint8_t robotField=0;
+bool nameRobotBlueEdited=false,nameRobotPinkEdited=false;
 String keyboardPopup="";int keyboardPopupX=0,keyboardPopupY=0;
 uint32_t keyboardPopupUntil=0,keyboardPopupStarted=0,brightnessRepeatAt=0;
 bool brightnessEntryHold=false,batteryEntryHold=false;
@@ -1089,21 +1090,32 @@ static void uiBar(int y,int x0,int x1,float value,uint16_t color){
 // Full-width one-screen QWERTY; exact same hit geometry used for rendering and touch.
 // One letter per physical contact, picked by the CENTER of the touch blob.
 // The closest physical key wins even if a finger overlaps 2-3 key hitboxes.
+// V17.3: larger, roomy one-screen keyboard. These SAME shared constants
+// drive the drawing AND the nearest-center touch hit testing.
+static constexpr int QW_LEFT[3]={14,36,80};
+static constexpr int QW_TOP[3]={155,224,293};
+static constexpr int QW_PITCH=44,QW_WIDTH=41,QW_HEIGHT=61;
+static constexpr int QW_DEL_X=138,QW_DEL_Y=382,QW_DEL_W=190,QW_DEL_H=52;
+static inline bool deleteHit(int x,int y){
+ // Generous invisible hit target extends beyond the button's visual border
+ // (especially helpful when touching the lower curved screen edge).
+ return x>=103&&x<=363&&y>=366&&y<=446;
+}
 static bool qwertyHit(int x,int y,char &out,int &cx,int &cy){
- const char *rows[3]={"qwertyuiop","asdfghjkl","zxcvbnm"};
- const int lefts[3]={24,45,87},tops[3]={183,246,309};
- if(x<12||x>454||y<174||y>368)return false;
+ static const char *const rows[3]={"qwertyuiop","asdfghjkl","zxcvbnm"};
+ if(x<8||x>458||y<146||y>362)return false;
  long best=2147483647L;char candidate=0;int bx=0,by=0;
  for(int row=0;row<3;row++){
-  const int yy=tops[row]+26;
-  if(abs(y-yy)>34)continue;
+  const int yy=QW_TOP[row]+QW_HEIGHT/2;
+  if(abs(y-yy)>37)continue;
   for(int k=0;k<(int)strlen(rows[row]);k++){
-    int xx=lefts[row]+k*42+19;
-    long d=(long)(x-xx)*(x-xx)+(long)(y-yy)*(y-yy);
-    if(d<best){best=d;candidate=rows[row][k];bx=xx;by=yy;}
+   const int xx=QW_LEFT[row]+k*QW_PITCH+QW_WIDTH/2;
+   const long dx=x-xx,dy=y-yy;
+   const long d=dx*dx+dy*dy;
+   if(d<best){best=d;candidate=rows[row][k];bx=xx;by=yy;}
   }
  }
- if(!candidate||best>1950)return false;
+ if(!candidate||best>2200)return false;
  out=candidate;cx=bx;cy=by;return true;
 }
 // Native vector-font drawing, no resampled bitmap scaling. Fits prominent UI
@@ -1162,18 +1174,19 @@ static void renderBatteryHud(){
  float pulse=.5f+.5f*sinf(millis()*.0021f);
  circ(CX,CY,177,tint(color,.09f+.09f*pulse),2);
  cv.setFont(&lgfx::fonts::FreeSansBold24pt7b);
- cv.setTextSize(1.4f);cv.setTextColor(rgb(243,253,255)); // V17.2: 30% smaller battery percentage
+ cv.setTextSize(1.05f);cv.setTextColor(rgb(243,253,255)); // V17.3: 25% smaller than V17.2
  cv.setTextDatum(middle_center);
  cv.drawString(String(batteryHudPercent)+"%",CX,CY-7);
  cv.setTextSize(1.f);
  cv.setFont(&lgfx::fonts::FreeSansBold12pt7b);
  cv.setTextColor(tint(color,.9f));cv.drawString("BATTERY",CX,104);
  cv.setFont(&lgfx::fonts::Font0);
- // V17.2: 40% larger label, using the original Font 3 at 1.4x.
- cv.setTextFont(3);cv.setTextSize(1.4f);
+ // V17.3: much larger, crisp NATIVE bold letters instead of small
+ // built-in Font 3. The new height is approximately 40% greater.
+ cv.setFont(&lgfx::fonts::FreeSansBold24pt7b);cv.setTextSize(1.f);
  cv.setTextDatum(middle_center);cv.setTextColor(tint(color,.85f));
  cv.drawString(batteryHudCharging?"CHARGING":"REMAINING",CX,290);
- cv.setTextSize(1.f);cv.setTextFont(1);
+ cv.setFont(&lgfx::fonts::Font0);
  if(batteryHudVoltage>2500&&batteryHudVoltage<5000)
   textC(String(batteryHudVoltage/1000.f,2)+" V",CX,331,rgb(153,194,211),2);
  textC("A / B OR TAP TO CLOSE",CX,374,rgb(111,151,177),2);
@@ -1205,36 +1218,34 @@ static void renderOverlay(){
   uiButton(153,379,160,45,"DONE");break;}
  case NAME:{
   black();circ(CX,CY,R-3,rgb(42,92,126),2);
-  // Use the entire available upper arc for the typed-name preview.
-  // Five to eight letters occupy almost the full watch width.
-  if(originalEffect(effectID)==22){
+  const bool robotName=originalEffect(effectID)==22;
+  if(robotName){
    uiButton(112,40,112,43,"BLUE",robotField==0);
    uiButton(241,40,112,43,"PINK",robotField==1);
-   String chosen=robotField==0?draftBlue:draftPink;
+   const String& chosen=robotField==0?draftBlue:draftPink;
    if(chosen.length())
-    drawLargeNativeLabel(chosen,CX,132,406,1.575f,robotField==0?CYAN:PINK);
-   else textC("TAP TO TYPE",CX,128,GRAY,3);
+    drawLargeNativeLabel(chosen,CX,109,406,1.575f,robotField==0?CYAN:PINK);
   }else{
-   if(inputName.length())
-    drawLargeNativeLabel(inputName,CX,116,390,1.575f,PINK);
-   else textC("TAP TO TYPE",CX,117,GRAY,3);
-   textC("A CANCEL    B SAVE",CX,48,GRAY,2);
+   if(inputName.length())drawLargeNativeLabel(inputName,CX,99,390,1.575f,PINK);
+   textC("A CANCEL    B SAVE",CX,42,GRAY,2);
   }
+  // All 26 keys are visible at once, 41x61 instead of V17.2's 39x53.
   static const char *const kRows[3]={"qwertyuiop","asdfghjkl","zxcvbnm"};
-  const int kLeft[3]={24,45,87},kTop[3]={183,246,309};
   uint32_t now=millis();
   bool popActive=keyboardPopup.length()&&(touchDown||(int32_t)(keyboardPopupUntil-now)>0);
   for(int row=0;row<3;row++)for(int k=0;k<(int)strlen(kRows[row]);k++){
-    int x=kLeft[row]+k*42,y=kTop[row];
-    bool active=popActive&&keyboardPopupX==x+19&&keyboardPopupY==y+26;
-    cv.fillRoundRect(x,y,39,53,8,active?rgb(93,172,209):rgb(27,55,87));
-    cv.drawRoundRect(x,y,39,53,8,active?rgb(224,253,255):rgb(116,171,211));
-    textC(String(kRows[row][k]),x+19,y+26,rgb(246,250,255),4);
+   int x=QW_LEFT[row]+k*QW_PITCH,y=QW_TOP[row];
+   bool active=popActive&&keyboardPopupX==x+QW_WIDTH/2&&keyboardPopupY==y+QW_HEIGHT/2;
+   cv.fillRoundRect(x,y,QW_WIDTH,QW_HEIGHT,9,active?rgb(93,172,209):rgb(27,55,87));
+   cv.drawRoundRect(x,y,QW_WIDTH,QW_HEIGHT,9,active?rgb(224,253,255):rgb(116,171,211));
+   textC(String(kRows[row][k]),x+QW_WIDTH/2,y+QW_HEIGHT/2,rgb(246,250,255),4);
   }
-  uiButton(106,376,112,48,"DEL");
-  uiButton(248,376,112,48,"SPACE",true);
+  // Only DELETE remains below the keyboard. Large visible button and
+  // deliberately wider invisible hit target for smaller fingers.
+  cv.fillRoundRect(QW_DEL_X,QW_DEL_Y,QW_DEL_W,QW_DEL_H,13,rgb(33,94,122));
+  cv.drawRoundRect(QW_DEL_X,QW_DEL_Y,QW_DEL_W,QW_DEL_H,13,rgb(164,229,249));
+  crispBrightnessText("DEL",CX,QW_DEL_Y+QW_DEL_H/2,rgb(251,254,255));
   if(popActive){
-   // Consistent, unmistakable Apple-style key bubble visible after a short tap.
    const uint32_t elapsed=now-keyboardPopupStarted;
    float grow=clampf(elapsed/70.f);
    int bw=60+(int)(16*grow),bh=66+(int)(14*grow);
@@ -1298,11 +1309,21 @@ static void renderRemote(){
  else if(radioSuccess)textC("APPLIED",CX,365,rgb(117,255,171),2);
 }
 static void showTextEditor(){
- overlay=NAME;inputName=sharedName;draftBlue=blueRobot;draftPink=pinkRobot;robotField=0;keyboardPopup="";keyboardPopupUntil=0;keyboardPopupStarted=0;vibration();
+ // Always start with a BLANK name entry; no previous name is prefilled.
+ overlay=NAME;inputName="";draftBlue="";draftPink="";robotField=0;
+ nameRobotBlueEdited=false;nameRobotPinkEdited=false;
+ keyboardPopup="";keyboardPopupUntil=0;keyboardPopupStarted=0;vibration();
 }
 static void saveNameOverlay(){
- if(originalEffect(effectID)==22){blueRobot=draftBlue;pinkRobot=draftPink;}
- else if(isTextEffect(effectID)){sharedName=inputName;}
+ if(originalEffect(effectID)==22){
+  // Unedited partner name is preserved; pressing Save with an empty field
+  // never silently wipes an existing robot name.
+  if(nameRobotBlueEdited&&draftBlue.length())blueRobot=draftBlue;
+  if(nameRobotPinkEdited&&draftPink.length())pinkRobot=draftPink;
+ }else if(isTextEffect(effectID)){
+  // Empty initial editor is a request to type, not to erase all prior names.
+  if(inputName.length())sharedName=inputName;
+ }
  saveNames();overlay=NONE;vibration(180,65);
 }
 static void remoteTouch(int x,int y){
@@ -1346,19 +1367,32 @@ static void editorTouch(int x,int y){
    else if(y>=372)overlay=NONE;
  }else if(overlay==NAME){
    if(originalEffect(effectID)==22&&y>=40&&y<87){
-     if(x>=112&&x<=353){robotField=x<CX?0:1;vibration(110,24);}return;
+     if(x>=112&&x<=353){robotField=x<CX?0:1;keyboardPopup="";vibration(110,24);}
+     return;
+   }
+   // DELETE takes priority over neighboring keys and uses a much larger
+   // invisible touch target than the visible DEL button.
+   if(deleteHit(x,y)){
+     String &dest=originalEffect(effectID)==22?(robotField==0?draftBlue:draftPink):inputName;
+     if(dest.length()){
+       dest.remove(dest.length()-1);
+       if(originalEffect(effectID)==22){
+         if(robotField==0)nameRobotBlueEdited=true;else nameRobotPinkEdited=true;
+       }
+     }
+     keyboardPopup="";vibration(150,35);
+     return;
    }
    char typed=0;int px=0,py=0;
    if(qwertyHit(x,y,typed,px,py)){
      String &dest=originalEffect(effectID)==22?(robotField==0?draftBlue:draftPink):inputName;
      if(dest.length()<12){
-       dest+=typed;keyboardPop(typed,px,py);vibration(105,20);
+       dest+=typed;
+       if(originalEffect(effectID)==22){
+         if(robotField==0)nameRobotBlueEdited=true;else nameRobotPinkEdited=true;
+       }
+       keyboardPop(typed,px,py);vibration(105,20);
      }
-   }else if(y>=376&&y<424){
-     String &dest=originalEffect(effectID)==22?(robotField==0?draftBlue:draftPink):inputName;
-     if(x>=106&&x<218){if(dest.length())dest.remove(dest.length()-1);}
-     else if(x>=248&&x<360){if(dest.length()<12)dest+=" ";}
-     keyboardPopup="";vibration(115,25);
    }
  }
 }
