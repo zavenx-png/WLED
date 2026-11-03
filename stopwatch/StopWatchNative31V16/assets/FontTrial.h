@@ -258,6 +258,15 @@ static void trialWord(const String &s,float x,float y,float width,float angle,ui
  trialReport(ts);
 }
 static void trialChar(char ch,float x,float y,float scale,uint16_t ink,float angle){
- char s[2]={ch,0};trialWord(String(s),x,y,scale*75.f,angle,ink,1.f);
+ // Individual letters (#1 and #2) do not benefit from the shared whole-word
+ // rotation atlas; render them from the small native glyph source directly.
+ uint32_t ts=micros();
+ char s[2]={ch,0};
+ if(trialEnsureSource(String(s))){
+  trialPaletteInk(trialSource,ink,1.f);
+  float z=(scale*75.f)/trialSourceNatural;
+  trialSource.pushRotateZoomWithAA(&cv,x,y,angle*57.2957795f,z,z,0);
+ }
+ trialReport(ts);
 }
 #endif
