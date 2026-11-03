@@ -60,7 +60,7 @@ static bool fidelityClassic167(uint8_t id){
    line(CX+side*25,horizon,CX+side*245,H,fxInk(side>0?.88f:.54f,.19f),5);
   }
   // Lane markers travel toward us with perspective acceleration.
-  const float travel=frac(t*.23f);
+  const float travel=t*6.0f; // ~6 perspective lane markers/second: fast forward highway motion
   for(int i=0;i<13;i++){
    float z=frac((i+travel)/13.f),depth=z*z;
    int y=horizon+int(207*depth),dh=3+int(24*depth);
@@ -198,72 +198,26 @@ static bool fidelityClassic167(uint8_t id){
   black();
   for(int j=0;j<128;j++){
    float a=TAU*j/128.f,th=a+t*.08f;
-   for(int r=29;r<222;r+=8){
-    float drive=clampf(.22f+.80f*bass+.65f*energy+.2f*beatPulse());
-    float node=sinf(5*a+t*(.55f+drive))*cosf(r*.075f)+sinf(8*a-t*(.28f+drive*.35f))*(.26f+drive);
-    if(fabsf(node)>.47f){
-      float rr=(r+node*(12+24*drive))*(1+.07f*drive);
-      fxPolarDot(rr,th,2.6f+1.7f*drive,fxInk(.56f+node*.14f+t*.022f,.48f+.4f*drive));
-    }
+   for(int r=40;r<209;r+=7){
+    float node=sinf(5*a+t*.7f)*cosf(r*.075f)+sinf(8*a-t*.3f)*bass;
+    if(fabsf(node)>.72f)fxPolarDot(r+node*10,th,1.6f,fxInk(.56f+node*.14f+t*.022f,.52f+.35f*bass));
    }
   }return true;
- }
- case 16:{ // 22 Liquid Chrome: independent metallic lanes spanning the ROUND screen
-   black();
-   const int tracks=19,step=6;
-   for(int k=0;k<tracks;k++){
-     float yBase=CY+(k-(tracks-1)*.5f)*24.f;
-     float priorX=0,priorY=0;bool previous=false;
-     // Each lane has its own centerline, limited sway to prevent merging.
-     for(int x=-R;x<=R;x+=step){
-       float u=x*.019f+t*.7f+k*.34f;
-       int bi=clampi((x+R)*31/(2*R),0,31);
-       float live=clampf(band(bi)*.60f+.45f*bass+.24f*energy);
-       float sway=(5.5f+3.2f*live)*sinf(u)+(2.2f+2.0f*live)*sinf(u*1.74f-t*.35f);
-       float y=yBase+sway,xx=CX+x;
-       bool inside=sq(xx-CX)+sq(y-CY)<sq((float)R-3.f);
-       if(inside){
-         uint16_t silver=fxInk(.55f+.04f*sinf(u*.7f+k),.36f+.22f*(1+sinf(u))*.5f+.18f*live);
-         if(previous)line(priorX,priorY,xx,y,silver,2);
-         if(k%3==0&&previous)line(priorX,priorY+2,xx,y+2,tint(rgb(229,247,255),.27f+.23f*live));
-       }
-       previous=inside;priorX=xx;priorY=y;
-     }
-   }
-   return true;
  }
  case 17:{ // 23 Orbital Harmonics: rotated elliptical orbits instead of circles
   black();
   for(int o=0;o<13;o++){
-   float tilt=o*.46f+t*.11f,r=54+o*13;
+   float tilt=o*.46f+t*.11f,r=46+o*11;
    float flatten=.31f+.12f*band((o*2)%32);
    for(int j=0;j<90;j+=2){
     float a=j*TAU/90.f,x=cosf(a)*r,y=sinf(a)*r*flatten;
     float xx=x*cosf(tilt)-y*sinf(tilt),yy=x*sinf(tilt)+y*cosf(tilt);
-    dot(CX+xx,CY+yy,3.2f,fxInk(o*.083f+t*.042f,.54f+.3f*band(o*2)));
+    dot(CX+xx,CY+yy,1.4f,fxInk(o*.083f+t*.042f,.54f+.3f*band(o*2)));
    }
    float a=t*(.3f+o*.03f)+o*1.1f,xx=cosf(a)*r,yy=sinf(a)*r*.37f;
    glow(CX+xx*cosf(tilt)-yy*sinf(tilt),CY+xx*sinf(tilt)+yy*cosf(tilt),
-        3+int(band((o*2)%32)*4),fxInk(o*.083f+t*.042f,.74f));
+        2+int(band((o*2)%32)*4),fxInk(o*.083f+t*.042f,.74f));
   }return true;
- }
- case 18:{ // 24 Quantum Moire: two moving polar interference sources
-  black();
-  for(int r=7;r<236;r+=6){
-   int n=clampi(int(r*1.1f),24,260);
-   for(int j=0;j<n;j++){
-    float a=j*TAU/n,xx=r*cosf(a),yy=r*sinf(a);
-    float q1=sqrtf(sq(xx+45*sinf(t*.23f))+sq(yy));
-    float q2=sqrtf(sq(xx-45*cosf(t*.20f))+sq(yy));
-    float v=sinf(q1*.22f+t*.35f)+sinf(q2*.21f-t*.24f);
-    if(v>.23f){
-     float rad=r+2.2f*sinf(a*9+t*.3f)*bass;
-     fxPolarDot(rad,a,1.2f+.7f*clampf(v),fxInk(.54f+v*.16f+t*.011f,.25f+.24f*v+.18f*energy));
-    }
-   }
-  }
-  circ(CX,CY,222,rgb(65,55,153));
-  return true;
  }
  case 19:{ // 25 Nebula Particles: browser 340 dispersed glowing particles
   black();
@@ -277,10 +231,7 @@ static bool fidelityClassic167(uint8_t id){
  }
  case 20:{ // 26 Warehouse House Duo: perspective floor grid + lasers BEHIND dancers
   black();
-  for(int k=0;k<16;k++){
-   float angle=(k-7.5f)*.095f+sinBeat(.015f)*.12f;
-   line(CX,62,CX+320*sinf(angle),H,tint(hue(.58f+k*.031f),.22f+.22f*bass),2);
-  }
+  // V16.9: remove overhead spiral/fan rays; keep floor, EQ lighting and dancers unchanged.
   // Floor: horizon at y310, perspective rays and compressed depth lines.
   for(int k=-10;k<=10;k++)line(CX,307,CX+k*47,H,tint(rgb(79,74,208),.38f));
   for(int j=1;j<=9;j++){float v=j/9.f,y=307+161*v*v;
