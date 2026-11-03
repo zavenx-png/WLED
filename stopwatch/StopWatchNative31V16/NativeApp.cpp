@@ -165,7 +165,7 @@ static const String DEFAULT_WORD="zaven";
 enum Overlay : uint8_t {NONE,NAME,BRIGHTNESS,RHYTHM,BATTERY};
 Overlay overlay=NONE;
 String inputName="";uint8_t robotField=0;
-bool nameRobotBlueEdited=false,nameRobotPinkEdited=false;
+bool nameRobotBlueEdited=false,nameRobotPinkEdited=false,nameDeleteConsumed=false;
 String keyboardPopup="";int keyboardPopupX=0,keyboardPopupY=0;
 uint32_t keyboardPopupUntil=0,keyboardPopupStarted=0,brightnessRepeatAt=0;
 bool brightnessEntryHold=false,batteryEntryHold=false;
@@ -1550,15 +1550,23 @@ static void controlTouch(){
    touchStart=millis();
    touchDown=true;
    nameTouchXSum=touch.x;nameTouchYSum=touch.y;nameTouchSamples=1;
+   nameDeleteConsumed=false;
    if(overlay==NAME){
-     char ch=0;int xx=0,yy=0;
-     if(qwertyHit(touch.x,touch.y,ch,xx,yy))keyboardPop(ch,xx,yy);
-     else keyboardPopup="";
+     // V17.4: DELETE is an immediate ON-PRESS action. Do not wait for the
+     // finger to lift or use its averaged coordinates, which caused misses.
+     if(deleteHit(touch.x,touch.y)){
+       editorTouch(touch.x,touch.y);
+       nameDeleteConsumed=true;
+     }else{
+       char ch=0;int xx=0,yy=0;
+       if(qwertyHit(touch.x,touch.y,ch,xx,yy))keyboardPop(ch,xx,yy);
+       else keyboardPopup="";
+     }
    }
  }
  if(touch.isPressed()&&touchDown){
    touchLastX=touch.x;touchLastY=touch.y;
-   if(overlay==NAME){
+   if(overlay==NAME && !nameDeleteConsumed){
      // Compute ONE mean contact center across this entire physical press.
      // Ignore simultaneous / adjacent key edges, not the touch centroid.
      if(nameTouchSamples<28){
@@ -1574,6 +1582,11 @@ static void controlTouch(){
    // A physical contact can report both wasClicked and wasReleased across
    // frames. Commit exactly once, then discard any duplicate event.
    if(!touchDown)return;
+   if(overlay==NAME&&nameDeleteConsumed){
+     // Consume the matching release; never delete twice or add a letter.
+     touchDown=false;nameTouchSamples=0;nameDeleteConsumed=false;
+     keyboardPopup="";return;
+   }
    uint32_t held=millis()-touchStart;
    int x=touchLastX,y=touchLastY;
    if(overlay==NAME&&nameTouchSamples>0){
