@@ -1114,11 +1114,11 @@ static void keyboardPop(char letter,int x,int y){
  keyboardPopupStarted=millis();
  keyboardPopupUntil=keyboardPopupStarted+455; // Visible for >10 frames at 30 fps.
 }
-// V16.11 brightness typography: real 18/24pt native glyphs, exactly 1x.
-// No sprite zoom/bitmap resampling, so curves and diagonals stay crisp.
-static void crispBrightnessText(const String &word,int x,int y,uint16_t ink,bool compact=false){
- if(compact)cv.setFont(&lgfx::fonts::FreeSansBold18pt7b);
- else cv.setFont(&lgfx::fonts::FreeSansBold24pt7b);
+// V16.12: smaller, clean native font tiers with NO fractional bitmap zoom.
+// Heading: 18pt instead of 24pt. Both button labels: matching 12pt bold.
+static void crispBrightnessText(const String &word,int x,int y,uint16_t ink,bool buttons=false){
+ if(buttons)cv.setFont(&lgfx::fonts::FreeSansBold12pt7b);
+ else cv.setFont(&lgfx::fonts::FreeSansBold18pt7b);
  cv.setTextSize(1.f);cv.setTextDatum(middle_center);cv.setTextColor(ink);
  cv.drawString(word,x,y);
  cv.setFont(&lgfx::fonts::Font0);
@@ -1138,7 +1138,7 @@ static void renderOverlay(){
   cv.fillRoundRect(241,309,147,82,12,rgb(44,130,151));
   cv.drawRoundRect(241,309,147,82,12,rgb(183,255,255));
   crispBrightnessText("CANCEL",150,350,rgb(244,251,255),true);
-  crispBrightnessText("OK",314,350,rgb(255,255,255));
+  crispBrightnessText("OK",314,350,rgb(255,255,255),true);
   break;
  }
  case RHYTHM:{panelBg("AUTO BEAT ENGINE");
