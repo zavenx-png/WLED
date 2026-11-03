@@ -157,7 +157,7 @@ enum Overlay : uint8_t {NONE,NAME,BRIGHTNESS,RHYTHM,LIBRARY};
 Overlay overlay=NONE;
 String inputName="";uint8_t robotField=0;
 String keyboardPopup="";int keyboardPopupX=0,keyboardPopupY=0;
-uint32_t keyboardPopupUntil=0,brightnessRepeatAt=0;
+uint32_t keyboardPopupUntil=0,keyboardPopupStarted=0,brightnessRepeatAt=0;
 bool brightnessEntryHold=false;
 uint8_t candidateBrightness=52;float candidateBpm=125;
 // Persistent, compact NVS-backed favorites and complete per-scene parameters.
@@ -1058,17 +1058,45 @@ static bool qwertyHit(int x,int y,char &out,int &cx,int &cy){
  }
  return false;
 }
+// Native vector-font drawing, no resampled bitmap scaling. Fits prominent UI
+// labels to the available width while retaining the selected direct-native style.
+static void drawLargeNativeLabel(const String &word,int x,int y,int maxWidth,
+                                 float maxSize,uint16_t ink){
+ if(!word.length())return;
+ cv.setFont(&lgfx::fonts::FreeSansBold24pt7b);
+ cv.setTextSize(1.f);
+ float nativeW=fmaxf(1.f,(float)cv.textWidth(word));
+ float scale=clampf((float)maxWidth/nativeW,.85f,maxSize);
+ cv.setTextSize(scale);
+ cv.setTextDatum(middle_center);
+ cv.setTextColor(ink);
+ cv.drawString(word,x,y);
+ cv.setTextSize(1.f);
+ cv.setFont(&lgfx::fonts::Font0);
+}
+static void keyboardPop(char letter,int x,int y){
+ keyboardPopup=String(letter);
+ keyboardPopupX=x;keyboardPopupY=y;
+ keyboardPopupStarted=millis();
+ keyboardPopupUntil=keyboardPopupStarted+455; // Visible for >10 frames at 30 fps.
+}
 static void renderOverlay(){
  if(overlay==NONE)return;
  const uint16_t CYAN=rgb(88,229,245), PINK=rgb(255,113,207), GRAY=rgb(169,206,230);
  switch(overlay){
  case BRIGHTNESS:{
   black();circ(CX,CY,R-3,rgb(42,92,126),2);
-  textC("BRIGHTNESS",CX,88,CYAN,6);
-  textC(String(candidateBrightness)+"%",CX,184,rgb(252,252,255),7);
+  // V16.10: the previous built-in size-6 font silently clipped this title.
+  // Fixed-width native bold text fits the visible round screen.
+  drawLargeNativeLabel("BRIGHTNESS",CX,81,379,1.67f,rgb(105,239,253));
+  drawLargeNativeLabel(String(candidateBrightness)+"%",CX,179,276,2.24f,rgb(253,253,255));
   uiBar(255,65,W-65,candidateBrightness/100.f,CYAN);
-  uiButton(77,309,147,82,"CANCEL");
-  uiButton(241,309,147,82,"OK",true);
+  cv.fillRoundRect(77,309,147,82,12,rgb(19,45,73));
+  cv.drawRoundRect(77,309,147,82,12,rgb(98,154,184));
+  cv.fillRoundRect(241,309,147,82,12,rgb(44,130,151));
+  cv.drawRoundRect(241,309,147,82,12,rgb(183,255,255));
+  drawLargeNativeLabel("CANCEL",150,350,131,1.45f,rgb(244,251,255));
+  drawLargeNativeLabel("OK",314,350,119,1.75f,rgb(255,255,255));
   break;
  }
  case RHYTHM:{panelBg("AUTO BEAT ENGINE");
@@ -1103,34 +1131,48 @@ static void renderOverlay(){
   break;}
  case NAME:{
   black();circ(CX,CY,R-3,rgb(42,92,126),2);
-  // No EDIT NAME header. Give the full circular canvas to the keyboard.
-  textC("A CANCEL   B SAVE",CX,56,GRAY,2);
+  // Use the entire available upper arc for the typed-name preview.
+  // Five to eight letters occupy almost the full watch width.
   if(originalEffect(effectID)==22){
-    textC("BLUE: "+(draftBlue.length()?draftBlue:"(none)"),CX,100,robotField==0?CYAN:GRAY,3);
-    textC("PINK: "+(draftPink.length()?draftPink:"(none)"),CX,139,robotField==1?PINK:GRAY,3);
+   uiButton(64,34,165,46,"BLUE",robotField==0);
+   uiButton(237,34,165,46,"PINK",robotField==1);
+   String chosen=robotField==0?draftBlue:draftPink;
+   if(chosen.length())
+    drawLargeNativeLabel(chosen,CX,128,426,3.15f,robotField==0?CYAN:PINK);
+   else textC("TAP TO TYPE",CX,128,GRAY,3);
   }else{
-    textC(inputName.length()?inputName:"tap to type",CX,128,PINK,inputName.length()>8?3:5);
+   if(inputName.length())
+    drawLargeNativeLabel(inputName,CX,116,426,3.15f,PINK);
+   else textC("TAP TO TYPE",CX,117,GRAY,3);
+   textC("A CANCEL    B SAVE",CX,48,GRAY,2);
   }
   static const char *const kRows[3]={"qwertyuiop","asdfghjkl","zxcvbnm"};
   const int kLeft[3]={24,45,87},kTop[3]={183,246,309};
-  for(int row=0;row<3;row++){
-    for(int k=0;k<(int)strlen(kRows[row]);k++){
-      int x=kLeft[row]+k*42,y=kTop[row];
-      cv.fillRoundRect(x,y,39,53,8,rgb(27,55,87));
-      cv.drawRoundRect(x,y,39,53,8,rgb(116,171,211));
-      textC(String(kRows[row][k]),x+19,y+26,rgb(246,250,255),4);
-    }
+  uint32_t now=millis();
+  bool popActive=keyboardPopup.length()&&(touchDown||(int32_t)(keyboardPopupUntil-now)>0);
+  for(int row=0;row<3;row++)for(int k=0;k<(int)strlen(kRows[row]);k++){
+    int x=kLeft[row]+k*42,y=kTop[row];
+    bool active=popActive&&keyboardPopupX==x+19&&keyboardPopupY==y+26;
+    cv.fillRoundRect(x,y,39,53,8,active?rgb(93,172,209):rgb(27,55,87));
+    cv.drawRoundRect(x,y,39,53,8,active?rgb(224,253,255):rgb(116,171,211));
+    textC(String(kRows[row][k]),x+19,y+26,rgb(246,250,255),4);
   }
-  // The entire alphabet is visible at once; controls use the lower arc.
   uiButton(84,373,93,52,"DEL");
   uiButton(185,373,94,52,"SPACE",true);
   uiButton(287,373,93,52,"CLEAR");
-  if(keyboardPopup.length() && (touchDown||millis()<keyboardPopupUntil)){
-    int px=clampi(keyboardPopupX-28,16,W-72),py=clampi(keyboardPopupY-105,42,282);
-    cv.fillRoundRect(px,py,72,77,13,rgb(232,243,254));
-    cv.drawRoundRect(px,py,72,77,13,rgb(103,179,229));
-    textC(keyboardPopup,px+36,py+34,rgb(18,37,62),6);
-    cv.fillTriangle(keyboardPopupX-9,py+77,keyboardPopupX+9,py+77,keyboardPopupX,py+87,rgb(232,243,254));
+  if(popActive){
+   // Consistent, unmistakable Apple-style key bubble visible after a short tap.
+   const uint32_t elapsed=now-keyboardPopupStarted;
+   float grow=clampf(elapsed/70.f);
+   int bw=60+(int)(16*grow),bh=66+(int)(14*grow);
+   int bx=clampi(keyboardPopupX-bw/2,11,W-bw-11);
+   int by=clampi(keyboardPopupY-112,41,255);
+   cv.fillRoundRect(bx-3,by-2,bw+6,bh+6,13,rgb(51,77,99));
+   cv.fillRoundRect(bx,by,bw,bh,12,rgb(248,251,255));
+   cv.drawRoundRect(bx,by,bw,bh,12,rgb(107,178,221));
+   cv.fillTriangle(keyboardPopupX-10,by+bh-1,keyboardPopupX+10,by+bh-1,
+                   keyboardPopupX,by+bh+13,rgb(248,251,255));
+   drawLargeNativeLabel(keyboardPopup,bx+bw/2,by+bh/2,bw-12,1.60f,rgb(17,38,62));
   }
   break;
  }
@@ -1183,7 +1225,7 @@ static void renderRemote(){
  else if(radioSuccess)textC("APPLIED",CX,365,rgb(117,255,171),2);
 }
 static void showTextEditor(){
- overlay=NAME;inputName=userText[effectID];draftBlue=blueRobot;draftPink=pinkRobot;robotField=0;keyboardPopup="";keyboardPopupUntil=0;vibration();
+ overlay=NAME;inputName=userText[effectID];draftBlue=blueRobot;draftPink=pinkRobot;robotField=0;keyboardPopup="";keyboardPopupUntil=0;keyboardPopupStarted=0;vibration();
 }
 static void saveNameOverlay(){
  if(originalEffect(effectID)==22){blueRobot=draftBlue;pinkRobot=draftPink;}
@@ -1251,15 +1293,14 @@ static void editorTouch(int x,int y){
       setCpuFrequencyMhz(profile==2?160:240);vibration();}
    else if(y>=372)overlay=NONE;
  }else if(overlay==NAME){
-   if(originalEffect(effectID)==22&&y>=83&&y<161){
-     robotField=y<121?0:1;vibration(110,24);return;
+   if(originalEffect(effectID)==22&&y>=32&&y<87){
+     if(x>=64&&x<=402){robotField=x<CX?0:1;vibration(110,24);}return;
    }
    char typed=0;int px=0,py=0;
    if(qwertyHit(x,y,typed,px,py)){
      String &dest=originalEffect(effectID)==22?(robotField==0?draftBlue:draftPink):inputName;
      if(dest.length()<12){
-       dest+=typed;keyboardPopup=String(typed);keyboardPopupX=px;keyboardPopupY=py;
-       keyboardPopupUntil=millis()+185;vibration(105,20);
+       dest+=typed;keyboardPop(typed,px,py);vibration(105,20);
      }
    }else if(y>=371&&y<429){
      String &dest=originalEffect(effectID)==22?(robotField==0?draftBlue:draftPink):inputName;
@@ -1349,8 +1390,7 @@ static void controlTouch(){
   if(overlay==NAME){
     char ch=0;int xx=0,yy=0;
     if(qwertyHit(touch.x,touch.y,ch,xx,yy)){
-      keyboardPopup=String(ch);keyboardPopupX=xx;keyboardPopupY=yy;
-      keyboardPopupUntil=millis()+170;
+      keyboardPop(ch,xx,yy);
     }else keyboardPopup="";
   }
  }
@@ -1384,6 +1424,7 @@ static void saveFrameStats(){ // Diagnostic data via Serial only; no onscreen pe
 }
 static uint8_t powerFrameCap(){
  uint8_t rate=profile==0?48:profile==1?35:24;
+ if(overlay==NAME)return profile==2?24:32; // smoother, visibly held key popovers
  if(remote||overlay!=NONE)return 15;
  if(!adaptiveRender)return rate;
  if(originalEffect(effectID)==2||originalEffect(effectID)==3||originalEffect(effectID)==27)return rate;
