@@ -70,7 +70,7 @@ static bool fidelityClassic167(uint8_t id){
   }
   // V16.12: a single travel clock and the EXACT same perspective transform
   // drive BOTH neon grid cross-lines and the white lane markers.
-  const float travel=t*6.0f; // matches the approved ~60 mph-looking motion
+  const float travel=t*4.02f; // V17: 33% slower; grid and white lines share this clock
   for(int k=0;k<13;k++){
    float z=frac((k+travel)/13.f),depth=z*z;
    float y=horizon+207*depth,half=16+228*depth;
@@ -289,7 +289,8 @@ static bool fidelityClassic167(uint8_t id){
   for(int j=0;j<2;j++){
    float baseX=j?330:138,p=beatClock*.20f+j*1.6f;
    // The spiraling ribbon strands are intentionally removed in V16.11.
-   figure(baseX+sinf(p)*8,373,.85f,beatClock+j*1.5f,
+   // V17: 60% larger figures; re-center them vertically so legs stay in view.
+   figure(baseX+sinf(p)*8,337,1.36f,beatClock+j*1.5f,
           j?rgb(235,99,255):rgb(64,247,216));
   }
   return true;
