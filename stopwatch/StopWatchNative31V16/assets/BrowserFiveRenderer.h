@@ -143,18 +143,18 @@ static bool renderBrowserFive(uint8_t id){
    float osc=.5f+.5f*sinf(hb*.5f+i*1.38f);
    float x=CX+(i-(n-1)*.5f)*gap;
    float y=214-((m*.8f+osc*.20f)*112.f-50.f);
-   b5Char(word[i],x,y,font/78.f,cols[i%5]);
+   b5Char(word[i],x,y,(font/78.f)*(n<=6?2.65f:fmaxf(1.15f,12.f/n)),cols[i%5]);
    line(x,318,x,302-m*59,cols[i%5],2);
   }
   break;}
  case 24:{ // 02 Psychedelic Halo: 12 smooth wavy contours + dancing letters.
   const float p=hb*.12f;
   for(int k=12;k>0;k--){
-   float r=23+k*16+bass*13;
+   float r=23+k*16+bass*19;
    float lastX=0,lastY=0;
    for(int j=0;j<=180;j++){
     float a=TAU*j/180.f;
-    float rr=r*(1+.10f*sinf(a*7+p+k*.4f)+.055f*sinf(a*13-p*2));
+    float rr=r*(1+.13f*sinf(a*7+p+k*.4f)+.070f*sinf(a*13-p*2));
     float x=CX+cosf(a)*rr,y=CY+sinf(a)*rr;
     if(j)line(lastX,lastY,x,y,b5Lit((k*31+t*4)/360.f,.56f),2);
     lastX=x;lastY=y;
@@ -167,8 +167,8 @@ static bool renderBrowserFive(uint8_t id){
   float step=wholeW/n;
   for(int i=0;i<n;i++){
    float x=CX+(i-(n-1)*.5f)*step;
-   float y=CY+16*sinf(t*1.15f+i*.81f)+5*sinf(t*.56f+i*1.48f);
-   b5Char(word[i],x,y,sz/78.f,(i%2)?rgb(255,189,255):rgb(255,242,254),.075f*sinf(p+i*.6f+t*.15f));
+   float y=CY+21*sinf(t*1.15f+i*.81f)+7*sinf(t*.56f+i*1.48f)+8*bass*sinf(hb+i*.4f);
+   b5Char(word[i],x,y,(sz/78.f)*(n<=6?2.65f:fmaxf(1.15f,12.f/n)),(i%2)?rgb(255,189,255):rgb(255,242,254),.075f*sinf(p+i*.6f+t*.15f));
   }
   break;}
  case 25:{ // 03 Kaleidoscope: 40 readable whole words on concentric wedges.
@@ -190,12 +190,12 @@ static bool renderBrowserFive(uint8_t id){
  case 26:{ // 04 Round Resonator: six complete words circulate the rings.
   float p=hb*.065f;
   for(int k=0;k<15;k++){
-   float r=28+k*14+band((k*2)%32)*16;
+   float r=28+k*14+band((k*2)%32)*22;
    circ(CX,CY,(int)r,b5Lit((180+k*17+t*5)/360.f,.50f+energy*.18f),1);
   }
   for(int i=0;i<6;i++){
    float phi=i*TAU/6.f+p;
-   float rr=117+17*sinf(hb*.5f+i);
+   float rr=117+22*sinf(hb*.5f+i)+13*bass*sinf(hb+i*.9f);
    float x=CX+cosf(phi)*rr,y=CY+sinf(phi)*rr;
    b5Stamp(wordMask,x,y,fminf(110.f,n*21.f),phi+PI_F*.5f,b5Hue(frac(i/8.f)),.87f);
   }
@@ -203,16 +203,16 @@ static bool renderBrowserFive(uint8_t id){
  case 27:{ // 05 Fibonacci Spiral: V6 whole-word composition, NOT glyph dashes.
   const float golden=2.39996322972865f;
   float motion=t*.092f+beatClock*.002f;
-  float breath=1+.05f*bass+.027f*energy;
+  float breath=1+.28f*bass+.12f*energy;
   for(int i=0;i<120;i++){
-   float f=frac(i/120.f+motion*.38f),r=(14+217*sqrtf(f))*breath,a=i*golden+motion*.21f;
+   float f=frac(i/120.f+motion*.38f),r=(14+217*sqrtf(f))*breath+band(i%32)*18.f,a=i*golden+motion*.21f;
    int x=CX+(int)(cosf(a)*r),y=CY+(int)(sinf(a)*r);
    if((unsigned)x<(unsigned)W&&(unsigned)y<(unsigned)H)
       cv.drawPixel(x,y,b5Lit(frac(i*.071f+t*.012f),.28f+.45f*(1-f)));
   }
   for(int i=0;i<26;i++){
-   float f=frac(i/26.f+motion),r=(28+203*sqrtf(f))*breath,a=i*golden+motion*.35f;
-   float fade=clampf(f*8)*clampf((1-f)*6)*(.57f+.30f*pulse+.25f*energy);
+   float f=frac(i/26.f+motion),r=(28+203*sqrtf(f))*breath+band(i%32)*21.f,a=i*golden+motion*.35f;
+   float fade=clampf(f*8)*clampf((1-f)*6)*(.49f+.36f*pulse+.45f*energy+.16f*bass);
    float width=fminf(106.f,fmaxf(74.f,n*16.f))*(.66f+f*.28f);
    b5Stamp(wordMask,CX+cosf(a)*r,CY+sinf(a)*r,width,a+PI_F*.5f,b5Hue(frac(i/8.f)),fade);
   }
