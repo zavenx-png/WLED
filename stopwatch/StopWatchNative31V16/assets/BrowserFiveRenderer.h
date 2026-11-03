@@ -185,7 +185,15 @@ static bool renderBrowserFive(uint8_t id){
   const float letterH=cv.fontHeight()*zoom;
   cv.setFont(&lgfx::fonts::Font0);
   int ringR=clampi((int)ceilf(hypotf(letterW*.5f,letterH*.5f)+10.f),49,187);
-  int firstWedge=clampi(ringR+25,94,222);
+  // V16.12: keep a VISIBLE gap after the ring. Calculate each outer word's
+  // native D bounding circle at its 18pt text tier, rather than positioning
+  // the glyph center only 25px beyond the ring (which caused collisions).
+  cv.setFont(&lgfx::fonts::FreeSansBold18pt7b);
+  cv.setTextSize(1.f);
+  float outerRadius=hypotf(cv.textWidth(word)*.5f,cv.fontHeight()*.5f);
+  cv.setFont(&lgfx::fonts::Font0);
+  const float clearGap=15.f;
+  int firstWedge=clampi((int)ceilf(ringR+outerRadius+clearGap),94,280);
   for(int slice=0;slice<8;slice++){
    float base=slice*TAU/8.f+p;
    for(int rr=firstWedge;rr<230;rr+=46){
