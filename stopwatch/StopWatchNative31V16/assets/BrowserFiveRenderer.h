@@ -143,12 +143,7 @@ static bool renderBrowserFive(uint8_t id){
    float osc=.5f+.5f*sinf(hb*.5f+i*1.38f);
    float x=CX+(i-(n-1)*.5f)*gap;
    float y=214-((m*.8f+osc*.20f)*112.f-50.f);
-   // V17: cached 3x3 coverage smoothing on native letters ONLY here.
-#if STOPWATCH_FONT_TRIAL==2
-   trialCharSoft(word[i],x,y,1.70f*(font/78.f)*(n<=6?2.65f:fmaxf(1.15f,12.f/n)),cols[i%5],0.f);
-#else
    b5Char(word[i],x,y,1.70f*(font/78.f)*(n<=6?2.65f:fmaxf(1.15f,12.f/n)),cols[i%5]);
-#endif
    line(x,318,x,302-m*59,cols[i%5],2);
   }
   break;}
