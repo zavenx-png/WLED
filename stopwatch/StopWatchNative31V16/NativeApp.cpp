@@ -802,7 +802,10 @@ static void fibStampWord(const String &word,float cx,float cy,float width,float 
  }
 }
 
+#include "assets/BrowserFiveRenderer.h"
 static void textEffects(uint8_t id){
+ if(id>=23&&id<=27&&renderBrowserFive(id))return; // V16.2 effects 1-5 only
+
  black();float t=T(),q=beatClock,norm=clampf(.24f+energy);
  const String &word=artName(effectID);uint16_t purple=rgb(209,72,255),cyan=rgb(69,231,246),pink=rgb(254,83,173);
  int wid=word.length();
