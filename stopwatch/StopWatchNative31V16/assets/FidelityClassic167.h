@@ -294,8 +294,23 @@ static bool fidelityClassic167(uint8_t id){
   figure(318,303,1.f,beatClock+2.f,rgb(77,226,255));
   return true;
  }
- case 21:{ // 27 Ribbon Pirouette: two performers inside long twisting ribbons
+ case 21:{ // 27 Ribbon Pirouette: two performers, overhead sweeping CLUB SPOTLIGHTS
   black();
+  // Motorized club beams sweep back and forth independently of the dancers.
+  // Three strands per lamp form a visible moving light cone; brighter on kicks.
+  const float spotDrive=clampf(.28f+.62f*bass+.34f*energy);
+  for(int beam=0;beam<9;beam++){
+    float originX=42+beam*47,phase=t*(.57f+beam*.019f)+beam*1.31f;
+    float sweep=sinf(phase)*(.48f+.27f*spotDrive);
+    float targetX=originX+tan(fminf(1.15f,fmaxf(-1.15f,sweep)))*230.f;
+    uint16_t col=fxInk(.56f+beam*.064f+t*.009f,.22f+.48f*spotDrive);
+    for(int side=-2;side<=2;side++){
+      line(originX+side*2,29,targetX+side*21,408,tint(col,side==0?.90f:.20f),side==0?2:1);
+    }
+    glow(originX,28,3+int(3*spotDrive),col);
+    // Reflected floor pool follows the beam.
+    dot(targetX,410,4+int(4*spotDrive),tint(col,.37f));
+  }
   for(int j=0;j<2;j++){
    float baseX=j?330:138,p=beatClock*.20f+j*1.6f;
    for(int strand=0;strand<5;strand++){
