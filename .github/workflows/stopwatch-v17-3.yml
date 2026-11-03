@@ -1,0 +1,57 @@
+name: StopWatch C152 V17.3 Battery B Hold and Warehouse Merge
+on:
+  push:
+    branches: [stopwatch-v17-3-large-qwerty-battery-typography]
+    paths:
+      - 'stopwatch/StopWatchNative31V16/**'
+      - '.github/workflows/stopwatch-v17-3.yml'
+  workflow_dispatch:
+jobs:
+  build-v17-3:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: arduino/setup-arduino-cli@v2
+      - name: Install official M5Stack StopWatch board and display libraries
+        run: |
+          arduino-cli config init
+          arduino-cli config add board_manager.additional_urls https://static-cdn.m5stack.com/resource/arduino/package_m5stack_index.json
+          arduino-cli core update-index
+          arduino-cli core install m5stack:esp32
+          arduino-cli lib install M5Unified
+          arduino-cli lib install M5GFX
+      - name: Verify V17.3 effect count and input contract
+        run: |
+          sed -i -E "s/^#define STOPWATCH_FONT_TRIAL [0-9]+/#define STOPWATCH_FONT_TRIAL 2/" stopwatch/StopWatchNative31V16/assets/FontTrial.h
+          grep -Fq '#define STOPWATCH_FONT_TRIAL 2' stopwatch/StopWatchNative31V16/assets/FontTrial.h
+          grep -Fq 'VIS_COUNT=23' stopwatch/StopWatchNative31V16/NativeApp.cpp
+          grep -Fq 'effectID=VIS_COUNT-1' stopwatch/StopWatchNative31V16/NativeApp.cpp
+          grep -Fq 'batteryEntryHold=true' stopwatch/StopWatchNative31V16/NativeApp.cpp
+          grep -Fq 'cv.setTextSize(1.05f)' stopwatch/StopWatchNative31V16/NativeApp.cpp
+          grep -Fq 'QW_TOP[3]={155,224,293}' stopwatch/StopWatchNative31V16/NativeApp.cpp
+          grep -Fq 'QW_DEL_X=138' stopwatch/StopWatchNative31V16/NativeApp.cpp
+          grep -Fq 'deleteHit(x,y)' stopwatch/StopWatchNative31V16/NativeApp.cpp
+          grep -Fq 'nameRobotBlueEdited' stopwatch/StopWatchNative31V16/NativeApp.cpp
+          if grep -Fq 'uiButton(248,376,112,48,"SPACE"' stopwatch/StopWatchNative31V16/NativeApp.cpp; then exit 1; fi
+          grep -Fq 'H-25-int(55*band(j+2))' stopwatch/StopWatchNative31V16/assets/FidelityClassic167.h
+          grep -Fq 'toV171Effect' stopwatch/StopWatchNative31V16/NativeApp.cpp
+          grep -Fq 'Motorized club beams sweep' stopwatch/StopWatchNative31V16/assets/FidelityClassic167.h
+          if grep -Fq ' "Ribbon Pirouette",' stopwatch/StopWatchNative31V16/NativeApp.cpp; then exit 1; fi
+          if grep -Fq 'CLUB LIBRARY' stopwatch/StopWatchNative31V16/NativeApp.cpp; then exit 1; fi
+          if grep -Fq 'trialCharSoft' stopwatch/StopWatchNative31V16/assets/BrowserFiveRenderer.h; then exit 1; fi
+      - name: Compile V17.3 for M5Stack StopWatch C152
+        run: |
+          mkdir -p build/v17-3
+          arduino-cli compile --fqbn m5stack:esp32:m5stack_stopwatch --output-dir build/v17-3 --warnings all stopwatch/StopWatchNative31V16
+          cp build/v17-3/StopWatchNative31V16.ino.bin build/v17-3/StopWatch_V17_3_23_Effects.app.bin
+          cd build/v17-3
+          sha256sum StopWatch_V17_3_23_Effects.app.bin > SHA256SUMS.txt
+          ls -lh StopWatch_V17_3_23_Effects.app.bin
+      - uses: actions/upload-artifact@v4
+        with:
+          name: StopWatch-V17-3-23-Effects-C152
+          path: |
+            build/v17-3/StopWatch_V17_3_23_Effects.app.bin
+            build/v17-3/SHA256SUMS.txt
+          if-no-files-found: error
