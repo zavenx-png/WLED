@@ -1,0 +1,49 @@
+name: StopWatch C152 V17 Battery and Text Refinement
+on:
+  push:
+    branches: [stopwatch-v17-battery-and-smooth-text]
+    paths:
+      - 'stopwatch/StopWatchNative31V16/**'
+      - '.github/workflows/stopwatch-v17.yml'
+  workflow_dispatch:
+jobs:
+  build-v17:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: arduino/setup-arduino-cli@v2
+      - name: Install M5Stack board and display libraries
+        run: |
+          arduino-cli config init
+          arduino-cli config add board_manager.additional_urls https://static-cdn.m5stack.com/resource/arduino/package_m5stack_index.json
+          arduino-cli core update-index
+          arduino-cli core install m5stack:esp32
+          arduino-cli lib install M5Unified
+          arduino-cli lib install M5GFX
+      - name: Select Direct Native Text and verify V17 changes
+        run: |
+          sed -i -E "s/^#define STOPWATCH_FONT_TRIAL [0-9]+/#define STOPWATCH_FONT_TRIAL 2/" stopwatch/StopWatchNative31V16/assets/FontTrial.h
+          grep -Fq '#define STOPWATCH_FONT_TRIAL 2' stopwatch/StopWatchNative31V16/assets/FontTrial.h
+          grep -Fq 'VIS_COUNT=24' stopwatch/StopWatchNative31V16/NativeApp.cpp
+          grep -Fq 'renderBatteryHud' stopwatch/StopWatchNative31V16/NativeApp.cpp
+          grep -Fq 'getKeyState()' stopwatch/StopWatchNative31V16/NativeApp.cpp
+          grep -Fq 'trialCharSoft' stopwatch/StopWatchNative31V16/assets/BrowserFiveRenderer.h
+          grep -Fq 'trialCharSoft' stopwatch/StopWatchNative31V16/assets/FontTrial.h
+          grep -Fq 'const float travel=t*4.02f' stopwatch/StopWatchNative31V16/assets/FidelityClassic167.h
+          grep -Fq 'figure(baseX+sinf(p)*8,337,1.36f' stopwatch/StopWatchNative31V16/assets/FidelityClassic167.h
+      - name: Compile V17 application for StopWatch C152
+        run: |
+          mkdir -p build/v17
+          arduino-cli compile --fqbn m5stack:esp32:m5stack_stopwatch --output-dir build/v17 --warnings all stopwatch/StopWatchNative31V16
+          cp build/v17/StopWatchNative31V16.ino.bin build/v17/StopWatch_V17_24_Effects.app.bin
+          cd build/v17
+          sha256sum StopWatch_V17_24_Effects.app.bin > SHA256SUMS.txt
+          ls -lh StopWatch_V17_24_Effects.app.bin
+      - uses: actions/upload-artifact@v4
+        with:
+          name: StopWatch-V17-24-Effects-C152
+          path: |
+            build/v17/StopWatch_V17_24_Effects.app.bin
+            build/v17/SHA256SUMS.txt
+          if-no-files-found: error
