@@ -1036,7 +1036,7 @@ static void renderOverlay(){
  case BRIGHTNESS:{panelBg("BRIGHTNESS");
   textC(String(candidateBrightness)+" %",CX,201,rgb(255,255,255),7);
   uiBar(254,80,W-80,candidateBrightness/100.f,CYAN);
-  labelSmall("A - / B +",CX,310,GRAY);
+  labelSmall("A: DIM    B: BRIGHTEN",CX,310,GRAY);
   uiButton(102,343,115,54,"CANCEL");uiButton(242,343,125,54,"OK",true);
   break;}
  case GAIN:{panelBg("MIC SENSITIVITY");
@@ -1076,19 +1076,32 @@ static void renderOverlay(){
     uiButton(94,346,280,49,String("REMOTE IDLE ")+String(remoteIdleSecs)+"s",true);
   }
   break;}
- case NAME:{panelBg(originalEffect(effectID)==22?"ROBOT NAMES":"YOUR WORD");
+ case NAME:{
+  black();circ(CX,CY,R-3,rgb(42,92,126),2);
+  textC(originalEffect(effectID)==22?"ROBOT NAMES":"EDIT NAME",CX,56,CYAN,4);
   if(originalEffect(effectID)==22){
-   textC("BLUE: "+(draftBlue.length()?draftBlue:"(none)"),CX,131,robotField==0?CYAN:GRAY,2);
-   textC("PINK: "+(draftPink.length()?draftPink:"(none)"),CX,165,robotField==1?PINK:GRAY,2);
-  }else{textC(inputName.length()?inputName:"(none)",CX,159,PINK,4);}
-  const char *rows[3]={"qwertyuiop","asdfghjkl","zxcvbnm"};
-  for(int row=0;row<3;row++){
-   String chars(rows[row]);int n=chars.length();int gap=3,kW=(W-84-(n-1)*gap)/n;
-   int left=(W-(n*kW+(n-1)*gap))/2;
-   for(int k=0;k<n;k++)uiButton(left+k*(kW+gap),209+row*47,kW,39,chars.substring(k,k+1));
+    textC("BLUE: "+(draftBlue.length()?draftBlue:"(none)"),CX,99,robotField==0?CYAN:GRAY,3);
+    textC("PINK: "+(draftPink.length()?draftPink:"(none)"),CX,130,robotField==1?PINK:GRAY,3);
+  }else{
+    textC(inputName.length()?inputName:"(tap letters to type)",CX,115,PINK,inputName.length()>8?3:4);
   }
-  uiButton(62,355,99,49,"DELETE");uiButton(170,355,102,49,"CLEAR");uiButton(282,355,115,49,"ENTER",true);
-  labelSmall("SWIPE FOR GAIN",CX,433,GRAY);break;}
+  static const char *const pages[3]={"abcdefghijklm","nopqrstuvwxyz","0123456789+-/"};
+  textC(keyboardPage==0?"A - M  (1/3)":keyboardPage==1?"N - Z  (2/3)":"0 - 9 / SYMBOLS  (3/3)",
+        CX,155,GRAY,2);
+  // 5 columns x 3 rows, 62x54 px targets. Old keyboard was ~35x39 px.
+  const String letters(pages[keyboardPage%3]);
+  for(int i=0;i<(int)letters.length();i++){
+    const int col=i%5,row=i/5,x=63+col*69,y=168+row*61;
+    cv.fillRoundRect(x,y,62,54,10,rgb(19,47,77));
+    cv.drawRoundRect(x,y,62,54,10,rgb(104,192,227));
+    textC(letters.substring(i,i+1),x+31,y+27,rgb(238,253,255),4);
+  }
+  uiButton(94,361,68,47,"DEL");
+  uiButton(165,361,68,47,"PAGE",true);
+  uiButton(236,361,68,47,"CLEAR");
+  uiButton(307,361,68,47,"SAVE",true);
+  break;
+ }
  default:break;
  }
 }
@@ -1138,7 +1151,7 @@ static void renderRemote(){
  else if(radioSuccess)textC("APPLIED",CX,365,rgb(117,255,171),2);
 }
 static void showTextEditor(){
- overlay=NAME;inputName=userText[effectID];draftBlue=blueRobot;draftPink=pinkRobot;robotField=0;vibration();
+ overlay=NAME;inputName=userText[effectID];draftBlue=blueRobot;draftPink=pinkRobot;robotField=0;keyboardPage=0;vibration();
 }
 static void saveNameOverlay(){
  if(originalEffect(effectID)==22){blueRobot=draftBlue;pinkRobot=draftPink;}
@@ -1214,17 +1227,27 @@ static void editorTouch(int x,int y){
       setCpuFrequencyMhz(profile==2?160:240);vibration();}
    else if(y>=372)overlay=NONE;
  }else if(overlay==NAME){
-   if(originalEffect(effectID)==22 && y>110&&y<196){robotField=y<150?0:1;return;}
-   if(y>=209&&y<346){
-     int row=(y-209)/47;String r=row==0?"qwertyuiop":row==1?"asdfghjkl":"zxcvbnm";
-     int n=r.length(),gap=3,kw=(W-84-(n-1)*gap)/n,left=(W-(n*kw+(n-1)*gap))/2;
-     int col=(x-left)/(kw+gap);
-     if(col>=0&&col<n){String &dest=originalEffect(effectID)==22?(robotField==0?draftBlue:draftPink):inputName;
-      if(dest.length()<12)dest+=r.substring(col,col+1);}
-   }else if(y>=351&&y<418){
+   if(originalEffect(effectID)==22 && y>=82 && y<144){
+     robotField=y<114?0:1;vibration(110,24);return;
+   }
+   if(y>=168&&y<344){
+     int row=(y-168)/61,col=(x-63)/69;
+     const char *const pages[3]={"abcdefghijklm","nopqrstuvwxyz","0123456789+-/"};
+     String chars(pages[keyboardPage%3]);
+     int ix=row*5+col;
+     int bx=63+col*69,by=168+row*61;
+     if(row>=0&&row<3&&col>=0&&col<5&&
+        x>=bx&&x<bx+62&&y>=by&&y<by+54&&ix<(int)chars.length()){
+       String &dest=originalEffect(effectID)==22?(robotField==0?draftBlue:draftPink):inputName;
+       if(dest.length()<12){dest+=chars.substring(ix,ix+1);vibration(95,18);}
+     }
+   }else if(y>=361&&y<410){
      String &dest=originalEffect(effectID)==22?(robotField==0?draftBlue:draftPink):inputName;
-     if(x<163){if(dest.length())dest.remove(dest.length()-1);}
-     else if(x<278){dest="";}else saveNameOverlay();
+     if(x>=94&&x<162){if(dest.length())dest.remove(dest.length()-1);}
+     else if(x>=165&&x<233)keyboardPage=(keyboardPage+1)%3;
+     else if(x>=236&&x<304)dest="";
+     else if(x>=307&&x<375){saveNameOverlay();return;}
+     vibration(110,30);
    }
  }
 }
@@ -1277,7 +1300,7 @@ static void controlTouch(){
    if(overlay==LIBRARY && abs(dx)>58){libraryPage=(libraryPage+(dx<0?1:2))%3;vibration();return;}
    if(overlay==LIBRARY && libraryPage==1 && held>800 && y>=160 && y<411){
       uint8_t slot=clampi((y-170)/59,0,3);clearScene(slot);return;}
-   if(overlay==NAME && abs(dx)>58){overlay=GAIN;vibration();return;}
+   if(overlay==NAME && abs(dx)>58){keyboardPage=(keyboardPage+(dx<0?1:2))%3;vibration();return;}
    if(overlay==GAIN && abs(dx)>58){overlay=isTextEffect(effectID)||originalEffect(effectID)==22?NAME:NONE;vibration();return;}
    if(displayBlank){displayBlank=false;M5.Display.setBrightness((uint8_t)(brightness*255/100));lastRemoteActivity=millis();return;}
    if(overlay!=NONE){editorTouch(x,y);return;}
