@@ -129,11 +129,11 @@ static void b5Stamp(B5View view,float x,float y,float width,float angle,uint16_t
   int u=(int)((dx*ca+dy*sa)*U+view.w*.5f);
   int v=(int)((-dx*sa+dy*ca)*V+view.h*.5f);
   if((unsigned)u>=(unsigned)view.w||(unsigned)v>=(unsigned)view.h)continue;
-  int nib=b5Nib(view.p,v*view.w+u);if(nib<1)continue;
+  int nib=b5Nib(view.p,v*view.w+u);if(nib<9)continue; nib=(nib-8)*15/7;
   float tintA=fminf(1.f,fade)*(nib/15.f);
   uint8_t alpha=(uint8_t)(tintA*255+0.5f);
-  // Browser sprite highlights are white-tinted over the colored letter core.
-  uint16_t ink=(nib>=13)?b5Mix(color,0xffff,51):color;
+  // Sharpen browser-derived masks: remove halo pixels and keep solid RGB letter cores.
+  uint16_t ink=color;
   const int at=sy*W+sx;
   fb[at]=b5Mix(fb[at],ink,alpha);
  }
@@ -161,10 +161,10 @@ static void b5Char(char letter,float x,float y,float scale,uint16_t color,float 
   int uy=(int)((-rx*sa+ry*ca)/scale+g.h*.5f);
   if((unsigned)ux>=g.w||(unsigned)uy>=g.h)continue;
   int n=b5Nib(orig,(int)g.start*2+uy*g.w+ux);
-  if(!n)continue;
+  if(n<9)continue; n=(n-8)*15/7;
   int off=py*W+px;
   uint8_t a=(uint8_t)(n*17);
-  fb[off]=b5Mix(fb[off],n>=13?b5Mix(color,0xffff,50):color,a);
+  fb[off]=b5Mix(fb[off],color,a);
  }
 }
 static float b5Rhythm(){return beatClock*TAU;}
