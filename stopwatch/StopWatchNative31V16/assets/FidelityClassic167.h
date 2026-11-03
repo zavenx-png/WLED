@@ -255,22 +255,7 @@ static bool fidelityClassic167(uint8_t id){
  }
  case 20:{ // 26 Warehouse House Duo: perspective floor grid + lasers BEHIND dancers
   black();
-  // V16.9: remove overhead spiral/fan rays; keep floor, EQ lighting and dancers unchanged.
-  // Floor: horizon at y310, perspective rays and compressed depth lines.
-  for(int k=-10;k<=10;k++)line(CX,307,CX+k*47,H,tint(rgb(79,74,208),.38f));
-  for(int j=1;j<=9;j++){float v=j/9.f,y=307+161*v*v;
-   line(CX-235*v,y,CX+235*v,y,tint(rgb(155,85,235),.28f+.22f*v));
-  }
-  for(int k=0;k<18;k++){
-   int x=8+k*25;int h=15+int(band(k+3)*120);
-   cv.fillRect(x,H-15-h,13,h,fxInk(k*.055f+t*.016f,.20f+.28f*band(k+3)));
-  }
-  figure(150,303,1.f,beatClock+.2f,rgb(255,104,214));
-  figure(318,303,1.f,beatClock+2.f,rgb(77,226,255));
-  return true;
- }
- case 21:{ // 27 Ribbon Pirouette: two performers, overhead sweeping CLUB SPOTLIGHTS
-  black();
+  // V17.1 merge: transplant Ribbon Pirouette's original sweeping TOP lasers.
   // Motorized club beams sweep back and forth independently of the dancers.
   // Three strands per lamp form a visible moving light cone; brighter on kicks.
   const float spotDrive=clampf(.28f+.62f*bass+.34f*energy);
@@ -286,13 +271,19 @@ static bool fidelityClassic167(uint8_t id){
     // Reflected floor pool follows the beam.
     dot(targetX,410,4+int(4*spotDrive),tint(col,.37f));
   }
-  for(int j=0;j<2;j++){
-   float baseX=j?330:138,p=beatClock*.20f+j*1.6f;
-   // The spiraling ribbon strands are intentionally removed in V16.11.
-   // V17: 60% larger figures; re-center them vertically so legs stay in view.
-   figure(baseX+sinf(p)*8,337,1.36f,beatClock+j*1.5f,
-          j?rgb(235,99,255):rgb(64,247,216));
+
+  // Warehouse's own floor, EQ, and duo figures remain intact below.
+  // Floor: horizon at y310, perspective rays and compressed depth lines.
+  for(int k=-10;k<=10;k++)line(CX,307,CX+k*47,H,tint(rgb(79,74,208),.38f));
+  for(int j=1;j<=9;j++){float v=j/9.f,y=307+161*v*v;
+   line(CX-235*v,y,CX+235*v,y,tint(rgb(155,85,235),.28f+.22f*v));
   }
+  for(int k=0;k<18;k++){
+   int x=8+k*25;int h=15+int(band(k+3)*120);
+   cv.fillRect(x,H-15-h,13,h,fxInk(k*.055f+t*.016f,.20f+.28f*band(k+3)));
+  }
+  figure(150,303,1.f,beatClock+.2f,rgb(255,104,214));
+  figure(318,303,1.f,beatClock+2.f,rgb(77,226,255));
   return true;
  }
  default: return false;
