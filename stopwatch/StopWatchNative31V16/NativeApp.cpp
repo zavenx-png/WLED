@@ -440,7 +440,8 @@ static void loadSettings(){
  // V13 reorders only the presentation. Migrate exactly once when prior settings exist.
  const bool hadV12=prefs.isKey("effect")||prefs.isKey("favs")||prefs.isKey("gains")||prefs.isKey("scn0");
  const bool migrate=hadV12 && prefs.getUChar("sortrev",12)!=13;
- effectID=prefs.getUChar("effect",0)%VIS_COUNT;
+ uint8_t previouslySelected=prefs.getUChar("effect",0);
+ effectID=previouslySelected<VIS_COUNT?previouslySelected:0;
  if(migrate)effectID=migrateEffectIndex(effectID);
  brightness=prefs.getUChar("bright",52);profile=prefs.getUChar("profile",1)%3;
  uint64_t oldFavorites=FAVORITE_DEFAULT;
@@ -465,7 +466,11 @@ static void loadSettings(){
   }
  }
  rxChannel=clampi(prefs.getUChar("radio",1),1,11);
- uint8_t loadedGain[VIS_COUNT]={};prefs.getBytes("gains",loadedGain,sizeof(loadedGain));
+ uint8_t loadedGain[31]={};
+ // A V16.6 device has 31 saved gains; V16.7 has 28. Preserve the first 28.
+ size_t storedGains=prefs.getBytesLength("gains");
+ if(storedGains==31||storedGains==VIS_COUNT)
+   prefs.getBytes("gains",loadedGain,storedGains);
  for(uint8_t i=0;i<VIS_COUNT;i++){
   const uint8_t dest=migrate?migrateEffectIndex(i):i;
   gainPct[dest]=clampi(loadedGain[i],20,250);
