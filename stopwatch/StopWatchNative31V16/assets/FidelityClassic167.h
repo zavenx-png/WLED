@@ -39,33 +39,53 @@ static bool fidelityClassic167(uint8_t id){
    }
   }return true;
  }
- case 3:{ // 12 Vapor Scope: +50% waveform response, retained sunset/horizon
+ case 3:{ // 12 Vapor Scope: forward-moving neon highway, NO car; sound-reactive foreground
   black();
-  float drift=t*.36f,amp=clampf(.16f+.95f*kick);
-  for(int j=-9;j<=9;j++)line(CX,278,CX+j*72,468,fxInk(.70f+j*.013f,.35f));
-  for(int j=0;j<10;j++){
-   float f=j/9.f,y=286+174*f*f,half=(y-286)*1.8f+10;
-   line(CX-half,y,CX+half,y,fxInk(.86f+j*.014f,.44f));
+  // Sunset beyond the vanishing point.
+  for(int y=-62;y<=62;y+=6){
+   float half=sqrtf(fmaxf(0.f,67.f*67.f-y*y));
+   line(CX-half,154+y,CX+half,154+y,fxInk(.92f-y*.0014f,.60f),5);
   }
-  for(int yy=-64;yy<=65;yy+=7){
-   float w=sqrtf(fmaxf(0.f,70.f*70.f-yy*yy));
-   line(CX-w,151+yy,CX+w,151+yy,yy>0&&yy%14==0?rgb(78,22,93):fxInk(.93f-yy*.001f,.58f));
+  for(int h=0;h<7;h++){int y=214+h*4;line(0,y,W,y,tint(rgb(93,38,104),.18f+h*.035f));}
+  // Asphalt expands from the horizon toward the viewer; drawing to the circular bezel.
+  const int horizon=254;
+  for(int y=horizon;y<H;y+=3){
+   float z=(y-horizon)/(float)(H-horizon);
+   float half=16+228*z;
+   line(CX-half,y,CX+half,y,rgb(7+int(6*z),8+int(3*z),19+int(11*z)),3);
   }
-  for(int k=0;k<5;k++){
-   float lx=0,ly=CY;
-   for(int j=0;j<=124;j++){
-    float u=j/124.f,x=u*(W+28)-14,q=u*TAU;
+  // Fixed road edges converge at the distant horizon.
+  for(int side=-1;side<=1;side+=2){
+   line(CX+side*16,horizon,CX+side*234,H,fxInk(side>0?.87f:.53f,.78f),3);
+   line(CX+side*25,horizon,CX+side*245,H,fxInk(side>0?.88f:.54f,.19f),5);
+  }
+  // Lane markers travel toward us with perspective acceleration.
+  const float travel=frac(t*.23f);
+  for(int i=0;i<13;i++){
+   float z=frac((i+travel)/13.f),depth=z*z;
+   int y=horizon+int(207*depth),dh=3+int(24*depth);
+   float k=.55f+.45f*depth;
+   if(y+dh>H)dh=H-y;
+   line(CX-4*depth,y,CX-4*depth,y+dh,tint(rgb(255,241,219),k),1+int(depth*3));
+   line(CX+4*depth,y,CX+4*depth,y+dh,tint(rgb(255,241,219),k),1+int(depth*3));
+  }
+  // The waveform sits above the road, responding to actual mic samples and kicks.
+  float drift=t*.36f;
+  for(int k=0;k<4;k++){
+   float oldX=0,oldY=230;
+   for(int i=0;i<=132;i++){
+    float u=i/132.f,x=u*(W+16)-8.f;
     int bi=clampi(int(u*31),0,31);
-    float env=.22f+kick*.72f+band(bi)*.35f;
-    float waves=31*sinf(q*(1.25f+k*.08f)+drift+k*.6f)
-      +24*sinf(q*2.7f-drift*.65f+k*.4f)*env
-      +10*sinf(q*5+drift)*kick;
+    float env=clampf(.18f+.90f*bass+.50f*energy+.30f*band(bi));
+    float ripple=(17+28*env)*sinf(u*TAU*(1.15f+k*.14f)+drift+k*.6f)
+               +(11+16*env)*sinf(u*TAU*3.2f-drift*.6f+k*.4f);
     int wi=clampi(int(u*153),0,153);
-    float y=230+(k-2)*22 + waves+scopeY[wi]*autoGain*micGain*40.f;
-    if(j)line(lx,ly,x,y,fxInk(.50f+k*.11f+t*.011f,k==2?.95f:.53f),k==2?3:2);
-    lx=x;ly=y;
+    float y=206+k*18+ripple+scopeY[wi]*autoGain*micGain*34.f;
+    if(i)line(oldX,oldY,x,y,fxInk(.49f+k*.12f+t*.011f,k==1?.92f:.51f),k==1?3:1);
+    oldX=x;oldY=y;
    }
-  }return true;
+  }
+  return true;
  }
  case 4:{ // 13 Matrix Phosphor: same timing, pink/magenta rain and scope
   black();
@@ -106,13 +126,12 @@ static bool fidelityClassic167(uint8_t id){
   textC(String(clampi((int)lroundf(clampf(bass)*100),0,100))+"%",CX,CY+18,rgb(227,242,255),4);
   return true;
  }
- case 8:{ // 16 Heartbeat Neon: anatomically recognisable heart + lower ECG
+ case 8:{ // 16 Heartbeat Neon: recognisable heart and LIVE audio ECG
   black();
   uint16_t pink=rgb(255,96,175);
   for(int j=17;j<W;j+=19){line(j,0,j,H,tint(pink,j%76==17?.17f:.085f));line(0,j,W,j,tint(pink,j%76==17?.17f:.085f));}
   float thump=pulse+.34f*expf(-.5f*sq((beatPhase()-.17f)/.065f));
-  float scale=5.0f*(1+.085f*thump+.020f*energy),px=0,py=0;
-  // Standard heart parametric curve, no circular placeholder.
+  float scale=5.0f*(1+.085f*thump+.045f*energy+.050f*bass),px=0,py=0;
   for(int j=0;j<=144;j++){
    float a=j*TAU/144.f;
    float x=16*powf(sinf(a),3)*scale;
@@ -121,10 +140,14 @@ static bool fidelityClassic167(uint8_t id){
    if(j){line(px,py,nx,ny,tint(pink,.29f),5);line(px,py,nx,ny,rgb(255,158,210),2);}
    px=nx;py=ny;
   }
+  // Keep ECG sharp and recognisable but let actual mic wave + bass control its travel.
   float lastX=0,lastY=355;
+  const float audioAmp=52+100*clampf(bass)+56*clampf(energy);
   for(int x=0;x<=W;x+=2){
    float p=frac(beatClock*.44f-(x/(float)W)*1.8f);
-   float y=355-fxECG(p)*(58+energy*34);
+   int wi=clampi((x*153)/W,0,153);
+   float live=clampf(scopeY[wi]*autoGain*micGain,-1.f,1.f);
+   float y=355-fxECG(p)*audioAmp-live*(10+34*clampf(energy));
    if(x){line(lastX,lastY,x,y,tint(pink,.24f),6);line(lastX,lastY,x,y,rgb(255,115,186),2);}
    lastX=x;lastY=y;
   }
