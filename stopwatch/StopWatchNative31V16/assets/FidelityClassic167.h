@@ -41,18 +41,39 @@ static bool fidelityClassic167(uint8_t id){
  }
  case 3:{ // 12 Vapor Scope: forward-moving neon highway, NO car; sound-reactive foreground
   black();
-  // Sunset beyond the vanishing point.
-  for(int y=-62;y<=62;y+=6){
-   float half=sqrtf(fmaxf(0.f,67.f*67.f-y*y));
-   line(CX-half,154+y,CX+half,154+y,fxInk(.92f-y*.0014f,.60f),5);
+  // Fully circular neon sunset, including true rounded top and bottom.
+  // Draw filled base FIRST; clipped bands never truncate its silhouette.
+  const int sunX=CX,sunY=149,sunR=66;
+  dot(sunX,sunY,sunR,rgb(239,96,164));
+  for(int yy=-sunR;yy<=sunR;yy+=4){
+   float half=sqrtf(fmaxf(0.f,(float)(sunR*sunR-yy*yy)));
+   uint16_t co=fxInk(.92f-yy*.0014f,.73f);
+   line(sunX-half,sunY+yy,sunX+half,sunY+yy,co,2);
   }
-  for(int h=0;h<7;h++){int y=214+h*4;line(0,y,W,y,tint(rgb(93,38,104),.18f+h*.035f));}
+  // Horizon starts BELOW the sun; no horizontal crop through its base.
+  for(int h=0;h<7;h++){
+   int y=224+h*4;
+   line(0,y,W,y,tint(rgb(93,38,104),.22f+h*.035f));
+  }
   // Asphalt expands from the horizon toward the viewer; drawing to the circular bezel.
   const int horizon=254;
   for(int y=horizon;y<H;y+=3){
    float z=(y-horizon)/(float)(H-horizon);
    float half=16+228*z;
    line(CX-half,y,CX+half,y,rgb(7+int(6*z),8+int(3*z),19+int(11*z)),3);
+  }
+  // Animated neon road grid. Render AFTER asphalt so gridlines stay visible.
+  // A perspective cross-hatch streams from the horizon to the circular bezel.
+  for(int k=-7;k<=7;k++){
+   float edgeX=CX+k*34.f;
+   line(CX+k*3.f,horizon,edgeX,H,tint(rgb(67,153,222),.49f+.18f*energy));
+  }
+  float gridFlow=frac(t*.67f);
+  for(int k=1;k<=19;k++){
+   float z=frac((k+gridFlow)/20.f),depth=z*z;
+   float y=horizon+208*depth,half=16+228*depth;
+   if(y>H-2)continue;
+   line(CX-half,y,CX+half,y,tint(rgb(195,60,214),.28f+.38f*depth+.09f*bass),depth>.55f?2:1);
   }
   // Fixed road edges converge at the distant horizon.
   for(int side=-1;side<=1;side+=2){
@@ -264,16 +285,7 @@ static bool fidelityClassic167(uint8_t id){
   }
   for(int j=0;j<2;j++){
    float baseX=j?330:138,p=beatClock*.20f+j*1.6f;
-   for(int strand=0;strand<5;strand++){
-    float lx=0,ly=0;
-    for(int k=0;k<78;k++){
-     float u=k/77.f,twist=p-u*TAU*(2+strand*.29f);
-     float x=baseX+sinf(twist)*u*(52+energy*12);
-     float y=79+u*285+cosf(twist*1.45f+strand*.4f)*9;
-     if(k)line(lx,ly,x,y,fxInk(.45f+j*.44f+strand*.026f+t*.008f,.51f+.33f*energy),2);
-     lx=x;ly=y;
-    }
-   }
+   // The spiraling ribbon strands are intentionally removed in V16.11.
    figure(baseX+sinf(p)*8,373,.85f,beatClock+j*1.5f,
           j?rgb(235,99,255):rgb(64,247,216));
   }
