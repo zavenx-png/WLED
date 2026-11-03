@@ -152,7 +152,8 @@ static void setGainManual(uint8_t id,bool manual){
  if(manual)micManualMask|=(1ULL<<id);else micManualMask&=~(1ULL<<id);
  prefs.putBytes("micmodes",&micManualMask,sizeof(micManualMask));
 }
-String userText[VIS_COUNT];String blueRobot="",pinkRobot="";static const String DEFAULT_WORD="zaven";
+String userText[VIS_COUNT];String sharedName="",blueRobot="",pinkRobot="";
+static const String DEFAULT_WORD="zaven";
 enum Overlay : uint8_t {NONE,NAME,BRIGHTNESS,RHYTHM,LIBRARY};
 Overlay overlay=NONE;
 String inputName="";uint8_t robotField=0;
@@ -185,7 +186,7 @@ static void saveScene(uint8_t slot){
  if(slot>=4)return;SceneData v;v.magic=SCENE_MAGIC;v.effect=effectID;v.gain=gainPct[effectID];v.bright=brightness;v.profile=profile;
  v.palette=selectedPalette;v.harnessBrightness=remoteBrightness;v.speed=remoteSpeed;v.intensity=remoteIntensity;v.remoteFx=remoteSelected;
  v.adaptive=adaptiveRender?1:0;v.remoteIdle=remoteIdleSecs;
- userText[effectID].toCharArray(v.name,sizeof(v.name));blueRobot.toCharArray(v.blue,sizeof(v.blue));pinkRobot.toCharArray(v.pink,sizeof(v.pink));
+ sharedName.toCharArray(v.name,sizeof(v.name));blueRobot.toCharArray(v.blue,sizeof(v.blue));pinkRobot.toCharArray(v.pink,sizeof(v.pink));
  scenes[slot]=v;prefs.putBytes((String("scn")+String(slot)).c_str(),&v,sizeof(v));
  // Keep original SceneData binary layout compatible with V11-V15.
  prefs.putBool((String("scna")+String(slot)).c_str(),gainIsManual(effectID));
@@ -195,7 +196,9 @@ static void loadScene(uint8_t slot){
  if(slot>=4||scenes[slot].magic!=SCENE_MAGIC||scenes[slot].effect>=VIS_COUNT)return;
  const SceneData &v=scenes[slot];effectID=v.effect;brightness=clampi(v.bright,8,100);profile=v.profile%3;
  gainPct[effectID]=clampi(v.gain,20,250);micGain=gainPct[effectID]/100.f;
- userText[effectID]=String(v.name);blueRobot=String(v.blue);pinkRobot=String(v.pink);
+ sharedName=String(v.name);
+ for(uint8_t i=0;i<VIS_COUNT;i++)if(ORIGINAL_EFFECT_ID[i]>=23 && ORIGINAL_EFFECT_ID[i]<=31)userText[i]=sharedName;
+ blueRobot=String(v.blue);pinkRobot=String(v.pink);
  selectedPalette=clampi(v.palette,0,PAL_COUNT-1);remoteBrightness=v.harnessBrightness;remoteSpeed=v.speed;
  remoteIntensity=v.intensity;remoteSelected=clampi(v.remoteFx,0,Z_COUNT+WLED_COUNT-1);
  adaptiveRender=v.adaptive!=0;remoteIdleSecs=v.remoteIdle==0?0:clampi(v.remoteIdle,10,120);favoritesOnly=false;
@@ -255,7 +258,7 @@ static inline void textC(const String& s,int x,int y,uint16_t c,int size=2){cv.s
 static inline void black(){cv.fillScreen(TFT_BLACK);}
 static inline uint8_t originalEffect(uint8_t i){return ORIGINAL_EFFECT_ID[i%VIS_COUNT];}
 static inline bool isTextEffect(uint8_t i){uint8_t id=originalEffect(i);return id>=23&&id<=31;}
-static inline const String& artName(uint8_t i){return userText[i].length()?userText[i]:DEFAULT_WORD;}
+static inline const String& artName(uint8_t i){(void)i;return sharedName.length()?sharedName:DEFAULT_WORD;}
 static inline void glyph(char ch,int x,int y,uint16_t c,int size=4){char b[2]={ch,0};cv.setTextDatum(middle_center);cv.setTextColor(c);cv.drawString(b,x,y,size);}
 static inline void vibration(uint8_t strength=145,int ms=38){if(!buzzEnabled)return;M5.Power.setVibration(strength);buzzUntil=millis()+ms;}
 static void vibrationTick(){if(buzzUntil&&(int32_t)(millis()-buzzUntil)>=0){M5.Power.setVibration(0);buzzUntil=0;}}
@@ -445,7 +448,14 @@ static void beatTick(){static uint32_t last=0;uint32_t now=millis();if(!last){la
   if(now-beatStamp>12000){bpm=smooth(bpm,125.f,.0013f);onsetNum=0;}
  }
 }
-static void saveNames(){for(int i=0;i<VIS_COUNT;i++)if(isTextEffect(i))prefs.putString((String("t")+String(i)).c_str(),userText[i]);prefs.putString("bluerobot",blueRobot);prefs.putString("pinkrobot",pinkRobot);}
+static void saveNames(){
+ prefs.putString("globalname",sharedName);
+ for(int i=0;i<VIS_COUNT;i++)if(isTextEffect(i)){
+   userText[i]=sharedName;
+   prefs.putString((String("t")+String(i)).c_str(),sharedName);
+ }
+ prefs.putString("bluerobot",blueRobot);prefs.putString("pinkrobot",pinkRobot);
+}
 static void loadSettings(){
  prefs.begin("clubnative31",false); // Same storage namespace to preserve V16.6/16.7 preferences.
  const bool hadSaved=prefs.isKey("effect")||prefs.isKey("favs")||prefs.isKey("gains")||prefs.isKey("scn0");
@@ -519,6 +529,17 @@ static void loadSettings(){
   if(dest>=VIS_COUNT||!isTextEffect(dest))continue;
   userText[dest]=prefs.getString((String("t")+String(i)).c_str(),"");
  }
+ // V16.11: one shared name for all text effects. Migrate the current effect's
+ // legacy name first, otherwise the earliest saved text effect.
+ if(prefs.isKey("globalname"))sharedName=prefs.getString("globalname","");
+ else{
+   if(isTextEffect(effectID)&&userText[effectID].length())sharedName=userText[effectID];
+   else for(uint8_t i=0;i<VIS_COUNT;i++)if(isTextEffect(i)&&userText[i].length()){
+     sharedName=userText[i];break;
+   }
+   prefs.putString("globalname",sharedName);
+ }
+ for(uint8_t i=0;i<VIS_COUNT;i++)if(isTextEffect(i))userText[i]=sharedName;
  blueRobot=prefs.getString("bluerobot","");
  pinkRobot=prefs.getString("pinkrobot","");
  micGain=gainPct[effectID]/100.f;
@@ -1225,11 +1246,11 @@ static void renderRemote(){
  else if(radioSuccess)textC("APPLIED",CX,365,rgb(117,255,171),2);
 }
 static void showTextEditor(){
- overlay=NAME;inputName=userText[effectID];draftBlue=blueRobot;draftPink=pinkRobot;robotField=0;keyboardPopup="";keyboardPopupUntil=0;keyboardPopupStarted=0;vibration();
+ overlay=NAME;inputName=sharedName;draftBlue=blueRobot;draftPink=pinkRobot;robotField=0;keyboardPopup="";keyboardPopupUntil=0;keyboardPopupStarted=0;vibration();
 }
 static void saveNameOverlay(){
  if(originalEffect(effectID)==22){blueRobot=draftBlue;pinkRobot=draftPink;}
- else if(isTextEffect(effectID)){userText[effectID]=inputName;}
+ else if(isTextEffect(effectID)){sharedName=inputName;}
  saveNames();overlay=NONE;vibration(180,65);
 }
 static void remoteTouch(int x,int y){
