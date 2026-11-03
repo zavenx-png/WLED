@@ -105,7 +105,7 @@ static uint16_t trialFlatBucket=0;
 static int trialFlatWidth=0,trialFlatHeight=0;
 static bool trialFlatReady=false;
 static bool trialEnsureFlat(const String&s,float target){
- uint16_t bucket=(uint16_t)clampi((int)lroundf(target/6.f)*6,24,270);
+ uint16_t bucket=(uint16_t)clampi((int)lroundf(target/6.f)*6,24,450);
  if(trialFlatReady&&trialFlatName==s&&bucket==trialFlatBucket)return true;
  trialFlatReady=false;trialFlat.deleteSprite();
  trialFlat.setColorDepth(8);trialFlat.setPsram(true);
@@ -113,11 +113,14 @@ static bool trialEnsureFlat(const String&s,float target){
  if(bucket<90)trialFlat.setFont(&lgfx::fonts::FreeSansBold12pt7b);
  else if(bucket<175)trialFlat.setFont(&lgfx::fonts::FreeSansBold18pt7b);
  else trialFlat.setFont(&lgfx::fonts::FreeSansBold24pt7b);
- trialFlat.setTextSize(1.f);
+ // V16.8: enlarge selected words by drawing native font at the final pixel size.
+ // The baseline D buckets below 270 remain pixel-identical.
+ const float directZoom=bucket>=270?clampf(bucket/200.f,1.f,1.95f):1.f;
+ trialFlat.setTextSize(directZoom);
  int native=trialFlat.textWidth(s);
  // Use no resampling: choose font and preserve its true pixel dimensions.
- trialFlatWidth=clampi(native+12,26,456);
- trialFlatHeight=bucket<90?42:bucket<175?54:70;
+ trialFlatWidth=clampi(native+16,26,456);
+ trialFlatHeight=bucket<90?42:bucket<175?54:clampi((int)lroundf(70*directZoom)+8,70,160);
  if(!trialFlat.createSprite(trialFlatWidth,trialFlatHeight))return false;
  trialFlat.createPalette();trialFlat.setPaletteColor(0,0,0,0);
  trialFlat.setPaletteColor(255,255,255,255);
@@ -125,6 +128,7 @@ static bool trialEnsureFlat(const String&s,float target){
  if(bucket<90)trialFlat.setFont(&lgfx::fonts::FreeSansBold12pt7b);
  else if(bucket<175)trialFlat.setFont(&lgfx::fonts::FreeSansBold18pt7b);
  else trialFlat.setFont(&lgfx::fonts::FreeSansBold24pt7b);
+ trialFlat.setTextSize(directZoom);
  trialFlat.setTextDatum(middle_center);
  trialFlat.drawString(s,trialFlatWidth/2,trialFlatHeight/2);
  trialFlatName=s;trialFlatBucket=bucket;trialFlatReady=true;trialCacheMisses++;
