@@ -161,7 +161,7 @@ String keyboardPopup="";int keyboardPopupX=0,keyboardPopupY=0;
 uint32_t keyboardPopupUntil=0,keyboardPopupStarted=0,brightnessRepeatAt=0;
 bool brightnessEntryHold=false;
 uint8_t candidateBrightness=52;float candidateBpm=125;
-uint32_t batteryHudUntil=0,batteryLastPoll=0,batteryKeyCooldown=0;
+uint32_t batteryHudUntil=0,batteryLastPoll=0,batteryKeyCooldown=0,batteryPowerPollAt=0;
 int batteryHudPercent=0,batteryHudVoltage=0;bool batteryHudCharging=false;
 // Persistent, compact NVS-backed favorites and complete per-scene parameters.
 static constexpr uint64_t FAVORITE_DEFAULT=(1ULL<<4)|(1ULL<<7)|(1ULL<<17)|(1ULL<<23);
@@ -1597,9 +1597,12 @@ void loop(){
  // M5PM1 sends 2 for a short key press when it can be caught without a
  // PMIC reset; the same HUD also appears after the reset/boot path.
  uint32_t powerNow=millis();
- if(powerNow-batteryKeyCooldown>550){
+ if(powerNow-batteryPowerPollAt>=120){
+  batteryPowerPollAt=powerNow;
   uint8_t state=M5.Power.getKeyState();
-  if(state&2){batteryKeyCooldown=powerNow;openBatteryHud();}
+  if((state&2) && powerNow-batteryKeyCooldown>550){
+   batteryKeyCooldown=powerNow;openBatteryHud();
+  }
  }
  if(overlay==BATTERY && (int32_t)(powerNow-batteryHudUntil)>=0)overlay=NONE;
  if(overlay==BATTERY && powerNow-batteryLastPoll>900){
