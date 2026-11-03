@@ -1268,58 +1268,103 @@ static void selectEffect(int d){
 static void controlButtons(){
  const uint32_t now=millis();
  if((M5.BtnA.wasPressed()||M5.BtnB.wasPressed())&&displayBlank){
-  displayBlank=false;lastRemoteActivity=now;M5.Display.setBrightness((uint8_t)(brightness*255/100));
-  wakeKeyConsumed=true; // first action only wakes the remote display
+  displayBlank=false;lastRemoteActivity=now;
+  M5.Display.setBrightness((uint8_t)(brightness*255/100));wakeKeyConsumed=true;
  }
- if(wakeKeyConsumed){if(!M5.BtnA.isPressed()&&!M5.BtnB.isPressed())wakeKeyConsumed=false;return;}
+ if(wakeKeyConsumed){
+  if(!M5.BtnA.isPressed()&&!M5.BtnB.isPressed())wakeKeyConsumed=false;
+  return;
+ }
  if(remote&&(M5.BtnA.isPressed()||M5.BtnB.isPressed()))lastRemoteActivity=now;
- if(M5.BtnA.wasPressed()){keyADown=now;keyAHeld=false;}
- if(M5.BtnB.wasPressed()){keyBDown=now;keyBHeld=false;}
- if(M5.BtnA.isPressed() && M5.BtnB.isPressed() && !keyChord && overlay!=BRIGHTNESS){
-   // Chord has priority over independent button presses.
-   keyChord=true;keyAHeld=keyBHeld=true;setRemote(!remote);
-   if(remote && !radioReady)startRadio();
-   if(!remote){if(radioReady){esp_now_deinit();radioReady=false;}WiFi.mode(WIFI_OFF);setCpuFrequencyMhz(profile==2?160:240);}
+ if(M5.BtnA.wasPressed()){keyADown=now;keyAHeld=false;brightnessRepeatAt=now;}
+ if(M5.BtnB.wasPressed()){keyBDown=now;keyBHeld=false;brightnessRepeatAt=now;}
+
+ // Text editor: physical A discards all edits, physical B saves.
+ if(overlay==NAME){
+  if(M5.BtnA.wasReleased()){overlay=NONE;inputName="";keyboardPopup="";vibration(170,45);}
+  else if(M5.BtnB.wasReleased()){keyboardPopup="";saveNameOverlay();}
+  if(M5.BtnA.wasReleased())keyADown=0;
+  if(M5.BtnB.wasReleased())keyBDown=0;
+  return;
  }
- if(M5.BtnA.isPressed() && !keyChord && !keyAHeld && keyADown && now-keyADown>=730 && overlay!=BRIGHTNESS){
-  overlay=BRIGHTNESS;candidateBrightness=brightness;keyAHeld=true;vibration(195,60);
+ if(overlay==BRIGHTNESS){
+  // Ignore the remainder of the original long A press used to open this page.
+  if(brightnessEntryHold&&!M5.BtnA.isPressed())brightnessEntryHold=false;
+  if(!brightnessEntryHold && M5.BtnA.isPressed()&&!M5.BtnB.isPressed()
+     &&keyADown&&now-keyADown>=320&&now-brightnessRepeatAt>=90){
+    candidateBrightness=clampi(candidateBrightness-2,8,100);keyAHeld=true;
+    brightnessRepeatAt=now;M5.Display.setBrightness((uint8_t)(candidateBrightness*255/100));
+  }
+  if(!brightnessEntryHold && M5.BtnB.isPressed()&&!M5.BtnA.isPressed()
+     &&keyBDown&&now-keyBDown>=320&&now-brightnessRepeatAt>=90){
+    candidateBrightness=clampi(candidateBrightness+2,8,100);keyBHeld=true;
+    brightnessRepeatAt=now;M5.Display.setBrightness((uint8_t)(candidateBrightness*255/100));
+  }
+  if(M5.BtnA.wasReleased()){
+    if(!keyAHeld){candidateBrightness=clampi(candidateBrightness-5,8,100);
+      M5.Display.setBrightness((uint8_t)(candidateBrightness*255/100));}keyADown=0;
+  }
+  if(M5.BtnB.wasReleased()){
+    if(!keyBHeld){candidateBrightness=clampi(candidateBrightness+5,8,100);
+      M5.Display.setBrightness((uint8_t)(candidateBrightness*255/100));}keyBDown=0;
+  }
+  return;
  }
- if(M5.BtnB.isPressed() && !keyChord && !keyBHeld && keyBDown && now-keyBDown>=850 && overlay!=BRIGHTNESS){
+ if(M5.BtnA.isPressed()&&M5.BtnB.isPressed()&&!keyChord){
+  keyChord=true;keyAHeld=keyBHeld=true;setRemote(!remote);
+  if(remote&&!radioReady)startRadio();
+  if(!remote){if(radioReady){esp_now_deinit();radioReady=false;}
+    WiFi.mode(WIFI_OFF);setCpuFrequencyMhz(profile==2?160:240);}
+ }
+ if(M5.BtnA.isPressed()&&!keyChord&&!keyAHeld&&keyADown&&now-keyADown>=730&&overlay==NONE){
+  overlay=BRIGHTNESS;candidateBrightness=brightness;brightnessEntryHold=true;
+  brightnessRepeatAt=now;keyAHeld=true;vibration(195,60);
+ }
+ if(M5.BtnB.isPressed()&&!keyChord&&!keyBHeld&&keyBDown&&now-keyBDown>=850&&overlay==NONE){
   overlay=LIBRARY;libraryPage=0;keyBHeld=true;vibration(170,45);
  }
  if(M5.BtnA.wasReleased()){
-   if(!keyChord && !keyAHeld){if(overlay==BRIGHTNESS){candidateBrightness=clampi(candidateBrightness-5,8,100);M5.Display.setBrightness((uint8_t)(candidateBrightness*255/100));vibration(118,25);}
-      else if(overlay==NONE)selectEffect(-1);}
-   keyADown=0;
+  if(!keyChord&&!keyAHeld&&overlay==NONE)selectEffect(-1);keyADown=0;
  }
  if(M5.BtnB.wasReleased()){
-   if(!keyChord && !keyBHeld){if(overlay==BRIGHTNESS){candidateBrightness=clampi(candidateBrightness+5,8,100);M5.Display.setBrightness((uint8_t)(candidateBrightness*255/100));vibration(118,25);}
-      else if(overlay==NONE)selectEffect(+1);}
-   keyBDown=0;
+  if(!keyChord&&!keyBHeld&&overlay==NONE)selectEffect(+1);keyBDown=0;
  }
- if(keyChord && !M5.BtnA.isPressed() && !M5.BtnB.isPressed())keyChord=false;
+ if(keyChord&&!M5.BtnA.isPressed()&&!M5.BtnB.isPressed())keyChord=false;
 }
 static void controlTouch(){
  auto touch=M5.Touch.getDetail(0);
- if(touch.wasPressed()){touchStartX=touchLastX=touch.x;touchStartY=touchLastY=touch.y;touchStart=millis();touchDown=true;}
+ if(touch.wasPressed()){
+  touchStartX=touchLastX=touch.x;touchStartY=touchLastY=touch.y;
+  touchStart=millis();touchDown=true;
+  if(overlay==NAME){
+    char ch=0;int xx=0,yy=0;
+    if(qwertyHit(touch.x,touch.y,ch,xx,yy)){
+      keyboardPopup=String(ch);keyboardPopupX=xx;keyboardPopupY=yy;
+      keyboardPopupUntil=millis()+170;
+    }else keyboardPopup="";
+  }
+ }
  if(touch.isPressed()){touchLastX=touch.x;touchLastY=touch.y;}
  if(touch.wasReleased()||touch.wasClicked()){
-   uint32_t held=millis()-touchStart;int x=touchLastX,y=touchLastY;
-   int dx=x-touchStartX,dy=y-touchStartY;touchDown=false;
-   if(overlay==LIBRARY && abs(dx)>58){libraryPage=(libraryPage+(dx<0?1:2))%3;vibration();return;}
-   if(overlay==LIBRARY && libraryPage==1 && held>800 && y>=160 && y<411){
-      uint8_t slot=clampi((y-170)/59,0,3);clearScene(slot);return;}
-   if(overlay==NAME && abs(dx)>58){keyboardPage=(keyboardPage+(dx<0?1:2))%3;vibration();return;}
-   if(overlay==GAIN && abs(dx)>58){overlay=isTextEffect(effectID)||originalEffect(effectID)==22?NAME:NONE;vibration();return;}
-   if(displayBlank){displayBlank=false;M5.Display.setBrightness((uint8_t)(brightness*255/100));lastRemoteActivity=millis();return;}
-   if(overlay!=NONE){editorTouch(x,y);return;}
-   if(remote){lastRemoteActivity=millis();remoteTouch(x,y);return;}
-   if(held>600){overlay=GAIN;vibration();return;}
-   if(abs(dx)>64){selectEffect(dx>0?-1:+1);return;}
-   if(originalEffect(effectID)==22||isTextEffect(effectID)){showTextEditor();return;}
-   // Tap unlabelled watch artwork for gain, except touch-specific visualizers.
-   if(originalEffect(effectID)==32||originalEffect(effectID)==36||originalEffect(effectID)==41||originalEffect(effectID)==43){lastArtTouchMs=millis();if(originalEffect(effectID)==43)userSpin+=dx*.013f;return;}
-   overlay=GAIN;vibration();
+  uint32_t held=millis()-touchStart;int x=touchLastX,y=touchLastY;
+  int dx=x-touchStartX;touchDown=false;
+  if(overlay==LIBRARY&&abs(dx)>58){libraryPage=(libraryPage+(dx<0?1:2))%3;vibration();return;}
+  if(overlay==LIBRARY&&libraryPage==1&&held>800&&y>=160&&y<411){
+    uint8_t slot=clampi((y-170)/59,0,3);clearScene(slot);return;
+  }
+  if(displayBlank){displayBlank=false;
+    M5.Display.setBrightness((uint8_t)(brightness*255/100));
+    lastRemoteActivity=millis();return;}
+  if(overlay==NAME&&abs(dx)>47){keyboardPopup="";return;}
+  if(overlay!=NONE){editorTouch(x,y);return;}
+  if(remote){lastRemoteActivity=millis();remoteTouch(x,y);return;}
+  if(abs(dx)>64){selectEffect(dx>0?-1:+1);return;}
+  if(originalEffect(effectID)==22||isTextEffect(effectID)){showTextEditor();return;}
+  // No microphone sensitivity overlay: audio auto-calibrates in the background.
+  if(originalEffect(effectID)==32||originalEffect(effectID)==36||
+    originalEffect(effectID)==41||originalEffect(effectID)==43){
+    lastArtTouchMs=millis();if(originalEffect(effectID)==43)userSpin+=dx*.013f;
+  }
  }
 }
 static void saveFrameStats(){ // Diagnostic data via Serial only; no onscreen performance overlay.
