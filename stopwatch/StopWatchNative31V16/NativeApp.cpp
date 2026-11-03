@@ -315,7 +315,7 @@ static void registerOnset(uint32_t now){
 enum AutoMicType : uint8_t {MIC_FIXED=0,MIC_SPECTRUM=1,MIC_BASS=2,MIC_ENERGY=3,MIC_WAVE=4};
 static constexpr uint8_t AUTO_MIC_TYPES[VIS_COUNT]={
  MIC_SPECTRUM, MIC_BASS, MIC_ENERGY, MIC_SPECTRUM, MIC_BASS,
- MIC_BASS, MIC_ENERGY, MIC_ENERGY, MIC_BASS,
+ MIC_ENERGY, MIC_ENERGY,
  MIC_SPECTRUM, MIC_ENERGY, MIC_ENERGY, MIC_WAVE, MIC_SPECTRUM,
  MIC_SPECTRUM, MIC_FIXED, MIC_ENERGY, MIC_ENERGY, MIC_ENERGY,
  MIC_BASS, MIC_BASS, MIC_ENERGY, MIC_SPECTRUM, MIC_BASS,
@@ -442,63 +442,94 @@ static void beatTick(){static uint32_t last=0;uint32_t now=millis();if(!last){la
 }
 static void saveNames(){for(int i=0;i<VIS_COUNT;i++)if(isTextEffect(i))prefs.putString((String("t")+String(i)).c_str(),userText[i]);prefs.putString("bluerobot",blueRobot);prefs.putString("pinkrobot",pinkRobot);}
 static void loadSettings(){
- prefs.begin("clubnative31",false);
- // V12 stored effect indexes, NVS names, and favorites by old presentation order.
- // V13 reorders only the presentation. Migrate exactly once when prior settings exist.
- const bool hadV12=prefs.isKey("effect")||prefs.isKey("favs")||prefs.isKey("gains")||prefs.isKey("scn0");
- const bool migrate=hadV12 && prefs.getUChar("sortrev",12)!=13;
- uint8_t previouslySelected=prefs.getUChar("effect",0);
- effectID=previouslySelected<VIS_COUNT?previouslySelected:0;
- if(migrate)effectID=migrateEffectIndex(effectID);
- brightness=prefs.getUChar("bright",52);profile=prefs.getUChar("profile",1)%3;
+ prefs.begin("clubnative31",false); // Same storage namespace to preserve V16.6/16.7 preferences.
+ const bool hadSaved=prefs.isKey("effect")||prefs.isKey("favs")||prefs.isKey("gains")||prefs.isKey("scn0");
+ const uint8_t sortVersion=prefs.getUChar("sortrev",12);
+ const bool legacyV12=hadSaved&&sortVersion<13;
+ const bool remapToV18=hadSaved&&sortVersion<14;
+
+ // Selected effect: old 06/09 are intentionally removed; fall back to first effect.
+ uint8_t oldSelected=prefs.getUChar("effect",0);
+ uint8_t mapped=remapToV18?fromOldEffect(oldSelected,legacyV12):oldSelected;
+ effectID=mapped<VIS_COUNT?mapped:0;
+
+ brightness=clampi(prefs.getUChar("bright",52),8,100);
+ profile=prefs.getUChar("profile",1)%3;
  uint64_t oldFavorites=FAVORITE_DEFAULT;
  if(prefs.getBytes("favs",&oldFavorites,sizeof(oldFavorites))!=sizeof(oldFavorites)){
-  // V12's default bitmap is positional and must be mapped just like a saved one.
-  oldFavorites=migrate?((1ULL<<0)|(1ULL<<10)|(1ULL<<18)|(1ULL<<23)|(1ULL<<28)|(1ULL<<29)|(1ULL<<30)):FAVORITE_DEFAULT;
+  oldFavorites=remapToV18
+    ? ((1ULL<<4)|(1ULL<<9)|(1ULL<<19)|(1ULL<<27)|(1ULL<<28)|(1ULL<<29)|(1ULL<<30))
+    : FAVORITE_DEFAULT;
+  if(legacyV12)oldFavorites=(1ULL<<0)|(1ULL<<10)|(1ULL<<18)|(1ULL<<23)|(1ULL<<28)|(1ULL<<29)|(1ULL<<30);
  }
- if(migrate){
+ if(remapToV18){
   favoriteBits=0;
-  for(uint8_t i=0;i<VIS_COUNT;i++)if(oldFavorites&(1ULL<<i))favoriteBits|=1ULL<<migrateEffectIndex(i);
+  for(uint8_t i=0;i<31;i++)if(oldFavorites&(1ULL<<i)){
+   uint8_t dest=fromOldEffect(i,legacyV12);
+   if(dest<VIS_COUNT)favoriteBits|=(1ULL<<dest);
+  }
  }else favoriteBits=oldFavorites;
  favoriteBits&=((1ULL<<VIS_COUNT)-1ULL);
  favoritesOnly=prefs.getBool("favonly",false)&&favoriteBits;
- if(prefs.getBytes("micmodes",&micManualMask,sizeof(micManualMask))!=sizeof(micManualMask))micManualMask=0;
- micManualMask&=((1ULL<<VIS_COUNT)-1ULL);
- adaptiveRender=prefs.getBool("adaptive",true);remoteIdleSecs=prefs.getUChar("idle",20);
- for(uint8_t j=0;j<4;j++){
-  SceneData v;size_t n=prefs.getBytes((String("scn")+String(j)).c_str(),&v,sizeof(v));
-  if(n==sizeof(v)&&v.magic==SCENE_MAGIC&&v.effect<VIS_COUNT){
-   if(migrate)v.effect=migrateEffectIndex(v.effect);
-   scenes[j]=v;
+
+ uint64_t storedManual=0;
+ if(prefs.getBytes("micmodes",&storedManual,sizeof(storedManual))!=sizeof(storedManual))storedManual=0;
+ if(remapToV18){
+  micManualMask=0;
+  for(uint8_t i=0;i<31;i++)if(storedManual&(1ULL<<i)){
+   uint8_t dest=fromOldEffect(i,legacyV12);
+   if(dest<VIS_COUNT)micManualMask|=1ULL<<dest;
   }
+ }else micManualMask=storedManual;
+ micManualMask&=((1ULL<<VIS_COUNT)-1ULL);
+
+ adaptiveRender=prefs.getBool("adaptive",true);
+ remoteIdleSecs=prefs.getUChar("idle",20);
+ for(uint8_t j=0;j<4;j++){
+  SceneData v;
+  size_t n=prefs.getBytes((String("scn")+String(j)).c_str(),&v,sizeof(v));
+  if(n!=sizeof(v)||v.magic!=SCENE_MAGIC)continue;
+  uint8_t dest=remapToV18?fromOldEffect(v.effect,legacyV12):v.effect;
+  if(dest>=VIS_COUNT)continue; // A scene selecting a removed effect cannot be loaded.
+  v.effect=dest;scenes[j]=v;
  }
  rxChannel=clampi(prefs.getUChar("radio",1),1,11);
- uint8_t loadedGain[31]={};
- // A V16.6 device has 31 saved gains; V16.7 has 28. Preserve the first 28.
- size_t storedGains=prefs.getBytesLength("gains");
- if(storedGains==31||storedGains==VIS_COUNT)
-   prefs.getBytes("gains",loadedGain,storedGains);
- for(uint8_t i=0;i<VIS_COUNT;i++){
-  const uint8_t dest=migrate?migrateEffectIndex(i):i;
-  gainPct[dest]=clampi(loadedGain[i],20,250);
-  if(loadedGain[i]<20||loadedGain[i]>250)gainPct[dest]=135;
+
+ // Previous releases stored 31 or 28 entries. Read the entire old array BEFORE
+ // indexing by the new 26-entry menu so per-effect gain values cannot shift.
+ uint8_t oldGain[31]={};
+ size_t nGain=prefs.getBytesLength("gains");
+ if(nGain==26||nGain==28||nGain==31)prefs.getBytes("gains",oldGain,nGain);
+ for(uint8_t i=0;i<VIS_COUNT;i++)gainPct[i]=135;
+ int limit=remapToV18?31:VIS_COUNT;
+ for(int i=0;i<limit;i++){
+  uint8_t dest=remapToV18?fromOldEffect((uint8_t)i,legacyV12):(uint8_t)i;
+  if(dest>=VIS_COUNT)continue;
+  if(oldGain[i]>=20&&oldGain[i]<=250)gainPct[dest]=oldGain[i];
  }
- String oldLabels[VIS_COUNT];
- for(uint8_t i=0;i<VIS_COUNT;i++)oldLabels[i]=prefs.getString((String("t")+String(i)).c_str(),"");
- for(uint8_t i=0;i<VIS_COUNT;i++){
-  uint8_t dest=migrate?migrateEffectIndex(i):i;
-  if(isTextEffect(dest))userText[dest]=oldLabels[i];
+
+ // Text fields are stored by menu index; old 07/08 shift to 06/07 after removals.
+ for(int i=0;i<31;i++){
+  uint8_t dest=remapToV18?fromOldEffect((uint8_t)i,legacyV12):(uint8_t)i;
+  if(dest>=VIS_COUNT||!isTextEffect(dest))continue;
+  userText[dest]=prefs.getString((String("t")+String(i)).c_str(),"");
  }
- blueRobot=prefs.getString("bluerobot","");pinkRobot=prefs.getString("pinkrobot","");
+ blueRobot=prefs.getString("bluerobot","");
+ pinkRobot=prefs.getString("pinkrobot","");
  micGain=gainPct[effectID]/100.f;
- if(migrate){
-  prefs.putUChar("effect",effectID);prefs.putBytes("favs",&favoriteBits,sizeof(favoriteBits));
+
+ // Make upgrade idempotent. Commit the marker only after all values are written.
+ if(remapToV18){
+  prefs.putUChar("effect",effectID);
+  prefs.putBytes("favs",&favoriteBits,sizeof(favoriteBits));
+  prefs.putBytes("micmodes",&micManualMask,sizeof(micManualMask));
   prefs.putBytes("gains",gainPct,sizeof(gainPct));
-  for(uint8_t i=0;i<VIS_COUNT;i++)if(isTextEffect(i))prefs.putString((String("t")+String(i)).c_str(),userText[i]);
-  for(uint8_t j=0;j<4;j++)if(scenes[j].magic==SCENE_MAGIC)prefs.putBytes((String("scn")+String(j)).c_str(),&scenes[j],sizeof(SceneData));
+  for(uint8_t i=0;i<VIS_COUNT;i++)if(isTextEffect(i))
+    prefs.putString((String("t")+String(i)).c_str(),userText[i]);
+  for(uint8_t j=0;j<4;j++)if(scenes[j].magic==SCENE_MAGIC)
+    prefs.putBytes((String("scn")+String(j)).c_str(),&scenes[j],sizeof(SceneData));
  }
- // Commit marker only after all migrated values are written.
- if(!prefs.isKey("sortrev")||prefs.getUChar("sortrev",12)!=13)prefs.putUChar("sortrev",13);
+ if(prefs.getUChar("sortrev",0)!=14)prefs.putUChar("sortrev",14);
 }
 static void persistEffect(){prefs.putUChar("effect",effectID);micGain=gainPct[effectID]/100.f;}
 static void radioSend(uint8_t cmd,uint8_t value){
@@ -1029,7 +1060,7 @@ static void renderOverlay(){
   if(libraryPage==0){
    textC(EFFECT_NAMES[effectID],CX,189,GRAY,3);
    uiButton(91,218,283,48,isFavorite(effectID)?"REMOVE FAVORITE":"ADD FAVORITE",true);
-   uiButton(91,282,283,47,favoritesOnly?"FAVORITES ONLY":"ALL 33 EFFECTS",favoritesOnly);
+   uiButton(91,282,283,47,favoritesOnly?"FAVORITES ONLY":(String("ALL ")+String(VIS_COUNT)+" EFFECTS"),favoritesOnly);
    uiButton(93,350,130,49,"< FAV");uiButton(244,350,130,49,"FAV >");
   }else if(libraryPage==1){
     for(uint8_t i=0;i<4;i++){
