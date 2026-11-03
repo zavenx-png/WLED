@@ -114,57 +114,109 @@ static inline uint16_t b5Mix(uint16_t bg,uint16_t src,uint8_t alpha){
  const int b=((bg&31)*ia+(src&31)*alpha+127)/255;
  return (uint16_t)((r<<11)|(g<<5)|b);
 }
-// Fast inverse-mapped RGB565 stamp. All glyph pixels are taken from the browser mask.
-static void b5Stamp(B5View view,float x,float y,float width,float angle,uint16_t color,float fade=1.f){
- if(!fb||!view.p||view.w<2||view.h<2||width<3||fade<.013f)return;
- float height=width*view.h/view.w;
- float ca=cosf(angle),sa=sinf(angle);
- int x0=max(0,(int)(x-.5f*(fabsf(ca)*width+fabsf(sa)*height)-1));
- int y0=max(0,(int)(y-.5f*(fabsf(sa)*width+fabsf(ca)*height)-1));
- int x1=min(W-1,(int)(x+.5f*(fabsf(ca)*width+fabsf(sa)*height)+1));
- int y1=min(H-1,(int)(y+.5f*(fabsf(sa)*width+fabsf(ca)*height)+1));
- float U=view.w/width,V=view.h/height;
- for(int sy=y0;sy<=y1;sy++)for(int sx=x0;sx<=x1;sx++){
-  float dx=sx-x,dy=sy-y;
-  int u=(int)((dx*ca+dy*sa)*U+view.w*.5f);
-  int v=(int)((-dx*sa+dy*ca)*V+view.h*.5f);
-  if((unsigned)u>=(unsigned)view.w||(unsigned)v>=(unsigned)view.h)continue;
-  int nib=b5Nib(view.p,v*view.w+u);if(nib<9)continue; nib=(nib-8)*15/7;
-  float tintA=fminf(1.f,fade)*(nib/15.f);
-  uint8_t alpha=(uint8_t)(tintA*255+0.5f);
-  // Sharpen browser-derived masks: remove halo pixels and keep solid RGB letter cores.
-  uint16_t ink=color;
-  const int at=sy*W+sx;
-  fb[at]=b5Mix(fb[at],ink,alpha);
+// V16.4: embedded SDF font engine. No pre-rendered word images are
+// downscaled or rotated. Glyph edges are rendered at final LCD resolution.
+static uint8_t *sdfGlyphs=nullptr;
+static bool sdfAttempted=false;
+static bool sdfReady=false;
+static bool sdfInit(){
+ if(sdfAttempted)return sdfReady;
+ sdfAttempted=true;
+ if(!b5Initialize())return false;
+ const size_t pixels=(size_t)B5_GLYPHS_BYTES*2;
+ sdfGlyphs=(uint8_t*)heap_caps_malloc(pixels,MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT);
+ uint16_t *dist=(uint16_t*)heap_caps_malloc(106*126*sizeof(uint16_t),MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT);
+ if(!sdfGlyphs||!dist){if(dist)heap_caps_free(dist);return false;}
+ for(int k=0;k<B5_GLYPH_COUNT;k++){
+  Browser5Glyph g;memcpy_P(&g,&B5_GLYPHS[k],sizeof(g));
+  int ww=g.w, hh=g.h, off=(int)g.start*2;
+  if(ww<1||hh<1||ww*hh>106*126)continue;
+  for(int yy=0;yy<hh;yy++)for(int xx=0;xx<ww;xx++){
+   int at=yy*ww+xx;bool inside=b5Nib(b5GlyphPixels,off+at)>=8;
+   bool edge=(xx==0||yy==0||xx==ww-1||yy==hh-1);
+   if(xx>0)edge|=(inside!=(b5Nib(b5GlyphPixels,off+at-1)>=8));
+   if(yy>0)edge|=(inside!=(b5Nib(b5GlyphPixels,off+at-ww)>=8));
+   if(xx+1<ww)edge|=(inside!=(b5Nib(b5GlyphPixels,off+at+1)>=8));
+   if(yy+1<hh)edge|=(inside!=(b5Nib(b5GlyphPixels,off+at+ww)>=8));
+   dist[at]=edge?0:65500;
+  }
+  for(int yy=0;yy<hh;yy++)for(int xx=0;xx<ww;xx++){
+   int at=yy*ww+xx;uint16_t d=dist[at];
+   if(xx)d=min((int)d,(int)dist[at-1]+3);
+   if(yy){d=min((int)d,(int)dist[at-ww]+3);
+      if(xx)d=min((int)d,(int)dist[at-ww-1]+4);
+      if(xx+1<ww)d=min((int)d,(int)dist[at-ww+1]+4);}
+   dist[at]=d;
+  }
+  for(int yy=hh-1;yy>=0;yy--)for(int xx=ww-1;xx>=0;xx--){
+   int at=yy*ww+xx;uint16_t d=dist[at];
+   if(xx+1<ww)d=min((int)d,(int)dist[at+1]+3);
+   if(yy+1<hh){d=min((int)d,(int)dist[at+ww]+3);
+      if(xx)d=min((int)d,(int)dist[at+ww-1]+4);
+      if(xx+1<ww)d=min((int)d,(int)dist[at+ww+1]+4);}
+   dist[at]=d;
+  }
+  for(int at=0;at<ww*hh;at++){
+   int orig=b5Nib(b5GlyphPixels,off+at);
+   float d=(dist[at]/3.f + .50f)*(orig>=8?1.f:-1.f);
+   if(dist[at]<=3)d+=(orig-7.5f)*.028f;
+   sdfGlyphs[off+at]=(uint8_t)clampi((int)(128.f+d*12.f+.5f),0,255);
+  }
+ }
+ heap_caps_free(dist);
+ sdfReady=true;
+ Serial.printf("SDF font ready: %u glyphs, %u bytes PSRAM\n",
+               (unsigned)B5_GLYPH_COUNT,(unsigned)pixels);
+ return true;
+}
+static inline float sdfSample(const Browser5Glyph &g,int offset,float u,float v){
+ if(u<0||v<0||u>=g.w-1||v>=g.h-1)return -11.f;
+ int x=(int)u,y=(int)v;float ax=u-x,ay=v-y;
+ int a=offset+y*g.w+x,b=a+g.w;
+ float v0=sdfGlyphs[a]*(1-ax)+sdfGlyphs[a+1]*ax;
+ float v1=sdfGlyphs[b]*(1-ax)+sdfGlyphs[b+1]*ax;
+ return ((v0*(1-ay)+v1*ay)-128.f)/12.f;
+}
+static void sdfDrawGlyph(const Browser5Glyph &g,float x,float y,float scale,float angle,uint16_t color,float fade){
+ if(!fb||!sdfGlyphs||scale<.09f||fade<.01f)return;
+ const float ca=cosf(angle),sa=sinf(angle);
+ const float midx=(g.x+g.w*.5f-53.f)*scale;
+ const float midy=(g.y+g.h*.5f-63.f)*scale;
+ const float cx=x+ca*midx-sa*midy,cy=y+sa*midx+ca*midy;
+ const float gw=g.w*scale,gh=g.h*scale;
+ const float w=.5f*(fabsf(ca)*gw+fabsf(sa)*gh)+2;
+ const float h=.5f*(fabsf(sa)*gw+fabsf(ca)*gh)+2;
+ int x0=max(0,(int)floorf(cx-w)),x1=min(W-1,(int)ceilf(cx+w));
+ int y0=max(0,(int)floorf(cy-h)),y1=min(H-1,(int)ceilf(cy+h));
+ int off=(int)g.start*2;
+ const float reciprocal=1.f/scale;
+ for(int py=y0;py<=y1;py++)for(int px=x0;px<=x1;px++){
+  float dx=(px+.5f)-cx,dy=(py+.5f)-cy;
+  float u=(dx*ca+dy*sa)*reciprocal+g.w*.5f-.5f;
+  float v=(-dx*sa+dy*ca)*reciprocal+g.h*.5f-.5f;
+  float d=sdfSample(g,off,u,v);
+  float coverage=clampf(.5f+d*scale,0,1)*fade;
+  if(coverage<.015f)continue;
+  int p=py*W+px;fb[p]=b5Mix(fb[p],color,(uint8_t)(coverage*255.f+.5f));
  }
 }
-static void b5Char(char letter,float x,float y,float scale,uint16_t color,float radians=0){
- Browser5Glyph g;
- if(!b5GlyphFor(letter,g))return;
- B5View v={b5GlyphPixels+g.start,g.w,g.h};
- // g.start points into a byte-packed stream; it may start on an odd nibble.
- // The V16.2 character masks are accessed through the full stream below.
- // See b5GlyphStamp for correct nibble-origin handling.
- (void)v;
- float gx=x+(g.x+g.w*.5f-53.f)*scale;
- float gy=y+(g.y+g.h*.5f-63.f)*scale;
- const uint8_t *orig=b5GlyphPixels;
- float dw=g.w*scale,dh=g.h*scale;
- float ca=cosf(radians),sa=sinf(radians);
- int x0=max(0,(int)(gx-.5f*(fabsf(ca)*dw+fabsf(sa)*dh)-1));
- int x1=min(W-1,(int)(gx+.5f*(fabsf(ca)*dw+fabsf(sa)*dh)+1));
- int y0=max(0,(int)(gy-.5f*(fabsf(sa)*dw+fabsf(ca)*dh)-1));
- int y1=min(H-1,(int)(gy+.5f*(fabsf(sa)*dw+fabsf(ca)*dh)+1));
- for(int py=y0;py<=y1;py++)for(int px=x0;px<=x1;px++){
-  float rx=px-gx,ry=py-gy;
-  int ux=(int)((rx*ca+ry*sa)/scale+g.w*.5f);
-  int uy=(int)((-rx*sa+ry*ca)/scale+g.h*.5f);
-  if((unsigned)ux>=g.w||(unsigned)uy>=g.h)continue;
-  int n=b5Nib(orig,(int)g.start*2+uy*g.w+ux);
-  if(n<9)continue; n=(n-8)*15/7;
-  int off=py*W+px;
-  uint8_t a=(uint8_t)(n*17);
-  fb[off]=b5Mix(fb[off],color,a);
+static void sdfChar(char letter,float x,float y,float scale,uint16_t color,float radians=0){
+ Browser5Glyph g;if(b5GlyphFor(letter,g))sdfDrawGlyph(g,x,y,scale,radians,color,1.f);
+}
+static void sdfWord(const String &name,float x,float y,float width,float angle,uint16_t color,float fade=1.f){
+ if(!sdfGlyphs||name.length()==0||width<12)return;
+ int n=clampi(name.length(),1,12);float advances=0;
+ for(int i=0;i<n;i++){Browser5Glyph g;if(b5GlyphFor(name[i],g))advances+=g.advance;else advances+=32;}
+ if(advances<1)return;
+ const float sc=width/advances;float pen=-advances*.5f;
+ float ca=cosf(angle),sa=sinf(angle);
+ for(int i=0;i<n;i++){
+  Browser5Glyph g;
+  if(b5GlyphFor(name[i],g)){
+   float shift=(pen+g.advance*.5f)*sc;
+   sdfDrawGlyph(g,x+shift*ca,y+shift*sa,sc,angle,color,fade);
+   pen+=g.advance;
+  }else pen+=32;
  }
 }
 static float b5Rhythm(){return beatClock*TAU;}
@@ -172,7 +224,7 @@ static float b5HousePulse(){return expf(-beatPhase()*10.f);}
 static inline uint16_t b5Lit(float h,float intensity){return tint(b5Hue(frac(h)),intensity);}
 static bool renderBrowserFive(uint8_t id){
  if(id<23||id>27)return false;
- if(!b5Initialize())return false; // safe V16.1 fallback if PSRAM allocation fails
+ if(!sdfInit())return false; // fallback if SDF initialization fails
  const String &word=artName(effectID);
  const int n=clampi(word.length(),1,12);
  const float t=T(), hb=b5Rhythm(), pulse=b5HousePulse();
@@ -188,7 +240,7 @@ static bool renderBrowserFive(uint8_t id){
    float osc=.5f+.5f*sinf(hb*.5f+i*1.38f);
    float x=CX+(i-(n-1)*.5f)*gap;
    float y=214-((m*.8f+osc*.20f)*112.f-50.f);
-   b5Char(word[i],x,y,font/78.f,cols[i%5]);
+   sdfChar(word[i],x,y,font/78.f,cols[i%5]);
    line(x,318,x,302-m*59,cols[i%5],2);
   }
   break;}
@@ -213,24 +265,24 @@ static bool renderBrowserFive(uint8_t id){
   for(int i=0;i<n;i++){
    float x=CX+(i-(n-1)*.5f)*step;
    float y=CY+16*sinf(t*1.15f+i*.81f)+5*sinf(t*.56f+i*1.48f);
-   b5Char(word[i],x,y,sz/78.f,(i%2)?rgb(255,189,255):rgb(255,242,254),.075f*sinf(p+i*.6f+t*.15f));
+   sdfChar(word[i],x,y,sz/78.f,(i%2)?rgb(255,189,255):rgb(255,242,254),.075f*sinf(p+i*.6f+t*.15f));
   }
   break;}
  case 25:{ // 03 Kaleidoscope: 40 readable whole words on concentric wedges.
   float p=hb*.07f;
   for(int slice=0;slice<10;slice++){
    float base=slice*TAU/10.f+p;
-   for(int rr=83;rr<226;rr+=46){
+   for(int rr=110;rr<=220;rr+=55){
     float sc=.45f+(rr/220.f)*.15f;
     float angle=base+(slice&1?PI_F:0);
     float x=CX+sinf(base)*rr,y=CY-cosf(base)*rr;
     // Browser uses font 41px, then canvas scaled 0.45–0.60.
-    float width=fminf(145.f,wordMask.w*41.f/61.f*sc);
-    b5Stamp(wordMask,x,y,width,angle,b5Hue(frac((slice*36+rr*.25f+t*5)/360.f)),.91f);
+    float width=fminf(124.f,fmaxf(70.f,wordMask.w*41.f/61.f*sc));
+    sdfWord(word,x,y,width,angle,b5Hue(frac((slice*36+rr*.25f+t*5)/360.f)),.91f);
    }
   }
   circ(CX,CY,73,rgb(230,225,255),2);
-  b5Stamp(wordMask,CX,CY,fminf(210.f,wordMask.w*.65f),0,rgb(232,211,255),1.f);
+  sdfWord(word,CX,CY,fminf(210.f,wordMask.w*.65f),0,rgb(232,211,255),1.f);
   break;}
  case 26:{ // 04 Round Resonator: six complete words circulate the rings.
   float p=hb*.065f;
@@ -242,7 +294,7 @@ static bool renderBrowserFive(uint8_t id){
    float phi=i*TAU/6.f+p;
    float rr=117+17*sinf(hb*.5f+i);
    float x=CX+cosf(phi)*rr,y=CY+sinf(phi)*rr;
-   b5Stamp(wordMask,x,y,fminf(110.f,n*21.f),phi+PI_F*.5f,b5Hue(frac(i/8.f)),.87f);
+   sdfWord(word,x,y,fminf(110.f,n*21.f),phi+PI_F*.5f,b5Hue(frac(i/8.f)),.87f);
   }
   break;}
  case 27:{ // 05 Fibonacci Spiral: V6 whole-word composition, NOT glyph dashes.
@@ -255,11 +307,11 @@ static bool renderBrowserFive(uint8_t id){
    if((unsigned)x<(unsigned)W&&(unsigned)y<(unsigned)H)
       cv.drawPixel(x,y,b5Lit(frac(i*.071f+t*.012f),.28f+.45f*(1-f)));
   }
-  for(int i=0;i<41;i++){
-   float f=frac(i/41.f+motion),r=(16+218*sqrtf(f))*breath,a=i*golden+motion*.35f;
+  for(int i=0;i<29;i++){
+   float f=frac(i/29.f+motion),r=(26+206*sqrtf(f))*breath,a=i*golden+motion*.35f;
    float fade=clampf(f*8)*clampf((1-f)*6)*(.57f+.30f*pulse+.25f*energy);
-   float width=fminf(96.f,fmaxf(56.f,n*13.f))*(.40f+f*.50f);
-   b5Stamp(wordMask,CX+cosf(a)*r,CY+sinf(a)*r,width,a+PI_F*.5f,b5Hue(frac(i/8.f)),fade);
+   float width=fminf(102.f,fmaxf(72.f,n*15.f))*(.68f+f*.26f);
+   sdfWord(word,CX+cosf(a)*r,CY+sinf(a)*r,width,a+PI_F*.5f,b5Hue(frac(i/8.f)),fade);
   }
   circ(CX,CY,(int)(25+13*bass),b5Lit((222+t*8)/360.f,.32f+.25f*energy),2);
   break;}
