@@ -154,13 +154,15 @@ static void setGainManual(uint8_t id,bool manual){
 }
 String userText[VIS_COUNT];String sharedName="",blueRobot="",pinkRobot="";
 static const String DEFAULT_WORD="zaven";
-enum Overlay : uint8_t {NONE,NAME,BRIGHTNESS,RHYTHM,LIBRARY};
+enum Overlay : uint8_t {NONE,NAME,BRIGHTNESS,RHYTHM,LIBRARY,BATTERY};
 Overlay overlay=NONE;
 String inputName="";uint8_t robotField=0;
 String keyboardPopup="";int keyboardPopupX=0,keyboardPopupY=0;
 uint32_t keyboardPopupUntil=0,keyboardPopupStarted=0,brightnessRepeatAt=0;
 bool brightnessEntryHold=false;
 uint8_t candidateBrightness=52;float candidateBpm=125;
+uint32_t batteryHudUntil=0,batteryLastPoll=0,batteryKeyCooldown=0;
+int batteryHudPercent=0,batteryHudVoltage=0;bool batteryHudCharging=false;
 // Persistent, compact NVS-backed favorites and complete per-scene parameters.
 static constexpr uint64_t FAVORITE_DEFAULT=(1ULL<<4)|(1ULL<<7)|(1ULL<<17)|(1ULL<<23);
 static constexpr uint32_t SCENE_MAGIC=0x3253435A; // "ZCS1" scene format version
@@ -1123,10 +1125,48 @@ static void crispBrightnessText(const String &word,int x,int y,uint16_t ink,bool
  cv.drawString(word,x,y);
  cv.setFont(&lgfx::fonts::Font0);
 }
+static void refreshBatteryHud(){
+ batteryHudPercent=clampi(M5.Power.getBatteryLevel(),0,100);
+ batteryHudVoltage=M5.Power.getBatteryVoltage();
+ batteryHudCharging=(int)M5.Power.isCharging()==1;
+}
+static void openBatteryHud(bool haptic=true){
+ refreshBatteryHud();batteryHudUntil=millis()+4300;overlay=BATTERY;
+ if(haptic)vibration(124,28);
+}
+static void renderBatteryHud(){
+ black();
+ uint16_t color=batteryHudPercent>=55?rgb(99,245,214):
+                batteryHudPercent>=25?rgb(248,210,106):rgb(255,85,138);
+ for(int k=0;k<60;k++){
+  float a1=-PI_F*.5f+k*TAU/60.f,a2=a1+TAU/60.f*.65f;
+  uint16_t c=k*100/60<batteryHudPercent?color:rgb(18,34,56);
+  float r=186.f;
+  line(CX+r*cosf(a1),CY+r*sinf(a1),
+       CX+r*cosf(a2),CY+r*sinf(a2),c,7);
+ }
+ circ(CX,CY,161,rgb(25,63,86),2);
+ circ(CX,CY,155,tint(color,.20f),2);
+ float pulse=.5f+.5f*sinf(millis()*.0021f);
+ circ(CX,CY,177,tint(color,.09f+.09f*pulse),2);
+ cv.setFont(&lgfx::fonts::FreeSansBold24pt7b);
+ cv.setTextSize(2.0f);cv.setTextColor(rgb(243,253,255));
+ cv.setTextDatum(middle_center);
+ cv.drawString(String(batteryHudPercent)+"%",CX,CY-7);
+ cv.setTextSize(1.f);
+ cv.setFont(&lgfx::fonts::FreeSansBold12pt7b);
+ cv.setTextColor(tint(color,.9f));cv.drawString("BATTERY",CX,104);
+ cv.setFont(&lgfx::fonts::Font0);
+ textC(batteryHudCharging?"CHARGING":"REMAINING",CX,290,tint(color,.85f),3);
+ if(batteryHudVoltage>2500&&batteryHudVoltage<5000)
+  textC(String(batteryHudVoltage/1000.f,2)+" V",CX,331,rgb(153,194,211),2);
+ textC("TAP TO CLOSE",CX,374,rgb(111,151,177),2);
+}
 static void renderOverlay(){
  if(overlay==NONE)return;
  const uint16_t CYAN=rgb(88,229,245), PINK=rgb(255,113,207), GRAY=rgb(169,206,230);
  switch(overlay){
+ case BATTERY:{renderBatteryHud();break;}
  case BRIGHTNESS:{
   black();circ(CX,CY,R-3,rgb(42,92,126),2);
   // User-approved 147x82 button geometry and long-hold behavior are unchanged.
@@ -1473,6 +1513,7 @@ static void controlTouch(){
      lastRemoteActivity=millis();return;
    }
    if(overlay==NAME&&abs(dx)>60){keyboardPopup="";return;}
+   if(overlay==BATTERY){overlay=NONE;batteryHudUntil=0;vibration(105,20);return;}
    if(overlay!=NONE){editorTouch(x,y);return;}
    if(remote){lastRemoteActivity=millis();remoteTouch(x,y);return;}
    if(abs(dx)>64){selectEffect(dx>0?-1:+1);return;}
@@ -1541,6 +1582,8 @@ void setup(){
  fb=(uint16_t*)cv.getBuffer();
  Serial.printf("Framebuffer OK. Free PSRAM=%u bytes\n",(unsigned)ESP.getFreePsram());
  initArtwork();
+ // Power button can cause a hardware reset; show battery HUD after boot.
+ openBatteryHud(false);
  M5.BtnA.setHoldThresh(730);M5.BtnB.setHoldThresh(850);
  M5.Power.setVibration(0);
  WiFi.mode(WIFI_OFF); // radio ONLY when harness remote enabled
@@ -1550,7 +1593,19 @@ void setup(){
  vibration(170,65);
 }
 void loop(){
- M5.update();vibrationTick();controlButtons();controlTouch();radioTick();audioTick();beatTick();
+ M5.update();vibrationTick();
+ // M5PM1 sends 2 for a short key press when it can be caught without a
+ // PMIC reset; the same HUD also appears after the reset/boot path.
+ uint32_t powerNow=millis();
+ if(powerNow-batteryKeyCooldown>550){
+  uint8_t state=M5.Power.getKeyState();
+  if(state&2){batteryKeyCooldown=powerNow;openBatteryHud();}
+ }
+ if(overlay==BATTERY && (int32_t)(powerNow-batteryHudUntil)>=0)overlay=NONE;
+ if(overlay==BATTERY && powerNow-batteryLastPoll>900){
+  batteryLastPoll=powerNow;refreshBatteryHud();
+ }
+ controlButtons();controlTouch();radioTick();audioTick();beatTick();
  uint32_t now=millis();
  // Remote-only auto blank: the radio can still receive ACKs and A+B can wake.
  // No deep sleep during live audio or ESP-NOW; preserve responsiveness.
