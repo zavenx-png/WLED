@@ -1,0 +1,40 @@
+name: StopWatch C152 V16.7 D feedback build
+on:
+  push:
+    branches: [stopwatch-v16-7-effect-fidelity-review]
+    paths:
+      - 'stopwatch/StopWatchNative31V16/**'
+      - '.github/workflows/stopwatch-v16-7-feedback.yml'
+  workflow_dispatch:
+jobs:
+  compile-direct-native-text:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: arduino/setup-arduino-cli@v2
+      - name: Install official StopWatch C152 core and graphics dependencies
+        run: |
+          arduino-cli config init
+          arduino-cli config add board_manager.additional_urls https://static-cdn.m5stack.com/resource/arduino/package_m5stack_index.json
+          arduino-cli core update-index
+          arduino-cli core install m5stack:esp32
+          arduino-cli lib install M5Unified
+          arduino-cli lib install M5GFX
+      - name: Force D - Direct Native Text, unchanged V16.6 engine
+        run: |
+          sed -i -E "s/^#define STOPWATCH_FONT_TRIAL [0-9]+/#define STOPWATCH_FONT_TRIAL 2/" stopwatch/StopWatchNative31V16/assets/FontTrial.h
+          grep '^#define STOPWATCH_FONT_TRIAL' stopwatch/StopWatchNative31V16/assets/FontTrial.h
+      - name: Compile revised 28 effects for C152
+        run: |
+          mkdir -p build/v16-7-d
+          arduino-cli compile --fqbn m5stack:esp32:m5stack_stopwatch --output-dir build/v16-7-d --warnings all stopwatch/StopWatchNative31V16
+          cp build/v16-7-d/StopWatchNative31V16.ino.bin build/v16-7-d/StopWatch_V16_7_D_EffectReview.app.bin
+          cd build/v16-7-d && sha256sum StopWatch_V16_7_D_EffectReview.app.bin > SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: StopWatch-V16-7-D-Effect-Feedback-C152
+          path: |
+            build/v16-7-d/StopWatch_V16_7_D_EffectReview.app.bin
+            build/v16-7-d/SHA256SUMS.txt
+          if-no-files-found: error
