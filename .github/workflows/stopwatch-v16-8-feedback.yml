@@ -1,0 +1,44 @@
+name: StopWatch C152 V16.8 D visual and UI feedback
+on:
+  push:
+    branches: [stopwatch-v16-8-feedback-ui-audio]
+    paths:
+      - 'stopwatch/StopWatchNative31V16/**'
+      - '.github/workflows/stopwatch-v16-8-feedback.yml'
+  workflow_dispatch:
+jobs:
+  build-v16-8-direct-native-text:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: arduino/setup-arduino-cli@v2
+      - name: Install official M5Stack C152 board and graphics libraries
+        run: |
+          arduino-cli config init
+          arduino-cli config add board_manager.additional_urls https://static-cdn.m5stack.com/resource/arduino/package_m5stack_index.json
+          arduino-cli core update-index
+          arduino-cli core install m5stack:esp32
+          arduino-cli lib install M5Unified
+          arduino-cli lib install M5GFX
+      - name: Enforce approved D native text engine and 26 effects
+        run: |
+          sed -i -E "s/^#define STOPWATCH_FONT_TRIAL [0-9]+/#define STOPWATCH_FONT_TRIAL 2/" stopwatch/StopWatchNative31V16/assets/FontTrial.h
+          grep '^#define STOPWATCH_FONT_TRIAL 2' stopwatch/StopWatchNative31V16/assets/FontTrial.h
+          grep -Fq 'VIS_COUNT=26' stopwatch/StopWatchNative31V16/NativeApp.cpp
+          grep -Fq 'keyboardPage=(keyboardPage+1)%3' stopwatch/StopWatchNative31V16/NativeApp.cpp
+      - name: Compile StopWatch V16.8 D native app for C152
+        run: |
+          mkdir -p build/v16-8-d
+          arduino-cli compile --fqbn m5stack:esp32:m5stack_stopwatch --output-dir build/v16-8-d --warnings all stopwatch/StopWatchNative31V16
+          cp build/v16-8-d/StopWatchNative31V16.ino.bin build/v16-8-d/StopWatch_V16_8_D_26_Effects.app.bin
+          cd build/v16-8-d
+          sha256sum StopWatch_V16_8_D_26_Effects.app.bin > SHA256SUMS.txt
+          ls -lh StopWatch_V16_8_D_26_Effects.app.bin
+      - uses: actions/upload-artifact@v4
+        with:
+          name: StopWatch-V16-8-D-26-Effects-C152
+          path: |
+            build/v16-8-d/StopWatch_V16_8_D_26_Effects.app.bin
+            build/v16-8-d/SHA256SUMS.txt
+          if-no-files-found: error
