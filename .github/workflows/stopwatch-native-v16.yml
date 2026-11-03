@@ -1,7 +1,7 @@
-name: StopWatch Native31 V16 firmware
+name: StopWatch V16.2 first five browser assets
 on:
   push:
-    branches: [stopwatch-native31-v16-build]
+    branches: [stopwatch-v16-2-browser-first-five]
     paths:
       - 'stopwatch/StopWatchNative31V16/**'
       - '.github/workflows/stopwatch-native-v16.yml'
@@ -21,7 +21,7 @@ jobs:
           arduino-cli core install m5stack:esp32
           arduino-cli lib install M5Unified
           arduino-cli lib install M5GFX
-      - name: Compile Native31 V16 for StopWatch ESP32-S3
+      - name: Compile V16.2 first five for M5Stack StopWatch C152
         run: |
           mkdir -p build/native-v16
           arduino-cli compile --fqbn m5stack:esp32:m5stack_stopwatch --output-dir build/native-v16 --warnings all stopwatch/StopWatchNative31V16
@@ -29,7 +29,7 @@ jobs:
           sha256sum build/native-v16/*.bin
       - uses: actions/upload-artifact@v4
         with:
-          name: StopWatch-Native31-V16-C152
+          name: StopWatch-V16-2-FirstFive-C152
           path: |
             build/native-v16/*.bin
             build/native-v16/*.elf
