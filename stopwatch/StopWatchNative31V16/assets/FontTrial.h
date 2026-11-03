@@ -1,243 +1,263 @@
 /*
- * StopWatch Font Laboratory V16.5: three independent implementations.
- * Each variant is built from the untouched V16.3 NativeApp.cpp, assets, and
- * renderer geometry. ONLY b5Char/b5Stamp are replaced in effects 1–5.
- *  1 = LovyanGFX native FreeSansBold + pushRotateZoomWithAA
- *  2 = FreeType Inter Black alpha atlas + PSRAM area-filtered mipmaps
- *  3 = native smooth vector wide lines/curves (no glyph bitmap)
+ * StopWatch V16.6 three NEW text experiments (isolated to effects 1-5).
+ * 1 FAST-A:    native font, compact 8-bit PALETTE sprite, glyph cache,
+ *              LovyanGFX antialiased rotation into the existing framebuffer.
+ * 2 DIRECT:    native fonts drawn at final size, upright, NO transform.
+ *              This is the low-cost clarity/reference experiment.
+ * 3 TILE CACHE: use native M5GFX AA once per quantized angle and width,
+ *              save cropped coverage in PSRAM, composite only used pixels
+ *              at runtime with no scaling and no rotate per hit.
+ *
+ * Baseline: V16.3 with the same five-effect geometry as the V16.5 lab.
+ * No changes to NativeApp.cpp or effects 6-31.
  */
 #pragma once
 #ifndef STOPWATCH_FONT_TRIAL
 #define STOPWATCH_FONT_TRIAL 1
 #endif
-#if STOPWATCH_FONT_TRIAL < 1 || STOPWATCH_FONT_TRIAL > 3
-#error "STOPWATCH_FONT_TRIAL must be 1, 2, or 3"
+#if STOPWATCH_FONT_TRIAL<1 || STOPWATCH_FONT_TRIAL>3
+#error "STOPWATCH_FONT_TRIAL must be 1, 2 or 3"
 #endif
 
-// A. M5GFX built-in FreeSansBold font and the library's antialiased rotation.
-#if STOPWATCH_FONT_TRIAL == 1
-static lgfx::LGFX_Sprite trialTextSprite(&M5.Display);
-static bool trialTextReady=false;
-static bool trialNativeInit(){
- if(trialTextReady)return true;
- trialTextSprite.setColorDepth(16);
- trialTextSprite.setPsram(true);
- if(!trialTextSprite.createSprite(448,132))return false;
- trialTextSprite.setFont(&lgfx::fonts::FreeSansBold24pt7b);
- trialTextSprite.setTextDatum(middle_center);
- trialTextReady=true;
+static uint64_t trialTimeUs=0,trialCalls=0;
+static uint32_t trialReportAt=0;
+static uint32_t trialCacheHits=0,trialCacheMisses=0;
+static void trialReport(uint32_t start){
+ trialTimeUs+=(uint32_t)(micros()-start);trialCalls++;
+ uint32_t now=millis();
+ if(now-trialReportAt>=3000){
+  Serial.printf("FONT LAB method=%d calls=%u avg_us=%u total_ms_3s=%u hit=%u miss=%u PSRAM_free=%u\n",
+   STOPWATCH_FONT_TRIAL,(unsigned)trialCalls,
+   (unsigned)(trialCalls?trialTimeUs/trialCalls:0),
+   (unsigned)(trialTimeUs/1000),
+   (unsigned)trialCacheHits,(unsigned)trialCacheMisses,
+   (unsigned)ESP.getFreePsram());
+  trialReportAt=now;trialTimeUs=0;trialCalls=0;trialCacheHits=0;trialCacheMisses=0;
+ }
+}
+static inline void trialPaletteInk(lgfx::LGFX_Sprite &s,uint16_t c,float fade){
+ uint16_t t=tint(c,clampf(fade));
+ s.setPaletteColor(255,(uint8_t)(((t>>11)&31)*255/31),
+                      (uint8_t)(((t>>5)&63)*255/63),
+                      (uint8_t)((t&31)*255/31));
+}
+
+// Source artwork: the SAME native FreeSansBold24pt7b used by clean Trial A,
+// but rasterized ONCE PER NAME/CHARACTER instead of for every word occurrence.
+#if STOPWATCH_FONT_TRIAL==1 || STOPWATCH_FONT_TRIAL==3
+static lgfx::LGFX_Sprite trialSource(&M5.Display);
+static String trialSourceName="";
+static int trialSourceWidth=0,trialSourceHeight=0;
+static float trialSourceNatural=1.f;
+static bool trialSourceReady=false;
+static bool trialEnsureSource(const String &name){
+ if(trialSourceReady&&name==trialSourceName)return true;
+ trialSourceReady=false;trialSourceName="";
+ trialSource.deleteSprite();
+ trialSource.setColorDepth(8);
+ trialSource.setPsram(true);
+ trialSource.setFont(&lgfx::fonts::FreeSansBold24pt7b);
+ trialSource.setTextSize(1.f);
+ int natural=trialSource.textWidth(name);
+ trialSourceWidth=clampi(natural+20,38,448);
+ trialSourceHeight=70;
+ if(!trialSource.createSprite(trialSourceWidth,trialSourceHeight))return false;
+ trialSource.createPalette();
+ trialSource.setPaletteColor(0,0,0,0);
+ trialSource.setPaletteColor(255,255,255,255);
+ trialSource.fillScreen(0);
+ trialSource.setTextColor(255,0);
+ trialSource.setFont(&lgfx::fonts::FreeSansBold24pt7b);
+ trialSource.setTextSize(1.f);
+ trialSource.setTextDatum(middle_center);
+ trialSource.drawString(name,trialSourceWidth/2,trialSourceHeight/2);
+ trialSource.setPivot((float)trialSourceWidth*.5f,(float)trialSourceHeight*.5f);
+ trialSourceNatural=(float)max(1,natural);
+ trialSourceName=name;trialSourceReady=true;
+ trialCacheMisses++;
  return true;
 }
-static void trialNativeWord(const String &s,float x,float y,float width,float radians,uint16_t ink,float fade){
- if(s.length()==0||width<5||fade<.01f||!trialNativeInit())return;
- trialTextSprite.fillScreen(TFT_BLACK);
- trialTextSprite.setFont(&lgfx::fonts::FreeSansBold24pt7b);
- trialTextSprite.setTextSize(s.length()>8?1.12f:s.length()>6?1.55f:2.f);
- trialTextSprite.setTextDatum(middle_center);
- trialTextSprite.setTextColor(tint(ink,clampf(fade)),TFT_BLACK);
- trialTextSprite.drawString(s,224,66);
- float natural=trialTextSprite.textWidth(s);
- if(natural<1)return;
- // Native LovyanGFX filtered resampling (instead of custom nearest neighbor).
- float zoom=width/fminf(natural,435.f);
- trialTextSprite.setPivot(224,66);
- trialTextSprite.pushRotateZoomWithAA(&cv,x,y,radians*57.2957795f,zoom,zoom,TFT_BLACK);
+#endif
+
+#if STOPWATCH_FONT_TRIAL==1
+static void trialWord(const String &s,float x,float y,float width,float angle,uint16_t ink,float fade){
+ uint32_t ts=micros();
+ if(s.length()==0||width<4||fade<=.01f||!trialEnsureSource(s)){trialReport(ts);return;}
+ trialPaletteInk(trialSource,ink,fade);
+ float zoom=width/trialSourceNatural;
+ trialSource.pushRotateZoomWithAA(&cv,x,y,angle*57.2957795f,zoom,zoom,0);
+ trialCacheHits++;
+ trialReport(ts);
 }
-static void trialChar(char ch,float x,float y,float scale,uint16_t ink,float radians){
- char cc[2]={ch,0};
- // Canvas's native letter height at 24pt, text size 2 is roughly 75px.
- trialNativeWord(String(cc),x,y,scale*75.f,radians,ink,1.f);
-}
-static void trialWord(const String &str,float x,float y,float width,float angle,uint16_t ink,float fade){
- trialNativeWord(str,x,y,width,angle,ink,fade);
+static void trialChar(char ch,float x,float y,float scale,uint16_t ink,float angle){
+ char s[2]={ch,0};trialWord(String(s),x,y,scale*75.f,angle,ink,1.f);
 }
 #endif
 
-// B. Independent FreeType font atlas: 102px source coverage + adaptive PSRAM mipmaps.
-#if STOPWATCH_FONT_TRIAL == 2
-#include "TrueTypeAtlas.h"
-static uint8_t* trialFTPacked=nullptr;
-static uint8_t* trialMip[FT_COUNT][3]={};
-static bool trialFTAttempted=false,trialFTReady=false;
-static bool trialFTInit(){
- if(trialFTAttempted)return trialFTReady;
- trialFTAttempted=true;
- trialFTPacked=(uint8_t*)heap_caps_malloc(FT_BYTES,MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT);
- if(!trialFTPacked)return false;
- trialFTReady=b5Load(FT_DATA,trialFTPacked,FT_BYTES);
- Serial.printf("Font Trial B: TrueType atlas=%s, source=%u bytes\n",trialFTReady?"OK":"FAILED",(unsigned)FT_BYTES);
- return trialFTReady;
+// Trial 2 deliberately avoids ALL rotation and resampling. The native
+// FreeSansBold family is drawn directly at its final point size into a small
+// indexed sprite, and copied to the full-screen framebuffer transparently.
+// Rotating words remain UPRIGHT while their orbital positions still animate.
+#if STOPWATCH_FONT_TRIAL==2
+static lgfx::LGFX_Sprite trialFlat(&M5.Display);
+static String trialFlatName="";
+static uint16_t trialFlatBucket=0;
+static int trialFlatWidth=0,trialFlatHeight=0;
+static bool trialFlatReady=false;
+static bool trialEnsureFlat(const String&s,float target){
+ uint16_t bucket=(uint16_t)clampi((int)lroundf(target/6.f)*6,24,270);
+ if(trialFlatReady&&trialFlatName==s&&bucket==trialFlatBucket)return true;
+ trialFlatReady=false;trialFlat.deleteSprite();
+ trialFlat.setColorDepth(8);trialFlat.setPsram(true);
+ // Font chosen from the library's real sizes, NOT an image scaled in software.
+ if(bucket<90)trialFlat.setFont(&lgfx::fonts::FreeSansBold12pt7b);
+ else if(bucket<175)trialFlat.setFont(&lgfx::fonts::FreeSansBold18pt7b);
+ else trialFlat.setFont(&lgfx::fonts::FreeSansBold24pt7b);
+ trialFlat.setTextSize(1.f);
+ int native=trialFlat.textWidth(s);
+ // Use no resampling: choose font and preserve its true pixel dimensions.
+ trialFlatWidth=clampi(native+12,26,456);
+ trialFlatHeight=bucket<90?42:bucket<175?54:70;
+ if(!trialFlat.createSprite(trialFlatWidth,trialFlatHeight))return false;
+ trialFlat.createPalette();trialFlat.setPaletteColor(0,0,0,0);
+ trialFlat.setPaletteColor(255,255,255,255);
+ trialFlat.fillScreen(0);trialFlat.setTextColor(255,0);
+ if(bucket<90)trialFlat.setFont(&lgfx::fonts::FreeSansBold12pt7b);
+ else if(bucket<175)trialFlat.setFont(&lgfx::fonts::FreeSansBold18pt7b);
+ else trialFlat.setFont(&lgfx::fonts::FreeSansBold24pt7b);
+ trialFlat.setTextDatum(middle_center);
+ trialFlat.drawString(s,trialFlatWidth/2,trialFlatHeight/2);
+ trialFlatName=s;trialFlatBucket=bucket;trialFlatReady=true;trialCacheMisses++;
+ return true;
 }
-static bool trialFTGlyph(char cc,FTGlyph &g,int &index){
- for(int i=0;i<FT_COUNT;i++){
-  memcpy_P(&g,&FT_GLYPHS[i],sizeof(g));
-  if(g.ch==(uint8_t)cc){index=i;return true;}
+static void trialWord(const String &s,float x,float y,float width,float angle,uint16_t ink,float fade){
+ uint32_t ts=micros();(void)angle;
+ if(s.length()==0||width<4||fade<.01f||!trialEnsureFlat(s,width)){trialReport(ts);return;}
+ trialPaletteInk(trialFlat,ink,fade);
+ trialFlat.pushSprite(&cv,(int)lroundf(x-trialFlatWidth*.5f),
+                          (int)lroundf(y-trialFlatHeight*.5f),0);
+ trialCacheHits++;trialReport(ts);
+}
+static void trialChar(char ch,float x,float y,float scale,uint16_t ink,float angle){
+ char s[2]={ch,0};trialWord(String(s),x,y,scale*75.f,angle,ink,1.f);
+}
+#endif
+
+// Trial 3: native font raster is the original clean A. For each distinct
+// angle + size the library's AA transform is applied ONCE to a blank temp
+// sprite. A tightly cropped 8-bit coverage tile is saved in PSRAM. Future
+// frames place it through a plain, clipped RGB565 blend; no font draw,
+// rotation, zoom, AA or float math in the hot inner pixel loop.
+#if STOPWATCH_FONT_TRIAL==3
+static constexpr int TA_ANGLES=48; // 7.5 degrees per bucket
+static constexpr int TA_CACHE=160; // LRU entries across five size buckets
+static constexpr int TA_SIZES=5;
+static const uint16_t TA_WIDTHS[TA_SIZES]={72,90,108,144,210};
+struct TATile{
+ uint8_t *data=nullptr;
+ int16_t x=0,y=0,w=0,h=0;
+ uint8_t angle=0,size=0;
+ uint32_t age=0;
+};
+static TATile ta[TA_CACHE];
+static String taName="";
+static lgfx::LGFX_Sprite taTemp(&M5.Display);
+static bool taTempReady=false;
+static uint32_t taAge=1,taBuildStamp=0;
+static uint8_t taBuildsThisFrame=0;
+static void taClear(){
+ for(int i=0;i<TA_CACHE;i++){if(ta[i].data)heap_caps_free(ta[i].data);ta[i]=TATile{};}
+}
+static bool taSetup(const String &s){
+ if(taName!=s){taClear();taName=s;trialCacheMisses++;}
+ if(!trialEnsureSource(s))return false;
+ if(!taTempReady){
+  taTemp.setColorDepth(16);taTemp.setPsram(true);
+  if(!taTemp.createSprite(260,260))return false;
+  taTempReady=true;
  }
- return false;
+ return true;
 }
-static int trialFTW(const FTGlyph&g,int level){return max(1,((int)g.w+(1<<level)-1)>>level);}
-static int trialFTH(const FTGlyph&g,int level){return max(1,((int)g.h+(1<<level)-1)>>level);}
-static uint8_t trialFTReadBase(const FTGlyph &g,int x,int y){
- if(x<0||y<0||x>=g.w||y>=g.h)return 0;
- return (uint8_t)(b5Nib(trialFTPacked,((int)g.start*2)+y*g.w+x)*17);
+static int taNearestSize(float width){
+ int best=0;float d=fabsf(width-TA_WIDTHS[0]);
+ for(int i=1;i<TA_SIZES;i++)if(fabsf(width-TA_WIDTHS[i])<d){best=i;d=fabsf(width-TA_WIDTHS[i]);}
+ return best;
 }
-static uint8_t trialFTRead(const FTGlyph &g,int gi,int level,int x,int y){
- if(x<0||y<0||x>=trialFTW(g,level)||y>=trialFTH(g,level))return 0;
- return level==0?trialFTReadBase(g,x,y):trialMip[gi][level-1][y*trialFTW(g,level)+x];
+static TATile*taFind(int size,int ang){
+ TATile*old=nullptr;
+ for(int i=0;i<TA_CACHE;i++)if(ta[i].data&&ta[i].size==size&&ta[i].angle==ang){old=&ta[i];break;}
+ if(old){old->age=++taAge;trialCacheHits++;}
+ return old;
 }
-static bool trialFTMakeMip(const FTGlyph &g,int gi,int level){
- if(!level)return true;
- if(trialMip[gi][level-1])return true;
- if(!trialFTMakeMip(g,gi,level-1))return false;
- int w=trialFTW(g,level),h=trialFTH(g,level);
- uint8_t*p=(uint8_t*)heap_caps_malloc((size_t)w*h,MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT);
- if(!p)return false;
+static TATile*taMake(int size,int ang){
+ if(taBuildStamp!=frameStamp){taBuildStamp=frameStamp;taBuildsThisFrame=0;}
+ // Limit expensive atlas generation to two misses per video frame.
+ if(taBuildsThisFrame>=2)return nullptr;
+ taBuildsThisFrame++;trialCacheMisses++;
+ int slot=-1;uint32_t oldest=0xffffffffUL;
+ for(int i=0;i<TA_CACHE;i++){
+  if(!ta[i].data){slot=i;break;}
+  if(ta[i].age<oldest){oldest=ta[i].age;slot=i;}
+ }
+ if(slot<0)return nullptr;
+ if(ta[slot].data)heap_caps_free(ta[slot].data);
+ ta[slot]=TATile{};
+ // Transparent black background; native clean FreeSansBold AA sampling.
+ taTemp.fillScreen(TFT_BLACK);
+ trialSource.setPaletteColor(255,255,255,255);
+ float width=TA_WIDTHS[size],zoom=width/trialSourceNatural;
+ trialSource.pushRotateZoomWithAA(&taTemp,130.f,130.f,ang*(360.f/TA_ANGLES),zoom,zoom,0);
+ const uint16_t *pix=(const uint16_t*)taTemp.getBuffer();
+ if(!pix)return nullptr;
+ int left=260,top=260,right=-1,bottom=-1;
+ for(int y=0;y<260;y++)for(int x=0;x<260;x++){
+  if(pix[y*260+x]){left=min(left,x);top=min(top,y);right=max(right,x);bottom=max(bottom,y);}
+ }
+ if(right<left||bottom<top)return nullptr;
+ // Store only the nonblack bounding box to maximize PSRAM cache capacity.
+ int w=right-left+1,h=bottom-top+1;
+ uint8_t *coverage=(uint8_t*)heap_caps_malloc((size_t)w*h,MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT);
+ if(!coverage)return nullptr;
  for(int yy=0;yy<h;yy++)for(int xx=0;xx<w;xx++){
-  int v=0;
-  for(int sy=0;sy<2;sy++)for(int sx=0;sx<2;sx++)
-   v+=trialFTRead(g,gi,level-1,xx*2+sx,yy*2+sy);
-  p[yy*w+xx]=(uint8_t)((v+2)/4);
+  uint16_t p=pix[(yy+top)*260+xx+left];
+  coverage[yy*w+xx]=(uint8_t)((((p>>11)&31)*255+15)/31);
  }
- trialMip[gi][level-1]=p;
- return true;
+ ta[slot].data=coverage;ta[slot].x=left-130;ta[slot].y=top-130;
+ ta[slot].w=w;ta[slot].h=h;ta[slot].angle=ang;
+ ta[slot].size=size;ta[slot].age=++taAge;
+ return &ta[slot];
 }
-static uint8_t trialFTSample(const FTGlyph&g,int gi,int level,float x,float y){
- if(x<0||y<0||x>trialFTW(g,level)-1||y>trialFTH(g,level)-1)return 0;
- int x0=(int)x,y0=(int)y;
- float fx=x-x0,fy=y-y0;
- float v00=trialFTRead(g,gi,level,x0,y0);
- float v10=trialFTRead(g,gi,level,x0+1,y0);
- float v01=trialFTRead(g,gi,level,x0,y0+1);
- float v11=trialFTRead(g,gi,level,x0+1,y0+1);
- return (uint8_t)clampi((int)(v00*(1-fx)*(1-fy)+v10*fx*(1-fy)+v01*(1-fx)*fy+v11*fx*fy+.5f),0,255);
-}
-static void trialFTBlit(const FTGlyph&g,int gi,float cx,float cy,float scale,float angle,uint16_t color,float fade){
- if(scale<=.02f||fade<.015f)return;
- int level=scale<.20f?3:scale<.37f?2:scale<.68f?1:0;
- if(!trialFTMakeMip(g,gi,level))return;
- float ca=cosf(angle),sa=sinf(angle),hw=g.w*scale*.5f,hh=g.h*scale*.5f;
- float rx=fabsf(ca)*hw+fabsf(sa)*hh+1.5f,ry=fabsf(sa)*hw+fabsf(ca)*hh+1.5f;
- int l=max(0,(int)floorf(cx-rx)),r=min(W-1,(int)ceilf(cx+rx));
- int t=max(0,(int)floorf(cy-ry)),b=min(H-1,(int)ceilf(cy+ry));
- float mult=1.f/(scale*(1<<level));
- for(int y=t;y<=b;y++)for(int x=l;x<=r;x++){
-  float dx=(x+.5f)-cx,dy=(y+.5f)-cy;
-  float u=(dx*ca+dy*sa)*mult+(g.w*.5f)/(1<<level)-.5f;
-  float v=(-dx*sa+dy*ca)*mult+(g.h*.5f)/(1<<level)-.5f;
-  uint8_t a=trialFTSample(g,gi,level,u,v);
-  if(a<7)continue;
-  int ia=clampi((int)(a*fade),0,255);
-  const int pos=y*W+x;fb[pos]=b5Mix(fb[pos],color,ia);
+static void taBlit(const TATile &q,float xx,float yy,uint16_t color,float fade){
+ int ox=(int)lroundf(xx)+q.x,oy=(int)lroundf(yy)+q.y;
+ int lx=max(0,-ox),ly=max(0,-oy),rx=min((int)q.w,W-ox),ry=min((int)q.h,H-oy);
+ if(rx<=lx||ry<=ly)return;
+ for(int y=ly;y<ry;y++){
+  int pos=(y+oy)*W+ox+lx,at=y*q.w+lx;
+  for(int x=lx;x<rx;x++,pos++,at++){
+   int a=(int)(q.data[at]*fade);
+   if(a<7)continue;
+   fb[pos]=b5Mix(fb[pos],color,(uint8_t)min(255,a));
+  }
  }
 }
-static void trialChar(char ch,float x,float y,float scale,uint16_t ink,float radians){
- if(!trialFTInit())return;
- FTGlyph g;int gi;
- if(!trialFTGlyph(ch,g,gi))return;
- float sc=scale*78.f/83.f; // match native glyph cap-height, not source image width.
- trialFTBlit(g,gi,x,y,sc,radians,ink,1.f);
-}
-static void trialWord(const String &str,float x,float y,float width,float angle,uint16_t ink,float fade){
- if(str.length()==0||!trialFTInit())return;
- const int n=min((int)str.length(),12);
- float advance=0;
- for(int i=0;i<n;i++){FTGlyph g;int gi;advance+=(trialFTGlyph(str[i],g,gi)?g.advance:50);}
- if(advance<=1)return;
- float sc=width/advance,pen=-advance*.5f,ca=cosf(angle),sa=sinf(angle);
- for(int i=0;i<n;i++){
-  FTGlyph g;int gi;
-  if(trialFTGlyph(str[i],g,gi)){
-   float ox=(pen+g.x+g.w*.5f)*sc,oy=(g.y+g.h*.5f)*sc;
-   trialFTBlit(g,gi,x+ca*ox-sa*oy,y+sa*ox+ca*oy,sc,angle,ink,fade);
-   pen+=g.advance;
-  }else pen+=50;
+static void trialWord(const String &s,float x,float y,float width,float angle,uint16_t ink,float fade){
+ uint32_t ts=micros();
+ if(s.length()==0||width<4||fade<.01f||!taSetup(s)){trialReport(ts);return;}
+ int size=taNearestSize(width);
+ int bin=(int)lroundf(angle*(TA_ANGLES/TAU));
+ bin=(bin%TA_ANGLES+TA_ANGLES)%TA_ANGLES;
+ TATile *tile=taFind(size,bin);
+ if(!tile)tile=taMake(size,bin);
+ if(tile)taBlit(*tile,x,y,ink,fade);
+ else{
+   // Only a cold-cache fallback; provides visible text during atlas warmup.
+   trialPaletteInk(trialSource,ink,fade);
+   float z=width/trialSourceNatural;
+   trialSource.pushRotateZoom(&cv,x,y,angle*57.2957795f,z,z,0);
  }
+ trialReport(ts);
 }
-#endif
-
-// C. Direct M5GFX vector drawing: real smooth lines and spots in the final
-// framebuffer. No font masks, no resizing, and no raw RGB565 pixel writes.
-#if STOPWATCH_FONT_TRIAL == 3
-static inline void trialVSegment(float ax,float ay,float bx,float by,float cx,float cy,float sz,float radians,float thick,uint16_t c){
- float ca=cosf(radians),sa=sinf(radians);
- int x0=(int)roundf(cx+(ax*ca-ay*sa)*sz);
- int y0=(int)roundf(cy+(ax*sa+ay*ca)*sz);
- int x1=(int)roundf(cx+(bx*ca-by*sa)*sz);
- int y1=(int)roundf(cy+(bx*sa+by*ca)*sz);
- cv.drawWideLine(x0,y0,x1,y1,thick,c);
-}
-static void trialVArc(float cx0,float cy0,float rx,float ry,float a0,float a1,float x,float y,float sz,float angle,float thick,uint16_t ink){
- float p0x=cx0+cosf(a0)*rx,p0y=cy0+sinf(a0)*ry;
- for(int k=1;k<=12;k++){
-  float a=a0+(a1-a0)*k/12.f;
-  float px=cx0+cosf(a)*rx,py=cy0+sinf(a)*ry;
-  trialVSegment(p0x,p0y,px,py,x,y,sz,angle,thick,ink);
-  p0x=px;p0y=py;
- }
-}
-static void trialVChar(char ch,float cx,float cy,float height,float angle,uint16_t ink,float fade){
- if(height<2||fade<.015f)return;
- float s=height/11.f,rad=fmaxf(.6f,height*.085f);
- uint16_t c=tint(ink,fade);
- // Lowercase 'zaven' is the critical test text. Other letters get a clean
- // stroke-alphabet fallback; all names remain accepted, never fall back to V16.4.
- char cc=(ch>='A'&&ch<='Z')?ch-'A'+'a':ch;
- #define VSEG(a,b,d,e) trialVSegment(a,b,d,e,cx,cy,s,angle,rad,c)
- #define VARC(x,y,rx,ry,a,b) trialVArc(x,y,rx,ry,a,b,cx,cy,s,angle,rad,c)
- switch(cc){
- case 'z':VSEG(-4,-4,4,-4);VSEG(4,-4,-4,4);VSEG(-4,4,4,4);break;
- case 'a':VARC(-.3,0,3.5,4,0,TAU);VSEG(3.2,-4,3.2,4);break;
- case 'v':VSEG(-4,-4,0,4);VSEG(0,4,4,-4);break;
- case 'e':VARC(0,0,3.8,4,-.35f,TAU-.6f);VSEG(-3.6,0,3,0);break;
- case 'n':VSEG(-4,-4,-4,4);VARC(0,-.3,4,3.7,PI_F,TAU);VSEG(4,-.3,4,4);break;
- case 'm':VSEG(-4,-4,-4,4);VARC(-2.1,-.3,1.9,3.7,PI_F,TAU);VSEG(0,-.3,0,4);VARC(2,-.3,2,3.7,PI_F,TAU);VSEG(4,-.3,4,4);break;
- case 'o':VARC(0,0,3.9,4,0,TAU);break;
- case 'c':VARC(0,0,3.9,4,.7f,TAU-.7f);break;
- case 'u':VSEG(-4,-4,-4,1);VARC(0,1,4,3,0,PI_F);VSEG(4,-4,4,4);break;
- case 's':VARC(0,-2.1,3.7,2.2,-.2,PI_F*1.17f);VARC(0,2.1,3.7,2.2,-PI_F*.95f,PI_F*.97f);break;
- case 'r':VSEG(-3.5,-4,-3.5,4);VARC(.5,-1,3.5,3,PI_F,PI_F*1.88f);break;
- case 'l':VSEG(-1,-5,-1,4);break;
- case 'i':VSEG(0,-3,0,4);cv.drawSpot((int)roundf(cx),(int)roundf(cy-5*s),rad,c);break;
- case 't':VSEG(0,-5,0,4);VSEG(-3,-3,3,-3);break;
- case 'x':VSEG(-4,-4,4,4);VSEG(4,-4,-4,4);break;
- case 'h':VSEG(-4,-5,-4,4);VARC(0,-.3,4,3.7,PI_F,TAU);VSEG(4,-.3,4,4);break;
- case 'd':VARC(-.5,0,3.5,4,0,TAU);VSEG(3.2,-5,3.2,4);break;
- case 'p':VSEG(-4,-4,-4,6);VARC(0,-.8,4,3.3,0,TAU);break;
- case 'b':VSEG(-4,-5,-4,4);VARC(0,0,4,4,0,TAU);break;
- case 'g':VARC(-.3,0,3.5,4,0,TAU);VSEG(3.3,-4,3.3,6);break;
- case 'f':VSEG(0,-4,0,5);VSEG(-3,-3,4,-3);break;
- case 'k':VSEG(-4,-5,-4,4);VSEG(-3,0,4,-4);VSEG(-3,0,4,4);break;
- case 'y':VSEG(-4,-4,0,3);VSEG(4,-4,-2,6);break;
- case 'w':VSEG(-4,-4,-2,4);VSEG(-2,4,0,-1);VSEG(0,-1,2,4);VSEG(2,4,4,-4);break;
- case '0':VARC(0,0,3.7,4.6,0,TAU);break;
- case '1':VSEG(-1,-4,0,-5);VSEG(0,-5,0,4);break;
- case '2':VARC(0,-1.7,3.7,3,-PI_F*.96f,PI_F*.2f);VSEG(3,0,-4,4);VSEG(-4,4,4,4);break;
- case '3':VARC(0,-2,3.4,2.4,-1.7,1.7);VARC(0,2,3.4,2.4,-1.7,1.7);break;
- case '4':VSEG(-3,-4,-3,1);VSEG(-3,1,4,1);VSEG(3,-4,3,4);break;
- case '5':VSEG(4,-4,-3,-4);VSEG(-3,-4,-3,0);VARC(0,2,4,2.5,-2.8,2.1);break;
- case '6':VARC(0,1.5,3.8,3,0,TAU);VSEG(2,-4,-3,1);break;
- case '7':VSEG(-4,-4,4,-4);VSEG(4,-4,-1,4);break;
- case '8':VARC(0,-2,3.1,2.3,0,TAU);VARC(0,2,3.3,2.3,0,TAU);break;
- case '9':VARC(0,-1.5,3.8,3,0,TAU);VSEG(3,-1,-2,4);break;
- case '-':VSEG(-3,0,3,0);break;
- case '_':VSEG(-4,5,4,5);break;
- case '.':cv.drawSpot((int)cx,(int)(cy+4*s),rad,c);break;
- case ' ':break;
- default:VSEG(-3,-4,3,-4);VSEG(3,-4,3,4);VSEG(3,4,-3,4);VSEG(-3,4,-3,-4);break;
- }
- #undef VSEG
- #undef VARC
-}
-static void trialChar(char ch,float x,float y,float scale,uint16_t ink,float radians){
- trialVChar(ch,x,y,scale*71.f,radians,ink,1.f);
-}
-static void trialWord(const String &word,float x,float y,float width,float angle,uint16_t ink,float fade){
- int n=min((int)word.length(),12);if(n<1||fade<.015f)return;
- // Monospace vector strokes, proportionally sized to the specified word width.
- float pitch=width/n,sz=fminf(80.f,pitch*1.07f),ca=cosf(angle),sa=sinf(angle);
- for(int i=0;i<n;i++){
-  float offset=((i+.5f)-n*.5f)*pitch;
-  trialVChar(word[i],x+ca*offset,y+sa*offset,sz,angle,ink,fade);
- }
+static void trialChar(char ch,float x,float y,float scale,uint16_t ink,float angle){
+ char s[2]={ch,0};trialWord(String(s),x,y,scale*75.f,angle,ink,1.f);
 }
 #endif
