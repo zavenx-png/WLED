@@ -136,7 +136,9 @@ static bool renderBrowserFive(uint8_t id){
  switch(id){
  case 23:{ // 01 Chromatic EQ: browser letter size/positions, five individual colors.
   const uint16_t cols[5]={rgb(86,250,255),rgb(252,93,189),rgb(247,235,105),rgb(136,247,105),rgb(186,130,255)};
-  float gap=fminf(79.f,410.f/n),font=fminf(78.f,fmaxf(31.f,430.f/fmaxf(5,n)*.9f));
+  // Six-letter font tier is the sharpest-looking scale for "zaven".
+  // Keep actual five-letter positions and all sound reactivity unchanged.
+  float gap=fminf(79.f,410.f/n),font=fminf(78.f,fmaxf(31.f,430.f/fmaxf(6,n)*.9f));
   for(int i=0;i<n;i++){
    int bi=(int)((i+.5f)*32/n);
    float m=clampf((band(bi)+band(bi+1)+band(bi+2))*.33f);
