@@ -143,7 +143,7 @@ static bool renderBrowserFive(uint8_t id){
    float osc=.5f+.5f*sinf(hb*.5f+i*1.38f);
    float x=CX+(i-(n-1)*.5f)*gap;
    float y=214-((m*.8f+osc*.20f)*112.f-50.f);
-   b5Char(word[i],x,y,(font/78.f)*(n<=6?2.65f:fmaxf(1.15f,12.f/n)),cols[i%5]);
+   b5Char(word[i],x,y,1.70f*(font/78.f)*(n<=6?2.65f:fmaxf(1.15f,12.f/n)),cols[i%5]);
    line(x,318,x,302-m*59,cols[i%5],2);
   }
   break;}
@@ -168,14 +168,14 @@ static bool renderBrowserFive(uint8_t id){
   for(int i=0;i<n;i++){
    float x=CX+(i-(n-1)*.5f)*step;
    float y=CY+21*sinf(t*1.15f+i*.81f)+7*sinf(t*.56f+i*1.48f)+8*bass*sinf(hb+i*.4f);
-   b5Char(word[i],x,y,(sz/78.f)*(n<=6?2.65f:fmaxf(1.15f,12.f/n)),(i%2)?rgb(255,189,255):rgb(255,242,254),.075f*sinf(p+i*.6f+t*.15f));
+   b5Char(word[i],x,y,1.80f*(sz/78.f)*(n<=6?2.65f:fmaxf(1.15f,12.f/n)),(i%2)?rgb(255,189,255):rgb(255,242,254),.075f*sinf(p+i*.6f+t*.15f));
   }
   break;}
  case 25:{ // 03 Kaleidoscope: 40 readable whole words on concentric wedges.
   float p=hb*.07f;
   for(int slice=0;slice<8;slice++){
    float base=slice*TAU/8.f+p;
-   for(int rr=96;rr<230;rr+=64){
+   for(int rr=137;rr<230;rr+=46){
     float sc=.45f+(rr/220.f)*.15f;
     float angle=base+(slice&1?PI_F:0);
     float x=CX+sinf(base)*rr,y=CY-cosf(base)*rr;
@@ -184,8 +184,8 @@ static bool renderBrowserFive(uint8_t id){
     b5Stamp(wordMask,x,y,width,angle,b5Hue(frac((slice*36+rr*.25f+t*5)/360.f)),.91f);
    }
   }
-  circ(CX,CY,73,rgb(230,225,255),2);
-  b5Stamp(wordMask,CX,CY,fminf(210.f,wordMask.w*.65f),0,rgb(232,211,255),1.f);
+  circ(CX,CY,111,rgb(230,225,255),2);
+  b5Stamp(wordMask,CX,CY,1.50f*fminf(210.f,wordMask.w*.65f),0,rgb(232,211,255),1.f);
   break;}
  case 26:{ // 04 Round Resonator: six complete words circulate the rings.
   float p=hb*.065f;
