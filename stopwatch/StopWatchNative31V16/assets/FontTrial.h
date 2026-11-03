@@ -145,6 +145,62 @@ static void trialWord(const String &s,float x,float y,float width,float angle,ui
 static void trialChar(char ch,float x,float y,float scale,uint16_t ink,float angle){
  char s[2]={ch,0};trialWord(String(s),x,y,scale*75.f,angle,ink,1.f);
 }
+/* V17: lightweight selective edge smoothing ONLY for Chromatic EQ.
+ * Native D glyph pixels are cached once as 8-bit coverage. A 3x3 edge
+ * kernel creates translucent border pixels at final size: no scaling,
+ * no rotation, no full-frame AA, and no rendering change to other effects.
+ */
+struct V17SoftGlyph {
+ char ch=0; uint16_t bucket=0;
+ uint16_t w=0,h=0; uint8_t* coverage=nullptr;
+};
+static V17SoftGlyph v17SoftGlyphs[36]={};
+static uint8_t v17GlyphReplace=0;
+static void trialCharSoft(char ch,float x,float y,float scale,uint16_t color,float angle){
+ (void)angle;
+ const float target=scale*75.f;
+ const uint16_t bucket=(uint16_t)clampi((int)lroundf(target/6.f)*6,24,450);
+ V17SoftGlyph* g=nullptr;
+ for(auto &it:v17SoftGlyphs)if(it.coverage&&it.ch==ch&&it.bucket==bucket){g=&it;break;}
+ if(!g){
+  char word[2]={ch,0};
+  if(!trialEnsureFlat(String(word),target))return;
+  const uint8_t* src=(const uint8_t*)trialFlat.getBuffer();
+  if(!src)return;
+  g=&v17SoftGlyphs[v17GlyphReplace++%36];
+  if(g->coverage){heap_caps_free(g->coverage);g->coverage=nullptr;}
+  const int ww=trialFlatWidth,hh=trialFlatHeight;
+  uint8_t *alpha=(uint8_t*)heap_caps_malloc((size_t)ww*hh,MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT);
+  if(!alpha)return;
+  for(int yy=0;yy<hh;yy++)for(int xx=0;xx<ww;xx++){
+   // A sharp, not smeared edge: keep most weight in the source pixel.
+   const int p=yy*ww+xx;
+   int v=src[p]?184:0;
+   if(xx>0) v+=src[p-1]?13:0;
+   if(xx+1<ww) v+=src[p+1]?13:0;
+   if(yy>0) v+=src[p-ww]?13:0;
+   if(yy+1<hh) v+=src[p+ww]?13:0;
+   if(xx>0&&yy>0)v+=src[p-ww-1]?4:0;
+   if(xx+1<ww&&yy>0)v+=src[p-ww+1]?4:0;
+   if(xx>0&&yy+1<hh)v+=src[p+ww-1]?4:0;
+   if(xx+1<ww&&yy+1<hh)v+=src[p+ww+1]?4:0;
+   alpha[p]=(uint8_t)clampi(v,0,255);
+  }
+  g->ch=ch;g->bucket=bucket;g->w=ww;g->h=hh;g->coverage=alpha;
+ }
+ const int left=(int)lroundf(x-g->w*.5f),top=(int)lroundf(y-g->h*.5f);
+ for(int j=0;j<g->h;j++){
+  int destY=top+j;if((unsigned)destY>=(unsigned)H)continue;
+  const int srcRow=j*g->w,destRow=destY*W;
+  for(int i=0;i<g->w;i++){
+   int destX=left+i;if((unsigned)destX>=(unsigned)W)continue;
+   uint8_t a=g->coverage[srcRow+i];
+   if(a>=247)fb[destRow+destX]=color;
+   else if(a>11)fb[destRow+destX]=b5Mix(fb[destRow+destX],color,a);
+  }
+ }
+}
+
 #endif
 
 // Trial 3: native font raster is the original clean A. For each distinct
