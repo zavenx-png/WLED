@@ -1088,7 +1088,7 @@ static void renderOverlay(){
   black();circ(CX,CY,R-3,rgb(42,92,126),2);
   // V16.10: the previous built-in size-6 font silently clipped this title.
   // Fixed-width native bold text fits the visible round screen.
-  drawLargeNativeLabel("BRIGHTNESS",CX,81,379,1.67f,rgb(105,239,253));
+  drawLargeNativeLabel("BRIGHTNESS",CX,81,330,1.67f,rgb(105,239,253));
   drawLargeNativeLabel(String(candidateBrightness)+"%",CX,179,276,2.24f,rgb(253,253,255));
   uiBar(255,65,W-65,candidateBrightness/100.f,CYAN);
   cv.fillRoundRect(77,309,147,82,12,rgb(19,45,73));
@@ -1134,15 +1134,15 @@ static void renderOverlay(){
   // Use the entire available upper arc for the typed-name preview.
   // Five to eight letters occupy almost the full watch width.
   if(originalEffect(effectID)==22){
-   uiButton(64,34,165,46,"BLUE",robotField==0);
-   uiButton(237,34,165,46,"PINK",robotField==1);
+   uiButton(112,40,112,43,"BLUE",robotField==0);
+   uiButton(241,40,112,43,"PINK",robotField==1);
    String chosen=robotField==0?draftBlue:draftPink;
    if(chosen.length())
-    drawLargeNativeLabel(chosen,CX,128,426,3.15f,robotField==0?CYAN:PINK);
+    drawLargeNativeLabel(chosen,CX,132,406,3.15f,robotField==0?CYAN:PINK);
    else textC("TAP TO TYPE",CX,128,GRAY,3);
   }else{
    if(inputName.length())
-    drawLargeNativeLabel(inputName,CX,116,426,3.15f,PINK);
+    drawLargeNativeLabel(inputName,CX,116,390,3.15f,PINK);
    else textC("TAP TO TYPE",CX,117,GRAY,3);
    textC("A CANCEL    B SAVE",CX,48,GRAY,2);
   }
@@ -1293,8 +1293,8 @@ static void editorTouch(int x,int y){
       setCpuFrequencyMhz(profile==2?160:240);vibration();}
    else if(y>=372)overlay=NONE;
  }else if(overlay==NAME){
-   if(originalEffect(effectID)==22&&y>=32&&y<87){
-     if(x>=64&&x<=402){robotField=x<CX?0:1;vibration(110,24);}return;
+   if(originalEffect(effectID)==22&&y>=40&&y<87){
+     if(x>=112&&x<=353){robotField=x<CX?0:1;vibration(110,24);}return;
    }
    char typed=0;int px=0,py=0;
    if(qwertyHit(x,y,typed,px,py)){
