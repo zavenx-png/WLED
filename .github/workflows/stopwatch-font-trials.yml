@@ -1,7 +1,7 @@
-name: StopWatch C152 V16.5 typography trials
+name: StopWatch C152 V16.6 fast font experiments
 on:
   push:
-    branches: [stopwatch-v16-5-typography-trials]
+    branches: [stopwatch-v16-6-fast-font-lab]
     paths:
       - 'stopwatch/StopWatchNative31V16/**'
       - '.github/workflows/stopwatch-font-trials.yml'
@@ -37,12 +37,12 @@ jobs:
         run: |
           mkdir -p "build/trial_${TRIAL}"
           arduino-cli compile --fqbn m5stack:esp32:m5stack_stopwatch --output-dir "build/trial_${TRIAL}" --warnings all stopwatch/StopWatchNative31V16
-          cp "build/trial_${TRIAL}/StopWatchNative31V16.ino.bin" "build/trial_${TRIAL}/StopWatch_V16_5_Trial_${TRIAL}.app.bin"
-          sha256sum "build/trial_${TRIAL}/StopWatch_V16_5_Trial_${TRIAL}.app.bin" | tee "build/trial_${TRIAL}/SHA256.txt"
+          cp "build/trial_${TRIAL}/StopWatchNative31V16.ino.bin" "build/trial_${TRIAL}/StopWatch_V16_6_Trial_${TRIAL}.app.bin"
+          sha256sum "build/trial_${TRIAL}/StopWatch_V16_6_Trial_${TRIAL}.app.bin" | tee "build/trial_${TRIAL}/SHA256.txt"
           ls -lh "build/trial_${TRIAL}"
       - uses: actions/upload-artifact@v4
         with:
-          name: StopWatch-V16-5-Trial-${{ matrix.method }}-C152
+          name: StopWatch-V16-6-Trial-${{ matrix.method }}-C152
           path: |
             build/trial_${{ matrix.method }}/*.app.bin
             build/trial_${{ matrix.method }}/SHA256.txt
