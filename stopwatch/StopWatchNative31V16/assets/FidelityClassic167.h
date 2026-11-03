@@ -68,12 +68,15 @@ static bool fidelityClassic167(uint8_t id){
    float edgeX=CX+k*34.f;
    line(CX+k*3.f,horizon,edgeX,H,tint(rgb(67,153,222),.49f+.18f*energy));
   }
-  float gridFlow=frac(t*.67f);
-  for(int k=1;k<=19;k++){
-   float z=frac((k+gridFlow)/20.f),depth=z*z;
-   float y=horizon+208*depth,half=16+228*depth;
+  // V16.12: a single travel clock and the EXACT same perspective transform
+  // drive BOTH neon grid cross-lines and the white lane markers.
+  const float travel=t*6.0f; // matches the approved ~60 mph-looking motion
+  for(int k=0;k<13;k++){
+   float z=frac((k+travel)/13.f),depth=z*z;
+   float y=horizon+207*depth,half=16+228*depth;
    if(y>H-2)continue;
-   line(CX-half,y,CX+half,y,tint(rgb(195,60,214),.28f+.38f*depth+.09f*bass),depth>.55f?2:1);
+   line(CX-half,y,CX+half,y,
+        tint(rgb(195,60,214),.28f+.38f*depth+.09f*bass),depth>.55f?2:1);
   }
   // Fixed road edges converge at the distant horizon.
   for(int side=-1;side<=1;side+=2){
@@ -81,7 +84,7 @@ static bool fidelityClassic167(uint8_t id){
    line(CX+side*25,horizon,CX+side*245,H,fxInk(side>0?.88f:.54f,.19f),5);
   }
   // Lane markers travel toward us with perspective acceleration.
-  const float travel=t*6.0f; // ~6 perspective lane markers/second: fast forward highway motion
+  // Same travel variable and depth transform as the neon road grid above.
   for(int i=0;i<13;i++){
    float z=frac((i+travel)/13.f),depth=z*z;
    int y=horizon+int(207*depth),dh=3+int(24*depth);
