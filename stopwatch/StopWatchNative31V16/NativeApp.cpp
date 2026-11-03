@@ -218,6 +218,8 @@ static uint8_t powerFrameCap();
 uint32_t buzzUntil=0;bool buzzEnabled=true;
 uint32_t keyADown=0,keyBDown=0;bool keyChord=false,keyAHeld=false,keyBHeld=false;
 int touchStartX=0,touchStartY=0,touchLastX=0,touchLastY=0;
+int32_t nameTouchXSum=0,nameTouchYSum=0;
+uint8_t nameTouchSamples=0;
 uint32_t touchStart=0,lastArtTouchMs=0;float userSpin=0;
 bool touchDown=false;
 bool wakeKeyConsumed=false;
@@ -630,26 +632,32 @@ static void figure(float x,float y,float scale,float t,uint16_t c,bool robot=fal
  line(hx+22*scale+19*scale*step,hip+35*scale+13*scale*fminf(0,step),hx+32*scale+20*scale*step,footBase+20*scale*fminf(0,step),c,3);
 }
 static void eqBars(bool mirrored=false){
- int count=29,span=W-12,slot=span/count;int ground=mirrored?CY:CY+143;
+ // V16.11: one continuous set of bars built UPWARD from each column's
+ // true circular-bottom point; no separate reflection or horizontal seam.
+ const int count=29,span=W-12,slot=span/count,oldGround=CY+143;
  for(int i=0;i<count;i++){
-  float v=bins[clampi((int)(i*NBANDS/(float)count),0,NBANDS-1)];
-  int h=18+(int)(clampf(v*.9f+beatPulse()*.05f)*300);
-  int x=6+i*slot;uint16_t co=hue(i*.023f+.43f);
-  for(int yy=0;yy<h;yy+=10){
-    uint16_t col=yy>h*.8f?rgb(253,112,174):yy>h*.46f?hue(.45f+i*.015f):co;
-    cv.fillRoundRect(x,ground-yy-8,slot-2,8,2,tint(col,.35f+.55f*(float)yy/fmaxf(h,1)));
-    if(mirrored)cv.fillRoundRect(x,ground+yy,slot-2,7,2,tint(col,.46f));
-  }
-  if(!mirrored){
-    // Extend Prism EQ downward inside the round bezel, following its curved edge.
-    float dx=x+slot*.5f-CX;
-    int bottom=CY+(int)sqrtf(fmaxf(0.f,(float)R*R-dx*dx));
-    for(int yy=ground;yy<bottom;yy+=10){
-      float f=(yy-ground)/fmaxf(1.f,(float)(bottom-ground));
-      uint16_t bottomColor=tint(hue(i*.023f+.43f),.40f-.23f*f+.20f*v);
-      cv.fillRoundRect(x,yy,slot-2,clampi(bottom-yy,1,9),2,bottomColor);
-    }
-  }
+   float v=bins[clampi((int)(i*NBANDS/(float)count),0,NBANDS-1)];
+   int originalH=18+(int)(clampf(v*.9f+beatPulse()*.05f)*300);
+   int x=6+i*slot;uint16_t co=hue(i*.023f+.43f);
+   if(mirrored){
+     for(int yy=0;yy<originalH;yy+=10){
+       uint16_t col=yy>originalH*.8f?rgb(253,112,174):yy>originalH*.46f?hue(.45f+i*.015f):co;
+       cv.fillRoundRect(x,CY-yy-8,slot-2,8,2,tint(col,.35f+.55f*(float)yy/fmaxf(originalH,1)));
+       cv.fillRoundRect(x,CY+yy,slot-2,7,2,tint(col,.46f));
+     }
+     continue;
+   }
+   float dx=x+slot*.5f-CX;
+   int bottom=CY+(int)sqrtf(fmaxf(0.f,(float)(R-3)*(R-3)-dx*dx));
+   // Preserve top-bar position from the old rendering wherever the circular
+   // bezel allows it, filling the whole height using ONE identical bar style.
+   int fullH=clampi(originalH+bottom-oldGround,8,H);
+   for(int yy=0;yy<fullH;yy+=10){
+     float q=(float)yy/fmaxf((float)fullH,1.f);
+     uint16_t col=yy>fullH*.8f?rgb(253,112,174):yy>fullH*.46f?hue(.45f+i*.015f):co;
+     int y=bottom-yy-8;
+     cv.fillRoundRect(x,y,slot-2,8,2,tint(col,.35f+.55f*q));
+   }
  }
 }
 static void scopeLine(uint16_t color,int y0,int amp=105,bool heavy=false){
@@ -1417,36 +1425,64 @@ static void controlButtons(){
 static void controlTouch(){
  auto touch=M5.Touch.getDetail(0);
  if(touch.wasPressed()){
-  touchStartX=touchLastX=touch.x;touchStartY=touchLastY=touch.y;
-  touchStart=millis();touchDown=true;
-  if(overlay==NAME){
-    char ch=0;int xx=0,yy=0;
-    if(qwertyHit(touch.x,touch.y,ch,xx,yy)){
-      keyboardPop(ch,xx,yy);
-    }else keyboardPopup="";
-  }
+   touchStartX=touchLastX=touch.x;
+   touchStartY=touchLastY=touch.y;
+   touchStart=millis();
+   touchDown=true;
+   nameTouchXSum=touch.x;nameTouchYSum=touch.y;nameTouchSamples=1;
+   if(overlay==NAME){
+     char ch=0;int xx=0,yy=0;
+     if(qwertyHit(touch.x,touch.y,ch,xx,yy))keyboardPop(ch,xx,yy);
+     else keyboardPopup="";
+   }
  }
- if(touch.isPressed()){touchLastX=touch.x;touchLastY=touch.y;}
+ if(touch.isPressed()&&touchDown){
+   touchLastX=touch.x;touchLastY=touch.y;
+   if(overlay==NAME){
+     // Compute ONE mean contact center across this entire physical press.
+     // Ignore simultaneous / adjacent key edges, not the touch centroid.
+     if(nameTouchSamples<28){
+       nameTouchXSum+=touch.x;nameTouchYSum+=touch.y;nameTouchSamples++;
+     }
+     char ch=0;int xx=0,yy=0;
+     int avgX=nameTouchXSum/nameTouchSamples,avgY=nameTouchYSum/nameTouchSamples;
+     if(qwertyHit(avgX,avgY,ch,xx,yy)&&
+        (keyboardPopup.length()!=1||keyboardPopup[0]!=ch))keyboardPop(ch,xx,yy);
+   }
+ }
  if(touch.wasReleased()||touch.wasClicked()){
-  uint32_t held=millis()-touchStart;int x=touchLastX,y=touchLastY;
-  int dx=x-touchStartX;touchDown=false;
-  if(overlay==LIBRARY&&abs(dx)>58){libraryPage=(libraryPage+(dx<0?1:2))%3;vibration();return;}
-  if(overlay==LIBRARY&&libraryPage==1&&held>800&&y>=160&&y<411){
-    uint8_t slot=clampi((y-170)/59,0,3);clearScene(slot);return;
-  }
-  if(displayBlank){displayBlank=false;
-    M5.Display.setBrightness((uint8_t)(brightness*255/100));
-    lastRemoteActivity=millis();return;}
-  if(overlay==NAME&&abs(dx)>47){keyboardPopup="";return;}
-  if(overlay!=NONE){editorTouch(x,y);return;}
-  if(remote){lastRemoteActivity=millis();remoteTouch(x,y);return;}
-  if(abs(dx)>64){selectEffect(dx>0?-1:+1);return;}
-  if(originalEffect(effectID)==22||isTextEffect(effectID)){showTextEditor();return;}
-  // No microphone sensitivity overlay: audio auto-calibrates in the background.
-  if(originalEffect(effectID)==32||originalEffect(effectID)==36||
-    originalEffect(effectID)==41||originalEffect(effectID)==43){
-    lastArtTouchMs=millis();if(originalEffect(effectID)==43)userSpin+=dx*.013f;
-  }
+   // A physical contact can report both wasClicked and wasReleased across
+   // frames. Commit exactly once, then discard any duplicate event.
+   if(!touchDown)return;
+   uint32_t held=millis()-touchStart;
+   int x=touchLastX,y=touchLastY;
+   if(overlay==NAME&&nameTouchSamples>0){
+     x=nameTouchXSum/nameTouchSamples;
+     y=nameTouchYSum/nameTouchSamples;
+   }
+   int dx=x-touchStartX;
+   touchDown=false;nameTouchSamples=0;
+   if(overlay==LIBRARY&&abs(dx)>58){
+     libraryPage=(libraryPage+(dx<0?1:2))%3;vibration();return;
+   }
+   if(overlay==LIBRARY&&libraryPage==1&&held>800&&y>=160&&y<411){
+     uint8_t slot=clampi((y-170)/59,0,3);clearScene(slot);return;
+   }
+   if(displayBlank){
+     displayBlank=false;M5.Display.setBrightness((uint8_t)(brightness*255/100));
+     lastRemoteActivity=millis();return;
+   }
+   if(overlay==NAME&&abs(dx)>60){keyboardPopup="";return;}
+   if(overlay!=NONE){editorTouch(x,y);return;}
+   if(remote){lastRemoteActivity=millis();remoteTouch(x,y);return;}
+   if(abs(dx)>64){selectEffect(dx>0?-1:+1);return;}
+   if(originalEffect(effectID)==22||isTextEffect(effectID)){showTextEditor();return;}
+   // No manual microphone screen: all audio is calibrated automatically.
+   if(originalEffect(effectID)==32||originalEffect(effectID)==36||
+      originalEffect(effectID)==41||originalEffect(effectID)==43){
+     lastArtTouchMs=millis();
+     if(originalEffect(effectID)==43)userSpin+=dx*.013f;
+   }
  }
 }
 static void saveFrameStats(){ // Diagnostic data via Serial only; no onscreen performance overlay.
