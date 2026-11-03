@@ -826,8 +826,12 @@ static void effectsClassic(uint8_t id){
    for(int j=0;j<20;j++)cv.fillRect(6+j*23,H-25-int(55*band(j+2)),15,8+int(55*band(j+2)),tint(hue(.55f+j*.055f),.20f+.30f*energy));
    if(fore<0){figure(xPink,yPink,.96f,beatClock+2,rgb(255,86,188),true);figure(xBlue,yBlue,.96f,beatClock,rgb(72,222,255),true);}
    else {figure(xBlue,yBlue,.96f,beatClock,rgb(72,222,255),true);figure(xPink,yPink,.96f,beatClock+2,rgb(255,86,188),true);}
+   // V17.5: exactly 60% larger relative to V17.4's font-4 labels.
+   // Keep the existing position close to the dancers' heads.
+   cv.setTextSize(1.60f);
    if(blueRobot.length())textC(blueRobot,(int)xBlue,(int)(yBlue-116),rgb(109,233,255),4);
    if(pinkRobot.length())textC(pinkRobot,(int)xPink,(int)(yPink-116),rgb(255,144,207),4);
+   cv.setTextSize(1.f);
   break;}
  }
 }
@@ -1208,45 +1212,47 @@ static void openBatteryHud(bool haptic=true){
  if(haptic)vibration(124,28);
 }
 static void renderBatteryHud(){
+ // V17.5: clean typographic battery dashboard occupying the circular display,
+ // with zero rings or circular gauge embellishments.
  black();
- uint16_t color=batteryHudPercent>=55?rgb(99,245,214):
-                batteryHudPercent>=25?rgb(248,210,106):rgb(255,85,138);
- for(int k=0;k<60;k++){
-  float a1=-PI_F*.5f+k*TAU/60.f,a2=a1+TAU/60.f*.65f;
-  uint16_t c=k*100/60<batteryHudPercent?color:rgb(18,34,56);
-  float r=186.f;
-  line(CX+r*cosf(a1),CY+r*sinf(a1),
-       CX+r*cosf(a2),CY+r*sinf(a2),c,7);
- }
- circ(CX,CY,161,rgb(25,63,86),2);
- circ(CX,CY,155,tint(color,.20f),2);
- float pulse=.5f+.5f*sinf(millis()*.0021f);
- circ(CX,CY,177,tint(color,.09f+.09f*pulse),2);
- cv.setFont(&lgfx::fonts::FreeSansBold24pt7b);
- cv.setTextSize(1.05f);cv.setTextColor(rgb(243,253,255)); // V17.3: 25% smaller than V17.2
+ const uint16_t ink=rgb(245,252,255);
+ const uint16_t accent=batteryHudPercent>=55?rgb(99,245,214):
+                       batteryHudPercent>=25?rgb(248,210,106):rgb(255,85,138);
  cv.setTextDatum(middle_center);
- cv.drawString(String(batteryHudPercent)+"%",CX,CY-7);
+ // BALANCED HIERARCHY: small heading / large number / medium status / small data.
+ cv.setFont(&lgfx::fonts::FreeSansBold18pt7b);
+ cv.setTextSize(1.f);cv.setTextColor(tint(accent,.96f));
+ cv.drawString("BATTERY",CX,85);
+ cv.setFont(&lgfx::fonts::FreeSansBold24pt7b);
+ cv.setTextSize(1.48f);cv.setTextColor(ink);
+ cv.drawString(String(batteryHudPercent)+"%",CX,168);
  cv.setTextSize(1.f);
+ // A single low-profile linear battery meter replaces all circular rings.
+ const int bx=78,by=231,bw=W-156,bh=15;
+ cv.fillRoundRect(bx,by,bw,bh,7,rgb(27,50,65));
+ int filled=clampi((int)lroundf((bw-4)*batteryHudPercent/100.f),0,bw-4);
+ if(filled>0)cv.fillRoundRect(bx+2,by+2,filled,bh-4,5,accent);
+ cv.setFont(&lgfx::fonts::FreeSansBold24pt7b);
+ cv.setTextSize(1.f);cv.setTextColor(tint(accent,.92f));
+ cv.drawString(batteryHudCharging?"CHARGING":"REMAINING",CX,286);
  cv.setFont(&lgfx::fonts::FreeSansBold12pt7b);
- cv.setTextColor(tint(color,.9f));cv.drawString("BATTERY",CX,135); // V17.4 lower, clear of circular upper rim
- cv.setFont(&lgfx::fonts::Font0);
- // V17.3: much larger, crisp NATIVE bold letters instead of small
- // built-in Font 3. The new height is approximately 40% greater.
- cv.setFont(&lgfx::fonts::FreeSansBold24pt7b);cv.setTextSize(1.f);
- cv.setTextDatum(middle_center);cv.setTextColor(tint(color,.85f));
- cv.drawString(batteryHudCharging?"CHARGING":"REMAINING",CX,290);
- cv.setFont(&lgfx::fonts::Font0);
+ cv.setTextSize(1.f);
+ cv.setTextColor(rgb(159,204,223));
  if(batteryHudVoltage>2500&&batteryHudVoltage<5000)
-  textC(String(batteryHudVoltage/1000.f,2)+" V",CX,331,rgb(153,194,211),2);
- // ETA uses measured discharge, NOT a fixed guess from the percent.
- if(batteryHudCharging)
-  textC("CHARGING - NO ETA",CX,358,rgb(131,201,219),2);
+  cv.drawString(String(batteryHudVoltage/1000.f,2)+" V",CX,329);
+ else cv.drawString("VOLTAGE UNAVAILABLE",CX,329);
+ // ETA is based on observed discharge only, not a guessed capacity.
+ cv.setTextColor(rgb(170,232,222));
+ String status;
+ if(batteryHudCharging)status="CHARGING - NO ETA";
  else if(batteryEstimatedMinutes>=0){
-  int h=batteryEstimatedMinutes/60,m=batteryEstimatedMinutes%60;
-  String eta=String("EST. ")+String(h)+"H "+String(m)+"M LEFT";
-  textC(eta,CX,358,rgb(165,252,229),2);
- }else textC("ESTIMATING RUNTIME",CX,358,rgb(131,172,197),2);
- textC("A / B OR TAP TO CLOSE",CX,404,rgb(111,151,177),2);
+  const int h=batteryEstimatedMinutes/60,m=batteryEstimatedMinutes%60;
+  status=String("EST. ")+String(h)+"H "+String(m)+"M LEFT";
+ }else status="ESTIMATING RUNTIME";
+ cv.drawString(status,CX,372);
+ cv.setFont(&lgfx::fonts::Font0);
+ cv.setTextSize(1.f);
+ textC("A / B OR TAP TO CLOSE",CX,412,rgb(118,158,176),2);
 }
 static void renderOverlay(){
  if(overlay==NONE)return;
