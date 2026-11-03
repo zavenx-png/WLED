@@ -14,6 +14,10 @@
 #include <math.h>
 #include <esp_heap_caps.h>
 #include "assets/NativeTextures.h"
+// Arduino defines sq(x) as a macro; keep native float helper unshadowed.
+#ifdef sq
+#undef sq
+#endif
 
 constexpr uint8_t VIS_COUNT=31, Z_COUNT=28, REMOTE_PAGES=5;
 constexpr int NFFT=512, FS=16000, NBANDS=32;
