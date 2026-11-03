@@ -160,15 +160,14 @@ static bool renderBrowserFive(uint8_t id){
     lastX=x;lastY=y;
    }
   }
-  float sz=fminf(74.f,fmaxf(24.f,390.f/fmaxf(5,n)*.9f));
-  float wholeW=0;
-  for(int i=0;i<n;i++){Browser5Glyph g;if(b5GlyphFor(word[i],g))wholeW+=g.advance;else wholeW+=50;}
-  wholeW=fminf(345.f,wholeW*sz/78.f);
-  float step=wholeW/n;
+  // Use effect 01's clean native glyph scale AND letter tracking.
+  float gap=fminf(79.f,410.f/n);
+  float font=fminf(78.f,fmaxf(31.f,430.f/fmaxf(5,n)*.9f));
   for(int i=0;i<n;i++){
-   float x=CX+(i-(n-1)*.5f)*step;
+   float x=CX+(i-(n-1)*.5f)*gap;
    float y=CY+21*sinf(t*1.15f+i*.81f)+7*sinf(t*.56f+i*1.48f)+8*bass*sinf(hb+i*.4f);
-   b5Char(word[i],x,y,1.80f*(sz/78.f)*(n<=6?2.65f:fmaxf(1.15f,12.f/n)),(i%2)?rgb(255,189,255):rgb(255,242,254),.075f*sinf(p+i*.6f+t*.15f));
+   b5Char(word[i],x,y,1.70f*(font/78.f)*(n<=6?2.65f:fmaxf(1.15f,12.f/n)),
+          (i%2)?rgb(255,189,255):rgb(255,242,254),.075f*sinf(p+i*.6f+t*.15f));
   }
   break;}
  case 25:{ // 03 Kaleidoscope: 40 readable whole words on concentric wedges.
