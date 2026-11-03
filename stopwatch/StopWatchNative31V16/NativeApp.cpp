@@ -19,7 +19,7 @@
 #undef sq
 #endif
 
-constexpr uint8_t VIS_COUNT=31, Z_COUNT=28, REMOTE_PAGES=5;
+constexpr uint8_t VIS_COUNT=28, Z_COUNT=28, REMOTE_PAGES=5;
 constexpr int NFFT=512, FS=16000, NBANDS=32;
 constexpr float PI_F=3.14159265358979323846f, TAU=6.28318530717958647692f;
 static const char *const EFFECT_NAMES[VIS_COUNT] = {
@@ -51,13 +51,10 @@ static const char *const EFFECT_NAMES[VIS_COUNT] = {
  "Warehouse House Duo",
  "Ribbon Pirouette",
  "Robot Shuffle",
- "Living Cybernetic Eye",
- "Impossible Geometry",
- "Personal Dance Aura",
 };
-static constexpr uint8_t ORIGINAL_EFFECT_ID[VIS_COUNT]={23,24,25,26,27,28,29,30,31,1,2,3,4,6,7,8,9,10,11,12,13,16,17,18,19,20,21,22,32,37,40};
+static constexpr uint8_t ORIGINAL_EFFECT_ID[VIS_COUNT]={23,24,25,26,27,28,29,30,31,1,2,3,4,6,7,8,9,10,11,12,13,16,17,18,19,20,21,22};
 static inline uint8_t originalEffect(uint8_t i);
-static constexpr uint8_t V12_INDEX_TO_V13[VIS_COUNT]={9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,0,1,2,3,4,5,6,7,8,28,29,30};
+static constexpr uint8_t V12_INDEX_TO_V13[VIS_COUNT]={9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,0,1,2,3,4,5,6,7,8};
 static inline uint8_t migrateEffectIndex(uint8_t n){return n<VIS_COUNT?V12_INDEX_TO_V13[n]:0;}
 
 
@@ -315,8 +312,7 @@ static constexpr uint8_t AUTO_MIC_TYPES[VIS_COUNT]={
  MIC_SPECTRUM, MIC_ENERGY, MIC_ENERGY, MIC_WAVE, MIC_SPECTRUM,
  MIC_SPECTRUM, MIC_FIXED, MIC_ENERGY, MIC_ENERGY, MIC_ENERGY,
  MIC_BASS, MIC_BASS, MIC_ENERGY, MIC_SPECTRUM, MIC_BASS,
- MIC_FIXED, MIC_FIXED, MIC_FIXED, MIC_FIXED, MIC_FIXED,
- MIC_FIXED, MIC_FIXED
+ MIC_FIXED, MIC_FIXED, MIC_FIXED, MIC_FIXED
 };
 static_assert(sizeof(AUTO_MIC_TYPES)/sizeof(AUTO_MIC_TYPES[0])==VIS_COUNT,"auto mic profile count");
 static constexpr float AUTO_MIC_TARGET=.80f;
@@ -964,8 +960,11 @@ static void drawCinematic(uint8_t id){
 
  }
 }
+#include "assets/FidelityClassic167.h"
+#include "assets/FidelityText167.h"
 static void renderEffect(){
  const uint8_t id=originalEffect(effectID);
+ if(fidelityClassic167(id)||fidelityText167(id))return;
  if(id<23)effectsClassic(id);
  else if(id<32)textEffects(id);
  else drawCinematic(id);
