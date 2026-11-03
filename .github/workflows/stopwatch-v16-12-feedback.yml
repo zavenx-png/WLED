@@ -1,7 +1,7 @@
-name: StopWatch C152 V16.12 D Shared Name + Circular Fidelity
+name: StopWatch C152 V16.12 D Brightness/Spacing/Sync
 on:
   push:
-    branches: [stopwatch-v16-12-shared-name-native-ui-fidelity]
+    branches: [stopwatch-v16-12-spacing-sync-brightness]
     paths:
       - 'stopwatch/StopWatchNative31V16/**'
       - '.github/workflows/stopwatch-v16-12-feedback.yml'
