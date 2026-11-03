@@ -1,5 +1,5 @@
 /*
- * Club StopWatch — Native31 V16 · Favorites / Scenes / Adaptive Power (ESP32-S3 / M5Stack StopWatch C152)
+ * Club StopWatch — Native31 V17 · Favorites / Scenes / Adaptive Power (ESP32-S3 / M5Stack StopWatch C152)
  * Native rendering, compact precomputed art, 31 curated effects, automatic BPM clock, A+B remote.
  * Hardware-targeted source; not a conversion of browser Canvas APIs.
  * M5Stack board package >=3.3.8, M5Unified>=0.2.19, M5GFX>=0.2.21.
@@ -14,10 +14,6 @@
 #include <math.h>
 #include <esp_heap_caps.h>
 #include "assets/NativeTextures.h"
-// Arduino defines sq(x) as a macro, which conflicts with the native float helper.
-#ifdef sq
-#undef sq
-#endif
 
 constexpr uint8_t VIS_COUNT=31, Z_COUNT=28, REMOTE_PAGES=5;
 constexpr int NFFT=512, FS=16000, NBANDS=32;
@@ -726,6 +722,256 @@ static void effectsClassic(uint8_t id){
  }
 }
 
+
+// V17 fidelity-pass for the original collection, using the same spatial
+// construction as the V6 browser. The microphone and beat-clock remain shared.
+static void fidelitySilhouette(float x,float y,float scale,float phase,uint16_t c,bool robot=false){
+ float sway=sinf(phase)*9.f,step=sinf(phase*1.05f),bounce=fmaxf(0,sinf(phase*2))*5;
+ float X=x+sway,Y=y-bounce;
+ int w=(int)(robot?35*scale:31*scale),h=(int)(robot?34*scale:30*scale);
+ if(robot){
+  cv.fillRoundRect(X-w/2,Y-144*scale,w,h,5,tint(c,.81f));
+  cv.drawRoundRect(X-w/2,Y-144*scale,w,h,5,rgb(224,248,255));
+  cv.fillRoundRect(X-24*scale,Y-100*scale,48*scale,57*scale,7,tint(c,.77f));
+  cv.fillRect(X-18*scale,Y-87*scale,36*scale,6*scale,rgb(42,72,115));
+  dot(X-8*scale,Y-130*scale,3,rgb(235,250,255));dot(X+8*scale,Y-130*scale,3,rgb(235,250,255));
+ } else {
+  dot(X,Y-132*scale,15*scale,c);
+  cv.fillRoundRect(X-17*scale,Y-108*scale,34*scale,57*scale,10,tint(c,.83f));
+ }
+ float a=sinf(phase),b=sinf(phase+1.7f);
+ line(X-17*scale,Y-90*scale,X-(35+11*a)*scale,Y-(76+15*b)*scale,c,7);
+ line(X-(35+11*a)*scale,Y-(76+15*b)*scale,X-(52+15*a)*scale,Y-(48+27*b)*scale,c,5);
+ line(X+17*scale,Y-90*scale,X+(36-10*a)*scale,Y-(75-12*b)*scale,c,7);
+ line(X+(36-10*a)*scale,Y-(75-12*b)*scale,X+(52-14*a)*scale,Y-(50-29*b)*scale,c,5);
+ float liftL=fmaxf(0,a),liftR=fmaxf(0,-a);
+ line(X-10*scale,Y-53*scale,X+(-20+14*a)*scale,Y-(26+8*liftL)*scale,c,9);
+ line(X+(-20+14*a)*scale,Y-(26+8*liftL)*scale,X+(-30+25*a)*scale,Y-16*liftL*scale,c,8);
+ line(X+10*scale,Y-53*scale,X+(19-14*a)*scale,Y-(25+8*liftR)*scale,c,9);
+ line(X+(19-14*a)*scale,Y-(25+8*liftR)*scale,X+(29-24*a)*scale,Y-16*liftR*scale,c,8);
+ line(X+(-30+25*a)*scale-9,Y-16*liftL*scale,X+(-30+25*a)*scale+8,Y-16*liftL*scale,rgb(219,249,255),5);
+ line(X+(29-24*a)*scale-8,Y-16*liftR*scale,X+(29-24*a)*scale+9,Y-16*liftR*scale,rgb(219,249,255),5);
+}
+static bool effectsClassicFidelity(uint8_t id){
+ const float t=T(),b=bass,e=clampf(energy),p=beatClock;
+ switch(id){
+ case 1:{ // Prism: V6 58 columns with upwards-only segmented LEDs.
+  black();const int count=58,base=415;
+  for(int j=0;j<count;j++){
+    float fi=j*31.f/(count-1),v=band((int)fi)*(1-frac(fi))+band(min(31,(int)fi+1))*frac(fi);
+    float mod=.035f*sq(sinf(t*1.25f+j*.3f));
+    int h=(int)(13+clampf(v*1.12f+mod)*357);
+    int x=j*W/count,width=max(3,W/count-1);
+    for(int k=0;k<h;k+=10){int y=base-k;
+      uint16_t col=hue(frac((j*6.45f+t*5+k*.09f)/360.f));
+      cv.fillRoundRect(x,y,width,8,2,col);
+    }
+    cv.fillRect(x,base-(int)(peak[(int)fi]*340),width,2,rgb(230,249,255));
+  }
+  line(0,425,W,425,rgb(48,91,211));return true;}
+ case 2:{ // Psychedelic Bloom: nine continuously morphing V6 petal contours.
+  black();for(int l=0;l<9;l++){
+   float ra=24+l*20+e*30,oldx=0,oldy=0;
+   uint16_t col=hue(frac((l*37.f+t*16.f)/360.f));
+   for(int j=0;j<=170;j++){float a=TAU*j/170.f;
+     float r=ra*(1+.20f*sinf(a*(5+l%5)+t*(1.2f+l*.13f))+.23f*b*sinf(a*13-t*2));
+     float x=CX+cosf(a)*r,y=CY+sinf(a)*r;
+     if(j)line(oldx,oldy,x,y,col,2);oldx=x;oldy=y;
+   }
+  }return true;}
+ case 3:{ // V6 Vapor Scope: segmented sunset, perspective floor, five drifting waves.
+   black();
+   const int sy=151,sr=70;
+   for(int yy=-sr;yy<=sr;yy+=3){
+      int half=(int)sqrtf(fmaxf(0.f,(float)(sr*sr-yy*yy)));
+      float f=(yy+sr)/(float)(2*sr);
+      uint16_t c= f<.50f?blend(rgb(255,231,161),rgb(251,72,154),f*2.f)
+                         :blend(rgb(251,72,154),rgb(165,51,229),(f-.5f)*2.f);
+      cv.fillRect(CX-half,sy+yy,max(0,2*half),3,c);
+   }
+   for(int j=0;j<7;j++){
+     float y=sy+10+j*j*1.95f;
+     line(CX-100,y,CX+100,y,rgb(44,16,80),1+j/3);
+   }
+   for(int j=-9;j<=9;j++)line(CX,278,CX+j*72,468,tint(hue(.73f),.48f),1);
+   for(int j=0;j<10;j++){
+     float f=j/9.f,y=286+174*f*f,half=(y-286)*1.8f+10;
+     line(CX-half,y,CX+half,y,tint(hue((315+j*5+t*2)/360.f),.60f));
+   }
+   for(int k=0;k<5;k++){
+     float oldx=0,oldy=0;
+     for(int j=0;j<=236;j++){
+       float u=j/236.f,x=u*520-26,q=u*TAU;
+       float env=.22f+b*.48f+band(min(31,(int)(u*31)))*.26f;
+       float wav=sinf(q*(1.25f+k*.08f)+t*.36f+k*.6f);
+       float y=230+(k-2)*22+31*wav+16*sinf(q*2.7f-t*.23f+k*.4f)*env
+              +scopeY[min(159,(int)(u*159))]*22
+              +7*sinf(q*5+t*.36f)*b;
+       if(j){uint16_t c=hue(frac((176+k*35+t*5)/360.f));
+         line(oldx,oldy,x,y,tint(c,.32f),k==2?5:3);line(oldx,oldy,x,y,c,k==2?3:2);}
+       oldx=x;oldy=y;
+     }
+   }
+   return true;}
+ case 6:{ // Frequency Towers: radial rather than edge-aligned.
+  black();for(int j=0;j<32;j++){
+    float a=TAU*j/32,outer=55+band(j)*160;
+    line(CX+cosf(a)*52,CY+sinf(a)*52,CX+cosf(a)*outer,CY+sinf(a)*outer,
+      hue(frac((190+j*13+t*13)/360.f)),4);
+  }circ(CX,CY,53,rgb(161,166,255),3);return true;}
+ case 7:{ // 160 flowing radial rays (the native previously had 64).
+  black();for(int j=0;j<160;j++){
+    float a=TAU*j/160.f+t*.14f,outer=86+170*band(j*32/160),inner=80+12*sinf(j*.4f+t);
+    line(CX+cosf(a)*inner,CY+sinf(a)*inner,CX+cosf(a)*outer,CY+sinf(a)*outer,
+     hue(frac((j*3+t*15)/360.f)),2);
+  }circ(CX,CY,68,rgb(82,126,243),3);
+  textC("BASS",CX,CY-15,rgb(199,223,255),2);
+  textC(String((int)(b*100))+"%",CX,CY+15,rgb(199,223,255),4);return true;}
+ case 9:{ // Resonator: fine perturbed circular wavelets.
+  black();for(int l=0;l<22;l++){
+    float r=30+l*7.5f+band(l)*25;
+    for(int j=0;j<130;j++){float a=TAU*j/130;
+      float rr=r+4*sinf(a*8-t*1.5f+l*.32f)*(.15f+b);
+      dot(CX+cosf(a)*rr,CY+sinf(a)*rr,1.4f,hue(frac((l*19+t*12)/360.f)));
+    }
+  }return true;}
+ case 10:{ // Kaleidoscope Reactor: dense two-fold reflected particles.
+  black();for(int j=0;j<12;j++){
+    float a=TAU*j/12;
+    for(int r=24;r<200;r+=8){float rr=r+15*sinf(r*.06f-t*1.4f)+band((r/8)%32)*32;
+      float phi=a+.16f*sinf(r*.045f+t*.6f);
+      uint16_t col=hue(frac((j*28+r*.4f+t*12)/360.f));
+      dot(CX+cosf(phi)*rr,CY+sinf(phi)*rr,2,col);
+      dot(CX+cosf(phi+TAU/24)*rr,CY+sinf(phi+TAU/24)*rr,2,col);
+    }
+  }return true;}
+ case 11:{ // 410-point sunflower, same seed geometry as browser.
+  black();for(int j=0;j<410;j++){
+    float a=j*2.399963f+t*.2f,r=9.1f*sqrtf((float)j)*(1+.15f*e)+band((j*11)%32)*30;
+    dot(CX+cosf(a)*r,CY+sinf(a)*r,j%9?1:2.4f,
+       hue(frac((j*22.25f+t*13)/360.f)));
+  }return true;}
+ case 12:{ // 23 animated decagonal tunnel slices, still reacts to bass.
+  black();for(int j=0;j<23;j++){
+    float f=frac(j*.067f+t*.12f),r=(12+220*f*f)*(1+.13f*b);
+    float oldx=0,oldy=0;uint16_t c=tint(hue(frac((235+f*140+t*13)/360.f)),.35f+f*.6f);
+    for(int k=0;k<=10;k++){float a=TAU*k/10+t*.10f+j*.11f;
+     float x=CX+cosf(a)*r,y=CY+sinf(a)*r;
+     if(k)line(oldx,oldy,x,y,c,2);oldx=x;oldy=y;
+    }
+  }return true;}
+ case 13:{ // Cymatics node geometry, no fixed dot-grid approximation.
+  black();for(int j=0;j<145;j++){
+    float a=TAU*j/145,th=a+t*.08f;
+    for(int r=40;r<208;r+=5){
+     float v=sinf(5*a+t*.7f)*cosf(r*.075f)+sinf(8*a-t*.3f)*b;
+     if(fabsf(v)>.72f)dot(CX+cosf(th)*(r+v*10),CY+sinf(th)*(r+v*10),1.4f,
+         hue(frac((202+v*52+t*8)/360.f)));
+    }
+  }return true;}
+ case 16:{ // Liquid Chrome: 15 curving metallic wave ribbons.
+  black();for(int j=0;j<15;j++){
+    for(int x=-170;x<170;x+=6){
+      float v=sinf(t+x*.026f+j*.54f),n=sinf(t+(x+6)*.026f+j*.54f);
+      float y=(j-7)*22;
+      float a=CY+y+v*(12+e*45)+band((x+170)*32/341)*35;
+      float z=CY+y+n*(12+e*45)+band((x+176)*32/347)*35;
+      uint16_t silver=rgb(132+(int)(v*35),151+(int)(v*33),184+(int)(v*20));
+      line(CX+x,a,CX+x+6,z,silver,2);
+    }
+  }return true;}
+ case 17:{ // Tilted musical orbits with luminous satellites.
+  black();for(int j=0;j<13;j++){
+    float tilt=j*.46f+t*.11f,r=46+j*11,sn=sinf(tilt),cs=cosf(tilt);
+    for(int k=0;k<120;k+=2){float a=TAU*k/120,x=cosf(a)*r,y=sinf(a)*r*(.31f+.12f*band(j*2%32));
+      dot(CX+x*cs-y*sn,CY+x*sn+y*cs,1.2f,hue(frac((j*30+t*15)/360.f)));
+    }
+    float a=t*(.3f+j*.03f)+j*1.1f,xx=cosf(a)*r,yy=sinf(a)*r*.37f;
+    glow(CX+xx*cs-yy*sn,CY+xx*sn+yy*cs,2+band(j*2%32)*5,
+      hue(frac((j*30+t*15)/360.f)));
+  }return true;}
+ case 18:{ // Quantum Moire: polar interference, NOT a square patch of dots.
+  black();for(float r=7;r<=237;r+=5.5f){
+    int points=max(24,(int)(r*1.6f));
+    for(int k=0;k<points;k++){
+      float a=TAU*k/points,xx=r*cosf(a),yy=r*sinf(a);
+      float q1=hypotf(xx+45*sinf(t*.23f),yy),q2=hypotf(xx-45*cosf(t*.2f),yy);
+      float v=sinf(q1*.22f+t*.35f)+sinf(q2*.21f-t*.24f);
+      if(v>.23f){float rad=r+2.2f*sinf(a*9+t*.3f)*b;
+        dot(CX+cosf(a)*rad,CY+sinf(a)*rad,1.1f+clampf(v)*.75f,
+           tint(hue(frac((195+v*59+t*4)/360.f)),.35f+clampf(v)*.48f));
+      }
+    }
+  }circ(CX,CY,223,tint(rgb(64,56,167),.36f));return true;}
+ case 19:{ // Nebula: 340 drifting seeded particles.
+  black();for(int j=0;j<340;j++){
+    float a=j*2.399963f+t*(.05f+j%13*.005f)+e*.7f;
+    float r=190*sqrtf(frac(j*.61803f));
+    float scatter=14*sinf(j*.7f+t*.6f)+band(j%32)*40;
+    dot(CX+cosf(a)*(r+scatter),CY+sinf(a)*(r+scatter),j%29?1.4f:3.f,
+        tint(hue(frac((250+j*1.8f+t*9)/360.f)),.52f+band(j%32)*.45f));
+  }return true;}
+ case 20:{ // Warehouse duo: silhouette choreography with stage lights.
+  black();for(int j=0;j<9;j++){
+    float x=30+j*50+sinf(t*.24f+j)*20;
+    line(x,0,CX+(x-CX)*.3f,348,tint(hue(frac((j*32+t*18)/360.f)),.25f),2);
+  }
+  for(int j=0;j<18;j++){
+   float x=14+j*26,y=69+sinf(t*.7f+j)*7;
+   glow(x,y,2+band(j%32)*5,hue(frac((j*17+t*7)/360.f)));
+  }
+  fidelitySilhouette(129,375,1.02f,p*PI_F,rgb(70,229,255));
+  fidelitySilhouette(338,375,1.03f,p*PI_F+PI_F*.63f,rgb(252,100,205));
+  return true;}
+ case 21:{ // Ribbon Pirouette: paired performers surrounded by spiral ribbons.
+  black();for(int j=0;j<2;j++){
+    float base=j?330:138,phase=p*TAU*.2f+j*1.6f;
+    for(int strand=0;strand<5;strand++){
+      float oldx=0,oldy=0;
+      for(int k=0;k<100;k++){
+       float u=k/99.f,twist=phase-u*TAU*(2+strand*.29f);
+       float x=base+sinf(twist)*u*(52+e*12),y=79+u*285+cosf(twist*1.45f+strand*.4f)*9;
+       if(k)line(oldx,oldy,x,y,tint(hue(frac((160+j*157+strand*10+t*3)/360.f)),.52f),2);
+       oldx=x;oldy=y;
+      }
+    }
+    fidelitySilhouette(base+sinf(phase)*8,375,.85f,phase,j?rgb(255,88,215):rgb(72,241,223));
+  }return true;}
+ case 22:{ // V6 disco ball with full-body robot partners and original crossing.
+  black();float rot=phase8()*TAU;
+  for(int j=0;j<9;j++){float a=rot*.36f+j*TAU/9;
+    line(CX+cosf(a)*48,90+sinf(a)*48,CX+cosf(a)*130,90+sinf(a)*130,
+      tint(hue(frac((180+j*36+t*6)/360.f)),.2f+.2f*b),2);
+  }
+  line(CX,0,CX,47,rgb(200,226,255),2);
+  dot(CX,90,43,rgb(53,84,129));
+  for(int row=-5;row<=5;row++){int yy=row*8;
+    int lim=(int)sqrtf(fmaxf(0.f,43.f*43-yy*yy));
+    for(int k=-6;k<=6;k++){
+       int xx=k*11+(int)(rot*7+row*3)%11-5;
+       if(abs(xx)>lim-2)continue;
+       float shine=.46f+.54f*fabsf(sinf(xx*.12f+rot*.65f+row*.8f));
+       cv.fillRoundRect(CX+xx-5,90+yy-4,10,8,2,
+         tint(hue(frac((194+row*11+xx*.9f+rot*14)/360.f)),.43f+.55f*shine));
+    }
+  }
+  circ(CX,90,43,rgb(201,233,255),2);glow(CX-14,72,5,rgb(238,249,255));
+  float phase=phase8()*TAU,ex=.5f-.5f*cosf(phase),front=sinf(phase);
+  float xBlue=139+193*ex,xPink=329-193*ex;
+  if(front<0){
+    fidelitySilhouette(xPink,378-23*front,1.f,p*PI_F+PI_F,rgb(255,127,233),true);
+    fidelitySilhouette(xBlue,378+23*front,1.f,p*PI_F,rgb(94,243,255),true);
+  }else{
+    fidelitySilhouette(xBlue,378+23*front,1.f,p*PI_F,rgb(94,243,255),true);
+    fidelitySilhouette(xPink,378-23*front,1.f,p*PI_F+PI_F,rgb(255,127,233),true);
+  }
+  if(blueRobot.length())textC(blueRobot,(int)xBlue,190,rgb(94,243,255),2);
+  if(pinkRobot.length())textC(pinkRobot,(int)xPink,190,rgb(255,127,233),2);
+  return true;}
+ default:return false;
+ }
+}
+
 static void nameGlyphsOnRing(const String &name,float radius,float offset,uint16_t color){
  if(!name.length())return;
  cv.setTextDatum(middle_center);cv.setTextColor(color);
@@ -802,72 +1048,261 @@ static void fibStampWord(const String &word,float cx,float cy,float width,float 
  }
 }
 
+
+// ------ V17: browser-composition typography engine ------
+// The browser paints entire words, then scales/rotates them as a single piece.
+// V16 used 7x9 dots; the 16-bit PSRAM framebuffer now receives a cached high-
+// resolution FreeSansBold glyph mask. Build only when the editable word changes.
+// Effects without editable typography continue using their original renderers.
+static lgfx::LGFX_Sprite fidelityWord(&M5.Display);
+static String fidelityCached;
+static uint16_t *fidelityPixels=nullptr;
+static int fidelityX=0,fidelityY=0,fidelityW=1,fidelityH=1;
+static bool fidelityReady=false;
+static void fidelityInit(){
+ fidelityWord.setColorDepth(16);fidelityWord.setPsram(true);
+ fidelityReady=bool(fidelityWord.createSprite(464,84));
+ if(fidelityReady)fidelityPixels=(uint16_t*)fidelityWord.getBuffer();
+ Serial.printf("V17 typography cache: %s (%d KB)\n",fidelityReady?"ready":"fallback",464*84*2/1024);
+}
+static void fidelityPrepare(const String &word){
+ if(!fidelityReady||fidelityCached==word)return;
+ fidelityCached=word;
+ fidelityWord.fillScreen(0);
+ fidelityWord.setTextDatum(middle_center);
+ fidelityWord.setTextColor(0xffff);
+ // All 31 effects can use these official M5GFX Latin fonts; no custom font files.
+#ifdef STOPWATCH_HOST_TEST
+ // Host-side visual regression: draw a small 7x9 equivalent for glyph masks.
+ int xBase=232-(int)word.length()*8*2;
+ for(int c=0;c<word.length();c++){
+  const uint8_t *g=fibGlyph(word[c]);if(!g)continue;
+  for(int y=0;y<9;y++)for(int x=0;x<7;x++)if(g[y]&(1U<<(6-x)))
+   fidelityWord.fillRect(xBase+c*32+x*4,20+y*4,4,4,0xffff);
+ }
+#else
+ fidelityWord.drawString(word,232,42,&lgfx::fonts::FreeSansBold24pt7b);
+#endif
+ int left=463,right=0,top=83,bottom=0;
+ for(int y=0;y<84;y++)for(int x=0;x<464;x++)if(fidelityPixels[y*464+x]){
+   if(x<left)left=x;if(x>right)right=x;if(y<top)top=y;if(y>bottom)bottom=y;
+ }
+ if(right<left){fidelityX=0;fidelityY=0;fidelityW=1;fidelityH=1;return;}
+ fidelityX=left;fidelityY=top;fidelityW=right-left+1;fidelityH=bottom-top+1;
+}
+static inline void fidelityBlend(int x,int y,uint16_t c,uint8_t a){
+ if((unsigned)x>=(unsigned)W||(unsigned)y>=(unsigned)H||a==0)return;
+ uint16_t bg=fb[y*W+x];
+ const uint32_t inv=255-a;
+ const uint32_t r=((bg>>11)&31)*inv+((c>>11)&31)*a;
+ const uint32_t g=((bg>>5)&63)*inv+((c>>5)&63)*a;
+ const uint32_t b=(bg&31)*inv+(c&31)*a;
+ fb[y*W+x]=(uint16_t)(((r/255)<<11)|((g/255)<<5)|(b/255));
+}
+static inline float fidelitySample(float u,float v){
+ int x=(int)u,y=(int)v;
+ if(x<0||y<0||x>=fidelityW||y>=fidelityH)return 0;
+ const float du=u-x,dv=v-y;
+ const int aX=fidelityX+x,aY=fidelityY+y;
+ const uint16_t a=fidelityPixels[aY*464+aX];
+ const uint16_t b=fidelityPixels[aY*464+min(463,aX+1)];
+ const uint16_t c=fidelityPixels[min(83,aY+1)*464+aX];
+ const uint16_t d=fidelityPixels[min(83,aY+1)*464+min(463,aX+1)];
+ // Cached white text is 0xFFFF; use 6-bit green channel for alpha coverage.
+ const float top=((a>>5)&63)*(1-du)+((b>>5)&63)*du;
+ const float bot=((c>>5)&63)*(1-du)+((d>>5)&63)*du;
+ return (top*(1-dv)+bot*dv)/63.f;
+}
+static void fidelityStamp(const String &word,float cx,float cy,float drawWidth,float angle,uint16_t color,float opacity=1.f,bool outline=false){
+ if(!fb||drawWidth<3||opacity<=0)return;
+ fidelityPrepare(word);
+ if(!fidelityReady){fibStampWord(word,cx,cy,drawWidth,angle,color);return;}
+ if(fidelityW<=1||fidelityH<=1)return;
+ // The browser word sprites have generous margins. Retain comparable aspect.
+ const float drawHeight=drawWidth*(fidelityH+10.f)/(fidelityW+25.f);
+ const float co=cosf(angle),si=sinf(angle);
+ const float boundX=(fabsf(co)*drawWidth+fabsf(si)*drawHeight)*.5f+3;
+ const float boundY=(fabsf(si)*drawWidth+fabsf(co)*drawHeight)*.5f+3;
+ const int x0=max(0,(int)floorf(cx-boundX)),x1=min(W-1,(int)ceilf(cx+boundX));
+ const int y0=max(0,(int)floorf(cy-boundY)),y1=min(H-1,(int)ceilf(cy+boundY));
+ const float du=fidelityW/drawWidth,dv=fidelityH/drawHeight;
+ const float faded=clampf(opacity);
+ for(int y=y0;y<=y1;y++)for(int x=x0;x<=x1;x++){
+   const float ox=x-cx,oy=y-cy;
+   const float sx=(ox*co+oy*si)*du+fidelityW*.5f;
+   const float sy=(-ox*si+oy*co)*dv+fidelityH*.5f;
+   if(sx<0||sy<0||sx>=fidelityW-1||sy>=fidelityH-1)continue;
+   const float a=fidelitySample(sx,sy);
+   if(a<.035f)continue;
+   // Dim outer stroke and bright center, similar to V6 offscreen wordSprites.
+   uint8_t strength=(uint8_t)(clampf(a*faded)*255.f);
+   fidelityBlend(x,y,color,strength);
+   if(a>.60f&&faded>.38f&&((x+y)&3)==0)
+      fidelityBlend(x,y,0xffff,(uint8_t)(a*faded*(outline?27:46)));
+ }
+}
+static inline void fidelityBigGlyph(char ch,int x,int y,uint16_t c){
+ char str[2]={ch,0};
+ cv.setTextDatum(middle_center);
+ cv.setTextColor(tint(c,.22f));
+ cv.drawString(str,x+1,y+2,&lgfx::fonts::DejaVu72);
+ cv.setTextColor(c);
+ cv.drawString(str,x,y,&lgfx::fonts::DejaVu72);
+}
+static void fidelityWavyRing(float r,float layer,float phase,uint16_t color){
+ float lx=0,ly=0;
+ for(int j=0;j<=160;j++){
+   const float a=TAU*j/160.f;
+   const float rr=r*(1+.10f*sinf(a*7+phase+layer*.4f)+.055f*sinf(a*13-phase*2.f));
+   float x=CX+cosf(a)*rr,y=CY+sinf(a)*rr;
+   if(j){line(lx,ly,x,y,tint(color,.23f),3);line(lx,ly,x,y,color,1);}
+   lx=x;ly=y;
+ }
+}
+static const uint16_t FID_PALETTE[8]={0x3fff,0xfb9b,0xff10,0xaff1,0xa47f,0xfed4,0xc53f,0x8fff};
+static inline uint16_t fidelityCol(int k){return FID_PALETTE[(k%8+8)%8];}
+
+
 static void textEffects(uint8_t id){
- black();float t=T(),q=beatClock,norm=clampf(.24f+energy);
- const String &word=artName(effectID);uint16_t purple=rgb(209,72,255),cyan=rgb(69,231,246),pink=rgb(254,83,173);
- int wid=word.length();
+ black();const float t=T(),p=beatClock,rev=clampf(.24f+energy);
+ const String &word=artName(effectID);const int n=clampi(word.length(),1,12);
+ const float rhythm=beatPulse();
+ const uint16_t cyan=rgb(86,250,255),pink=rgb(252,93,189);
  switch(id){
- case 23:{ // Each character independently responds to its own EQ band.
-  int n=clampi(wid,1,12), spacing=clampi(390/n,30,76),begin=CX-(n-1)*spacing/2;
-  for(int i=0;i<n;i++){float a=band(clampi(3+i*NBANDS/n,0,31));float y=CY-(a+.10f*beatPulse())*168+16;
-   glyph(word[i],begin+i*spacing,y,hue(i/(float)n),7);
-  }break;}
- case 24:{ // Original halo, only backdrop sound-reactive. Text waves independently.
-  for(int j=0;j<24;j++){float a=j*TAU/24+t*.19f,r=91+72*sinf(j*.56f+beatClock*.11f)+36*energy;
-    glow(CX+r*cosf(a),CY+r*sinf(a),3,hue(j*.043f+t*.022f));}
-  for(int j=0;j<10;j++)circ(CX,CY,42+j*17,tint(hue(j*.06f+t*.036f),.13f+.13f*norm));
-  for(int j=0;j<wid;j++){float x=CX-(wid-1)*17+j*34.f;
-    float y=CY+11*sinf(t*.88f+j*.55f);glyph(word[j],(int)x,(int)y,pink,4);}
-  break;}
- case 25:{ // Kaleidoscope: label integrated into wedge pattern.
-  for(int k=0;k<12;k++){float a=k*TAU/12+t*.09f;
-    spoke(CX,CY,29,223,a,tint(hue(k*.083f),.24f),3);
-    for(int m=0;m<4;m++){float r=58+m*39+7*sinf(beatClock*.15f+k);
-     float x=CX+r*cosf(a+.14f*sinf(m+t*.14f)),y=CY+r*sinf(a+.14f*sinf(m+t*.14f));
-     glow(x,y,2+(m%3),hue(k*.075f+m*.05f));}}
-  nameGlyphsOnRing(word,141,t*.13f+norm*.04f,cyan);break;}
- case 26:{ // Round Resonator: letters on rings only, no stationary central text.
-  for(int j=0;j<12;j++){float r=26+j*17+8*sinf(q*.25f+j*.4f);
-    circ(CX,CY,r,tint(hue(.52f+j*.045f),.25f+.28f*norm),2);}
-  nameGlyphsOnRing(word,141,t*.19f,pink);nameGlyphsOnRing(word,89,-t*.12f,cyan);break;}
- case 27:{ // Restored V6 composition: 41 *complete*, individually rotated words.
-  const float golden=2.39996322972865f;
-  const float travel=t*.092f + beatClock*.002f; // smooth movement, sound modulation; never stalls in silence
-  const float breath=1+.05f*bass+.027f*energy;
-  for(int i=0;i<120;i++){
-   float f=frac(i/120.f+travel*.38f),r=(14+217*sqrtf(f))*breath,a=i*golden+travel*.21f;
-   cv.drawPixel(CX+(int)(cosf(a)*r),CY+(int)(sinf(a)*r),tint(hue(frac(i*.071f+t*.012f)),.24f+.43f*(1-f)));
-  }
-  for(int i=0;i<41;i++){
-   const float f=frac(i/41.f+travel),r=(16+218*sqrtf(f))*breath,a=i*golden+travel*.35f;
-   const float wordWidth=fminf(96,fmaxf(56,wid*13.f))*(.40f+f*.50f);
-   const float pulse=.55f+.25f*beatPulse()+.17f*energy;
-   const float fade=clampf(f*8)*clampf((1-f)*6)*pulse;
-   // Most luminous near middle radius; dimly fade in/out as words circulate.
-   fibStampWord(word,CX+cosf(a)*r,CY+sinf(a)*r,wordWidth,a+PI_F*.5f,tint(hue(frac(i*.137f+.78f)),fade));
-  }
-  circ(CX,CY,25+13*bass,tint(hue(.63f),.32f+.24f*energy),2);
-  break;}
- case 28:case 31:{ // Portal & orbit: 16-beat BPM-locked turn, name either center or orbit.
-  float rot=phase16()*TAU;
-  for(int j=0;j<23;j++){float r=26+j*8+8*sinf(q*.06f+j*.2f);
-    arc(CX,CY,r,rot+j*.4f,rot+j*.4f+PI_F*.85f,tint(hue(j*.045f+.59f),.25f+.48f*norm),2);}
-  if(id==28){glow(CX,CY,36,cyan);glassText(word,CX,CY,pink,clampi(5-(wid>8),3,5));}
-  else nameGlyphsOnRing(word,158,rot,pink);
-  break;}
- case 29:{ // Aurora: each letter is attached to a flowing curtain (no center name).
-  for(int i=0;i<24;i++){float x=15+i*19,yy=100+45*sinf(i*.23f+t*.24f);
-   line(x,yy,x+14,yy+210,tint(hue(.43f+i*.024f),.19f+.25f*norm),5);}
-  for(int i=0;i<wid;i++){float x=70+i*(W-140)/(float)clampi(wid-1,1,12);
-    float yy=170+48*sinf(t*.28f+i*.4f);glyph(word[i],x,yy,cyan,4);}
-  break;}
- case 30:{ // Text flows *with* the waves; original halo at 24 remains.
-  for(int k=0;k<12;k++){float oldx=0,oldy=CY;
-    for(int i=1;i<75;i++){float x=i*W/75.f,y=CY+45*sinf(x*.021f+t*.28f+k*.3f)+7*k;
-      line(oldx,oldy,x,y,tint(hue(k*.07f+.59f),.23f+.35f*norm),2);oldx=x;oldy=y;}}
-  for(int i=0;i<wid;i++){float x=CX-(wid-1)*18+i*36.f;
-    glyph(word[i],x,CY+45*sinf(x*.021f+t*.28f),pink,4);}
-  break;}
+  case 23:{ // V6 Chromatic EQ: oversized independent letters, NOT numeric font 7.
+   const float gap=fminf(79.f,410.f/n);
+   const uint16_t col[5]={rgb(86,250,255),rgb(252,93,189),rgb(247,235,105),rgb(136,247,105),rgb(186,130,255)};
+   for(int j=0;j<n;j++){
+    int bi=clampi((int)((j+.5f)*32.f/n),0,29);
+    float m=clampf((band(bi)+band(bi+1)+band(bi+2))/3.f);
+    float osc=.5f+.5f*sinf(p*PI_F+j*1.38f);
+    float xx=CX+(j-(n-1)*.5f)*gap;
+    float yy=238-((m*.80f+osc*.20f)*112-50);
+    fidelityBigGlyph(word[j],(int)xx,(int)yy,col[j%5]);
+    line(xx,342,xx,326-m*59,tint(col[j%5],.34f),3);
+   }
+   break;}
+  case 24:{ // V6 wave-shaped psychedelic halo, rather than disconnected dots.
+   const float phase=p*TAU*.12f;
+   for(int k=12;k>0;k--){
+     float r=23+k*16+bass*13;
+     fidelityWavyRing(r,k,phase,tint(hue(k*31.f/360.f+t*.010f),.54f));
+   }
+   float gap=fminf(72.f,358.f/n);
+   for(int j=0;j<n;j++){
+    float x=CX+(j-(n-1)*.5f)*gap;
+    float y=CY+16*sinf(t*1.15f+j*.81f)+5*sinf(t*.56f+j*1.48f);
+    // Large natural Latin glyphs; no tiny 7-segment digits.
+    char ch[2]={word[j],0};cv.setTextDatum(middle_center);
+    cv.setTextColor(tint(pink,.28f));cv.drawString(ch,(int)x+2,(int)y+2,&lgfx::fonts::FreeSansBold24pt7b);
+    cv.setTextColor(j%2?rgb(255,189,255):rgb(255,242,254));
+    cv.drawString(ch,(int)x,(int)y,&lgfx::fonts::FreeSansBold24pt7b);
+   }
+   break;}
+  case 25:{ // V6 Kaleidoscope: 40 WHOLE words in ten rotating wedges.
+   float rot=p*TAU*.07f;
+   for(int slice=0;slice<10;slice++){
+     const float angle=slice*TAU/10+rot;
+     for(int k=0;k<4;k++){
+       float r=83+k*46;
+       float xx=CX+sinf(angle)*r,yy=CY-cosf(angle)*r;
+       fidelityStamp(word,xx,yy,word.length()>8?72:77,
+                     angle+(slice%2?PI_F:0),hue((slice*36+r*.25f+t*5)/360.f),.82f);
+     }
+   }
+   circ(CX,CY,73,rgb(230,225,255),2);
+   fidelityStamp(word,CX,CY,fminf(190,word.length()*31.f),0,rgb(232,211,255),1.f);
+   break;}
+  case 26:{ // V6 Round Resonator: orbiting WHOLE words, empty central opening.
+   for(int k=0;k<15;k++){
+     float r=28+k*14+band((k*2)%32)*16;
+     circ(CX,CY,(int)r,tint(hue((180+k*17+t*5)/360.f),.42f+.16f*energy),k%4==0?2:1);
+   }
+   float rot=p*TAU*.065f;
+   for(int k=0;k<6;k++){
+     float a=k*TAU/6+rot;
+     float rr=117+17*sinf(p*PI_F+k);
+     fidelityStamp(word,CX+cosf(a)*rr,CY+sinf(a)*rr,
+                   fminf(110.f,word.length()*21.f),a+PI_F*.5f,fidelityCol(k),.86f);
+   }
+   break;}
+  case 27:{ // Pixel-geometry equivalent to V6 Fibonacci, but true font textures.
+   const float golden=2.39996322972865f;
+   const float travel=t*.092f+p*.002f;
+   const float breath=1+.05f*bass+.027f*energy;
+   for(int j=0;j<120;j++){
+     float f=frac(j/120.f+travel*.38f),r=(14+217*sqrtf(f))*breath,a=j*golden+travel*.21f;
+     dot(CX+cosf(a)*r,CY+sinf(a)*r,1,tint(hue(frac(j*.071f+t*.012f)),.24f+.43f*(1-f)));
+   }
+   for(int j=0;j<41;j++){
+     float f=frac(j/41.f+travel),r=(16+218*sqrtf(f))*breath,a=j*golden+travel*.35f;
+     float width=fminf(96,fmaxf(56,n*13.f))*(.40f+f*.50f);
+     float pulse=.57f+.30f*rhythm+.25f*energy;
+     float alpha=clampf(f*8.f)*clampf((1.f-f)*6.f)*pulse;
+     fidelityStamp(word,CX+cosf(a)*r,CY+sinf(a)*r,width,a+PI_F*.5f,fidelityCol(j),alpha);
+   }
+   circ(CX,CY,25+13*bass,tint(hue(frac(.63f+t*.02f)),.4f),2);
+   break;}
+  case 28:{ // Hyperspace: V6 stacked, receding whole-word portals.
+    const float rotation=phase16()*TAU;
+    for(int j=16;j>=0;j--){
+      float f=frac(j/17.f+t*.047f),r=12+220*f*f;
+      float alpha=clampf(f*7)*clampf((1-f)*6)*(.55f+.34f*energy+.15f*rhythm);
+      float a=rotation+f*.45f+(j%2)*.11f;
+      fidelityStamp(word,CX+cosf(a)*r*.06f,CY+sinf(a)*r*.06f,
+                    43+340*f*f*(1+.13f*bass),a,fidelityCol(j),alpha,true);
+    }
+    for(int j=0;j<10;j++){float a=j*TAU/10-rotation*.6f;
+       glow(CX+cosf(a)*(72+12*bass),CY+sinf(a)*(72+12*bass),2,fidelityCol(j));}
+    circ(CX,CY,54+11*bass,cyan,2);
+    fidelityStamp(word,CX,CY,170,0,rgb(233,250,255),1.f);
+    break;}
+  case 29:{ // Aurora: smooth curtains carrying whole names (not individual dots).
+    for(int layer=0;layer<15;layer++){
+      float ly=0;for(int x=0;x<=W;x+=6){
+       float y=90+layer*22 + sinf(x*.011f+t*.36f+layer*.3f)*(18+bass*25)
+               +sinf(x*.032f-t*.19f+layer)*8;
+       if(x)line(x-6,ly,x,y,tint(hue((135+layer*21+t*5)/360.f),.5f),2);
+       ly=y;
+      }
+    }
+    for(int j=0;j<8;j++){
+      float yy=67+j*46,xx=CX+sinf(t*.25f+j*.85f)*55;
+      fidelityStamp(word,xx,yy,fminf(205,word.length()*22.f),sinf(t*.14f+j)*.19f,
+                    hue((145+j*37+t*5)/360.f),.74f);
+    }
+    break;}
+  case 30:{ // Flowing halo: V6 deforming waves with orbiting typography.
+    float phase=p*TAU*.12f,breath=1+.055f*bass;
+    for(int layer=11;layer>0;layer--){
+      float r=(22+layer*17)*breath;
+      fidelityWavyRing(r,layer,phase,tint(hue((layer*31+t*4)/360.f),.56f));
+    }
+    for(int layer=0;layer<4;layer++){
+      const int k=3+layer*2;float r=(22+k*17)*breath;
+      const int groups=layer%2?3:2;
+      for(int j=0;j<groups;j++){
+        float ca=j*TAU/groups+t*(layer%2?-.095f:.13f)+layer*.47f;
+        float rr=r*(1+.1f*sinf(ca*7+phase+k*.4f)+.055f*sinf(ca*13-phase*2));
+        fidelityStamp(word,CX+cosf(ca)*rr,CY+sinf(ca)*rr,
+                      fminf(145,word.length()*(17+layer*3)*.8f),ca+PI_F*.5f,fidelityCol(layer+j),.76f);
+      }
+    }
+    break;}
+  case 31:{ // Orbit portal: 23 flowing whole names + four anchoring orbit words.
+    float rot=phase16()*TAU+.16f*sinf(p*.5f)*bass;
+    for(int j=0;j<6;j++)circ(CX,CY,38+j*31+12*bass,tint(hue((215+j*25+t*3)/360.f),.22f+.12f*energy));
+    for(int j=0;j<23;j++){
+      float f=frac(j/23.f+t*.032f),r=27+205*sqrtf(f),a=rot+j*2.399963f*.75f+f*.55f;
+      float alpha=clampf(f*8)*clampf((1-f)*5)*(.67f+.3f*bass+.14f*rhythm);
+      fidelityStamp(word,CX+cosf(a)*r,CY+sinf(a)*r,35+67*f,a+PI_F*.5f,fidelityCol(j),alpha,true);
+    }
+    for(int j=0;j<4;j++){
+      float a=rot+j*TAU/4,r=150+6*sinf(p*.2f+j);
+      fidelityStamp(word,CX+cosf(a)*r,CY+sinf(a)*r,93,a+PI_F*.5f,fidelityCol(j+3),.75f+.15f*energy);
+    }
+    circ(CX,CY,22+10*bass,rgb(173,216,255),2);
+    break;}
  }
 }
 
@@ -963,7 +1398,7 @@ static void drawCinematic(uint8_t id){
 }
 static void renderEffect(){
  const uint8_t id=originalEffect(effectID);
- if(id<23)effectsClassic(id);
+ if(id<23){if(!effectsClassicFidelity(id))effectsClassic(id);}
  else if(id<32)textEffects(id);
  else drawCinematic(id);
  // Mask only corners of the square sprite; the real StopWatch is a circular OLED.
@@ -1247,7 +1682,7 @@ static void controlTouch(){
 }
 static void saveFrameStats(){ // Diagnostic data via Serial only; no onscreen performance overlay.
  static uint32_t prev=0;uint32_t now=millis();if(now-prev<15000)return;prev=now;
- Serial.printf("Native31 V16 effect %u, BPM %.1f conf %.2f, freePSRAM %u, frame %lums, battery %ld%%\n",
+ Serial.printf("Native31 V16 effect %u, BPM %.1f conf %.2f, freePSRAM %u, frame %lums, battery %d%%\n",
     effectID,bpm,beatConfidence,(unsigned)ESP.getFreePsram(),(unsigned long)(now-renderStamp),M5.Power.getBatteryLevel());
 }
 static uint8_t powerFrameCap(){
@@ -1262,6 +1697,11 @@ static uint8_t powerFrameCap(){
  uint8_t factor=100;
  for(uint8_t v:slow)if(originalEffect(effectID)==v){factor=62;break;}
  if(factor==100)for(uint8_t v:medium)if(originalEffect(effectID)==v){factor=82;break;}
+ if(originalEffect(effectID)>=23 && originalEffect(effectID)<=31){
+   // On the actual watch, the previous low-power heuristic made typography sluggish.
+   // Preserve musical tempo; choose 30fps default, 24fps in endurance profile.
+   return profile==2?24:30;
+ }
  if(energy<.11f&&factor<100)factor=(uint8_t)(factor*0.84f);
  return clampi((rate*factor+50)/100,14,rate);
 }
@@ -1280,26 +1720,29 @@ void setup(){
    binEnd[k]=clampi((int)roundf(powf(255.f,(float)(k+1)/NBANDS)),binBegin[k]+1,255);
  }
  M5.Display.setBrightness((uint8_t)(brightness*255/100));
- // Hotfix: the 16-bit full-screen sprite exceeds the ESP32-S3 internal heap.
- // LovyanGFX must be explicitly told to allocate the sprite from OPI PSRAM.
+ // V16.1 hardware hotfix: LGFX sprites default to internal heap unless PSRAM
+ // is explicitly selected. A full RGB565 screen needs W*H*2 bytes (~438 KB),
+ // which cannot fit safely in the ESP32-S3 internal heap.
  const size_t frameBytes=(size_t)W*(size_t)H*2;
- Serial.printf("Frame request=%u, PSRAM total=%u, free=%u, largest=%u bytes\n",
+ Serial.printf("Framebuffer requested=%u bytes; PSRAM total=%u free=%u largest=%u\n",
     (unsigned)frameBytes,(unsigned)ESP.getPsramSize(),(unsigned)ESP.getFreePsram(),
     (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM));
  cv.setColorDepth(16);
- cv.setPsram(true); // Must run BEFORE createSprite().
+ cv.setPsram(true); // MUST come before createSprite(); unchanged renderer follows.
  if(ESP.getPsramSize()==0 || !cv.createSprite(W,H)){
-   Serial.printf("PSRAM SPRITE ERROR: total=%u free=%u largest=%u need=%u\n",
-       (unsigned)ESP.getPsramSize(),(unsigned)ESP.getFreePsram(),
-       (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM),(unsigned)frameBytes);
+   Serial.printf("PSRAM SPRITE ERROR: total=%u free=%u largest=%u request=%u\n",
+      (unsigned)ESP.getPsramSize(),(unsigned)ESP.getFreePsram(),
+      (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM),(unsigned)frameBytes);
    M5.Display.fillScreen(TFT_BLACK);M5.Display.setTextColor(TFT_RED);
    M5.Display.drawString("PSRAM SPRITE ERROR",22,H/2-20);
-   M5.Display.drawString(ESP.getPsramSize()==0?"PSRAM NOT DETECTED":"CHECK SERIAL LOG",22,H/2+10);
+   if(ESP.getPsramSize()==0)M5.Display.drawString("PSRAM NOT DETECTED",22,H/2+10);
+   else M5.Display.drawString("CHECK SERIAL LOG",22,H/2+10);
    while(true)delay(1000);
  }
  fb=(uint16_t*)cv.getBuffer();
- Serial.printf("Framebuffer OK. Free PSRAM=%u bytes\n",(unsigned)ESP.getFreePsram());
+ Serial.printf("Framebuffer OK; free PSRAM=%u bytes\n",(unsigned)ESP.getFreePsram());
  initArtwork();
+ fidelityInit();
  M5.BtnA.setHoldThresh(730);M5.BtnB.setHoldThresh(850);
  M5.Power.setVibration(0);
  WiFi.mode(WIFI_OFF); // radio ONLY when harness remote enabled
