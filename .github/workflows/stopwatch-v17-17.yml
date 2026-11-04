@@ -1,0 +1,109 @@
+name: StopWatch C152 V17.17 — Hardware-feedback curated 27 effects
+on:
+  push:
+    branches: [stopwatch-v17-17-hardware-feedback-cleanup]
+    paths:
+      - 'stopwatch/StopWatchNative31V16/**'
+      - '.github/workflows/stopwatch-v17-17.yml'
+  workflow_dispatch:
+
+jobs:
+  build-v17-17:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: arduino/setup-arduino-cli@v2
+      - name: Install official M5Stack StopWatch platform and libraries
+        run: |
+          arduino-cli config init
+          arduino-cli config add board_manager.additional_urls https://static-cdn.m5stack.com/resource/arduino/package_m5stack_index.json
+          arduino-cli core update-index
+          arduino-cli core install m5stack:esp32
+          arduino-cli lib install M5Unified
+          arduino-cli lib install M5GFX
+
+      - name: Verify 27 curated effects, saved settings migration, and feedback edits
+        run: |
+          sed -i -E "s/^#define STOPWATCH_FONT_TRIAL [0-9]+/#define STOPWATCH_FONT_TRIAL 2/" stopwatch/StopWatchNative31V16/assets/FontTrial.h
+          python3 - <<'PY'
+          import re
+          from pathlib import Path
+          src=Path("stopwatch/StopWatchNative31V16/NativeApp.cpp").read_text()
+          loom=Path("stopwatch/StopWatchNative31V16/assets/StringFestivalV1714.h").read_text()
+          yarn=Path("stopwatch/StopWatchNative31V16/assets/StringFestivalV1715.h").read_text()
+          imported=Path("stopwatch/StopWatchNative31V16/assets/ImportedAudioFXV1716.h").read_text()
+          original=['zaven Chromatic EQ','Robot Shuffle','Warehouse House Duo','Matrix Phosphor',
+            'zaven Psychedelic Halo','zaven Electric Aurora','zaven Flowing Halo','Prism EQ',
+            'Psychedelic Bloom','Vapor Scope','Frequency Towers','Radial Spectrum','Heartbeat Neon',
+            'Round Resonator','Kaleidoscope Reactor','Fibonacci Sunflower','Infinity Tunnel',
+            'Cymatic Mandala','Orbital Harmonics','Nebula Particles','zaven Kaleidoscope',
+            'zaven Round Resonator','zaven Fibonacci Spiral']
+          kept=original+['Warp Drive Loom','Spiral Spindle','Tidal Cable Knit','Spike Ball Nova (variant)']
+          namere=re.search(r'EFFECT_NAMES\[VIS_COUNT\] = \{(.*?)\};',src,re.S)
+          assert namere
+          names=re.findall(r'"([^"]+)"',namere.group(1))
+          assert names==kept,(len(names),names)
+          rawids=re.search(r'ORIGINAL_EFFECT_ID\[VIS_COUNT\]=\{([^}]+)\}',src)
+          assert rawids
+          ids=[int(x) for x in rawids.group(1).split(',')]
+          assert ids==[23,22,20,4,24,29,30,1,2,3,6,7,8,9,10,11,12,13,17,19,25,26,27,44,51,53,63]
+          assert len(set(ids))==27
+          m=re.search(r'AUTO_MIC_TYPES\[VIS_COUNT\]=\{([^}]+)\}',src,re.S)
+          assert m
+          profiles=re.findall(r'\bMIC_(?:FIXED|SPECTRUM|BASS|ENERGY|WAVE)\b',m.group(1))
+          assert len(profiles)==27
+          assert profiles[-4:]==['MIC_FIXED','MIC_BASS','MIC_ENERGY','MIC_SPECTRUM']
+          assert 'NFFT=512, FS=16000, NBANDS=32;' in src
+          assert 'if(renderStringFestivalV1714(id))return;' in src
+          assert 'if(renderStringFestivalV1715(id))return;' in src
+          assert 'if(renderImportedAudioV1716(id))return;' in src
+          assert 'sharedName.length()?sharedName:DEFAULT_WORD' in loom
+          assert 'FreeSansBold18pt7b' in loom
+          spiral=yarn.split('case 51:{',1)[1].split('case 52:{',1)[0]
+          knit=yarn.split('case 53:{',1)[1].split('return true;',1)[0]
+          assert 'sf15Button(' not in spiral and 'sfEllipse(CX,CY,48' not in spiral
+          assert 'rot=t*.64f' in spiral and 'k<=94' in spiral
+          assert 'clock-pin backdrop' in knit and 'k<=70' in knit
+          assert 'for(int x=22;x<460' not in knit and 'dot(x,y+14' not in knit
+          assert 'const bool hasV1717=' in src and 'const bool hasV1716=' in src
+          assert 'sourceCount=hasV1717?27:(hasV1716?41:' in src
+          assert 'if(hasV1716)return toV1717Index(slot);' in src
+          for n,d in [(24,23),(28,24),(30,25),(40,26)]:
+            assert f'if(n=={n})return {d};' in src
+          for key in ['eff1717','gain1717','fav1717','man1717','sc1717','t1717']:
+            assert f'hasV1717?"{key}"' in src, key
+          assert 'prefs.putUChar("s1717",22)' in src
+          assert 'uint8_t oldGain[41]' in src
+          assert 'originalEffect(effectID)==44){showTextEditor();return;}' in src
+          nav=re.search(r'static void selectEffect\(int d\)\{(.*?)\n\}',src,re.S)
+          assert nav and 'vibration(' not in nav.group(1)
+          assert 'selectEffect(dx>0?-1:+1)' in src
+          for remove in ['Star Marionette','Cosmic Patchwork Moth','Yarnfall Cathedral',
+                         'Celestial Buttonwork','Aurora Fishing Net','Corona','Magma','Ripple Tank',
+                         'Kaleido','Inferno','Spike Ball']:
+            assert remove not in names,remove
+          print('PASS: V17.17 keeps correct 27 menus and original 23; removes 14; preserves single audio engine and silent switching')
+          PY
+
+      - name: Compile official C152 app image and bundle exact editable source
+        run: |
+          mkdir -p build/v17-17
+          arduino-cli compile --fqbn m5stack:esp32:m5stack_stopwatch --output-dir build/v17-17 --warnings all stopwatch/StopWatchNative31V16
+          cp build/v17-17/StopWatchNative31V16.ino.bin build/v17-17/StopWatch_V17_17_27_Effects.app.bin
+          mkdir -p build/v17-17/source-snapshot
+          cp -R stopwatch/StopWatchNative31V16 build/v17-17/source-snapshot/
+          cp .github/workflows/stopwatch-v17-17.yml build/v17-17/source-snapshot/
+          cd build/v17-17
+          zip -q -r StopWatch_V17_17_Editable_Source.zip source-snapshot
+          sha256sum StopWatch_V17_17_27_Effects.app.bin StopWatch_V17_17_Editable_Source.zip > SHA256SUMS.txt
+          ls -lh StopWatch_V17_17_27_Effects.app.bin
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: StopWatch-V17-17-27-Effects-C152
+          path: |
+            build/v17-17/StopWatch_V17_17_27_Effects.app.bin
+            build/v17-17/StopWatch_V17_17_Editable_Source.zip
+            build/v17-17/SHA256SUMS.txt
+          if-no-files-found: error
