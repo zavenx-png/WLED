@@ -26,7 +26,7 @@ jobs:
           sed -i -E "s/^#define STOPWATCH_FONT_TRIAL [0-9]+/#define STOPWATCH_FONT_TRIAL 2/" stopwatch/StopWatchNative31V16/assets/FontTrial.h
           grep -Fq '#define STOPWATCH_FONT_TRIAL 2' stopwatch/StopWatchNative31V16/assets/FontTrial.h
           grep -Fq 'VIS_COUNT=23' stopwatch/StopWatchNative31V16/NativeApp.cpp
-          grep -Fq 'V17.9: reboot always enters effect 1' stopwatch/StopWatchNative31V16/NativeApp.cpp
+          grep -Fq 'V17.8: reboot always enters effect 1' stopwatch/StopWatchNative31V16/NativeApp.cpp
           grep -Fq 'effectID=0;' stopwatch/StopWatchNative31V16/NativeApp.cpp
           grep -Fq 'V171_TO_V178[VIS_COUNT]' stopwatch/StopWatchNative31V16/NativeApp.cpp
           grep -Fq 'const bool hasV178=' stopwatch/StopWatchNative31V16/NativeApp.cpp
