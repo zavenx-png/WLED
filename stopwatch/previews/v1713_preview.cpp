@@ -15,6 +15,7 @@ static int W=466,H=466,CX=233,CY=233,R=230;
 static float tm=0;
 static uint32_t millis(){return (uint32_t)(tm*1000.f);}
 static inline float clampf(float x,float a=0.f,float b=1.f){return max(a,min(b,x));}
+static inline float frac(float v){return v-std::floor(v);}
 static inline uint16_t rgb(int r,int g,int b){
  r=max(0,min(255,r));g=max(0,min(255,g));b=max(0,min(255,b));
  return (uint16_t)(((r>>3)<<11)|((g>>2)<<5)|(b>>3));
