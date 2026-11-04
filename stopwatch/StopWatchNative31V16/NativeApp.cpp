@@ -1097,7 +1097,7 @@ static void drawCinematic(uint8_t id){
 #include "assets/StringFestivalV1713.h"
 static void renderEffect(){
  const uint8_t id=originalEffect(effectID);
- if(renderStringFestivalV1712(id))return; // exclusive millis-driven festival modes
+ if(renderStringFestivalV1713(id))return; // exclusive millis-driven festival modes
  if(fidelityClassic167(id)||fidelityText167(id))return;
  if(id<23)effectsClassic(id);
  else if(id<32)textEffects(id);
