@@ -42,7 +42,7 @@ jobs:
           grep -Fq 'fmaxf(6,n)' stopwatch/StopWatchNative31V16/assets/BrowserFiveRenderer.h
           if grep -Fq 'for(int k=0;k<60;k++)' stopwatch/StopWatchNative31V16/NativeApp.cpp; then exit 1; fi
           # No horizontal level bar, voltage, or 1.6x Robot labels.
-          if grep -Fq 'cv.fillRoundRect(bx,by,bw,bh' stopwatch/StopWatchNative31V16/NativeApp.cpp; then exit 1; fi
+          if grep -Fq 'const int bx=78,by=231,bw=W-156,bh=15' stopwatch/StopWatchNative31V16/NativeApp.cpp; then exit 1; fi
           if grep -Fq 'cv.setTextSize(1.60f)' stopwatch/StopWatchNative31V16/NativeApp.cpp; then exit 1; fi
           grep -Fq '(yBlue-116)' stopwatch/StopWatchNative31V16/NativeApp.cpp
           grep -Fq '(yPink-116)' stopwatch/StopWatchNative31V16/NativeApp.cpp
