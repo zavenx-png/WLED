@@ -105,28 +105,30 @@ static bool renderStringFestivalV1715(uint8_t id){
     }
     break;
   }
-  case 51:{ // SPIRAL SPINDLE — six separate multi-strand spooling yarns.
-    sfStarfield(t,10);
-    const float rot=t*.22f+b*.14f;
-    for(int r=43;r<225;r+=36)sfEllipse(CX,CY,r,r,0.f,sfViolet(),.20f,2);
+  case 51:{ // SPIRAL SPINDLE v17.17: no button; faster, smooth flowing yarn.
+    sfStarfield(t,6);
+    // Smooth audio modulation of radius, not angle; music cannot make rotation jump.
+    static float spiralBass=0.f;
+    spiralBass+=(b-spiralBass)*.045f;
+    const float rot=t*.64f; // 2.9x original .22 radians per second
+    const float swell=1.f+.035f*spiralBass;
     for(int j=0;j<6;j++){
-      float oldx=0,oldy=0;
+      float ox=0.f,oy=0.f;
       const uint16_t c=sf15Ink(j);
-      for(int k=0;k<=57;k++){
-        const float u=k/57.f;
-        const float r=23+197*u;
-        const float ang=rot+TAU*j/6.f+10.7f*u+.13f*sinf(t*.34f+u*10+j);
-        const float x=CX+r*cosf(ang),y=CY+r*sinf(ang);
+      for(int k=0;k<=94;k++){
+        const float u=k/94.f;
+        const float rad=(11.f+208.f*u)*swell;
+        const float ang=rot+TAU*j/6.f+10.7f*u
+              +.047f*sinf(t*.52f+u*7.f+j*.7f);
+        const float x=CX+rad*cosf(ang),y=CY+rad*sinf(ang);
         if(k){
-          sfLine(oldx,oldy,x,y,c,.80f+.18f*b,7);
-          sfLine(oldx-1.8f,oldy-1.8f,x-1.8f,y-1.8f,sfIvory(),.43f,2);
+          sfLine(ox,oy,x,y,c,.86f,5);
+          sfLine(ox-1.2f,oy-1.2f,x-1.2f,y-1.2f,sfIvory(),.29f,2);
         }
-        if(k%9==1 && k>2)sfLight(x,y,c,2);
-        oldx=x;oldy=y;
+        ox=x;oy=y;
       }
     }
-    sf15Button(CX,CY,32,-rot*.75f,sfGold());
-    sfEllipse(CX,CY,48,48,0.f,sfPink(),.68f,2);
+    // Intentionally no center button, circular hub, dots or pinned ornaments.
     break;
   }
   case 52:{ // AURORA FISHING NET — softly deformed, woven diamond lattice.
@@ -163,43 +165,31 @@ static bool renderStringFestivalV1715(uint8_t id){
     sfEllipse(CX,CY,218,218,0.f,sfPink(),.28f,2);
     break;
   }
-  case 53:{ // TIDAL CABLE KNIT — giant interlocking braids and purl stitches.
-    for(int x=22;x<460;x+=27)for(int y=20;y<458;y+=31){
-      sfLine(x-6,y-5,x+6,y+5,sfViolet(),.18f,2);
-    }
-    const float motion=t*.82f+b*.12f;
-    // Large, genuinely interlaced cables. Understrands are shaded; crossing
-    // points are highlighted in the foreground at alternating intervals.
+  case 53:{ // TIDAL CABLE KNIT v17.17: flowing ropes, no clock-pin backdrop.
+    // Nothing decorative behind the ropes: no hatch ticks, V pins or rim.
+    static float knitBass=0.f;
+    knitBass+=(b-knitBass)*.045f;
+    const float motion=t*1.56f; // 1.9x original strand-driving rate
     for(int col=0;col<4;col++){
       const float base=66.f+col*110.f;
       const uint16_t c=sf15Ink(col);
       for(int side=-1;side<=1;side+=2){
-        float ox=0,oy=0;
-        for(int k=0;k<=51;k++){
-          float y=-20+k*10.f;
-          float phi=y*.032f-motion*1.8f+col*.47f;
-          float sway=10*sinf(y*.016f+motion*.45f);
-          float x=base+sway+side*28*sinf(phi);
+        float ox=0.f,oy=0.f;
+        for(int k=0;k<=70;k++){
+          const float y=-18.f+k*7.2f; // denser vertices: smooth curved rope
+          const float phi=y*.031f-motion*1.60f+col*.47f;
+          const float sway=10.f*sinf(y*.016f+motion*.38f);
+          const float x=base+sway+side*(28.f+1.8f*knitBass)*sinf(phi);
           if(k){
-            sfLine(ox+3,oy+4,x+3,y+4,rgb(18,8,37),.85f,12);
-            sfLine(ox,oy,x,y,c,.80f,9);
-            // Every alternate crossing is drawn as a satin front pass.
-            if(((int)floorf(phi/3.14159f)+(side>0?1:0))%2==0)
-              sfLine(ox-2,oy-2,x-2,y-2,sfIvory(),.44f,2);
+            // Wide satin body provides its own shading, avoiding extra backdrop.
+            sfLine(ox,oy,x,y,c,.88f,8);
+            const float shimmer=.24f+.18f*sinf(phi+side*.9f);
+            sfLine(ox-1.8f,oy-1.8f,x-1.8f,y-1.8f,sfIvory(),shimmer,2);
           }
           ox=x;oy=y;
         }
       }
-      // Knitted V-stitch shadows communicate fabric, not free-floating cords.
-      for(int j=0;j<14;j++){
-        float y=18+j*32+6*sinf(t*.5f+col);
-        float x=base+12*sinf(y*.020f+motion*.4f);
-        sfLine(x-28,y-9,x,y+12,sfIvory(),.38f,2);
-        sfLine(x,y+12,x+28,y-9,sfGold(),.53f,2);
-        dot(x,y+14,2,tint(sfIvory(),.55f));
-      }
     }
-    sfEllipse(CX,CY,224,224,0.f,sfViolet(),.25f,2);
     break;
   }
   }
