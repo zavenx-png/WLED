@@ -33,7 +33,7 @@ jobs:
           grep -Fq 'case 48:' stopwatch/StopWatchNative31V16/assets/StringFestivalV1714.h
           test ! -e stopwatch/StopWatchNative31V16/assets/StringFestivalV1713.h
 
-          grep -Fq 'V17.8: reboot always enters effect 1' stopwatch/StopWatchNative31V16/NativeApp.cpp
+          grep -Fq 'Always boot into 01 Chromatic EQ' stopwatch/StopWatchNative31V16/NativeApp.cpp
           grep -Fq 'effectID=0;' stopwatch/StopWatchNative31V16/NativeApp.cpp
           grep -Fq 'V171_TO_V178[23]' stopwatch/StopWatchNative31V16/NativeApp.cpp
           grep -Fq 'const bool hasV178=' stopwatch/StopWatchNative31V16/NativeApp.cpp
