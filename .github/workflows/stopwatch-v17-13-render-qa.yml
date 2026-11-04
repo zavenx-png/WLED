@@ -1,0 +1,26 @@
+name: StopWatch V17.13 Native C++ Frame QA
+on:
+  push:
+    branches: [stopwatch-v17-13-cinematic-string-rebuild]
+    paths:
+      - 'stopwatch/previews/v1713_preview.cpp'
+      - 'stopwatch/StopWatchNative31V16/assets/StringFestivalV1713.h'
+      - '.github/workflows/stopwatch-v17-13-render-qa.yml'
+  workflow_dispatch:
+jobs:
+  render-frames:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile actual String C++ renderer against software LGFX drawing stubs
+        run: |
+          cd stopwatch/previews
+          g++ -O2 -std=c++17 v1713_preview.cpp -o /tmp/string_v1713_preview
+          /tmp/string_v1713_preview
+          test "$(find . -name 'scene_*.ppm' | wc -l)" -eq 20
+      - uses: actions/upload-artifact@v4
+        with:
+          name: V17-13-Actual-Renderer-Snapshots
+          path: stopwatch/previews/scene_*.ppm
+          if-no-files-found: error
