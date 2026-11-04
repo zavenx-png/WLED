@@ -170,7 +170,7 @@ String keyboardPopup="";int keyboardPopupX=0,keyboardPopupY=0;
 uint32_t keyboardPopupUntil=0,keyboardPopupStarted=0,brightnessRepeatAt=0;
 bool brightnessEntryHold=false,batteryEntryHold=false;
 uint8_t candidateBrightness=52;float candidateBpm=125;
-uint32_t batteryHudUntil=0,batteryLastPoll=0,batteryKeyCooldown=0,batteryPowerPollAt=0;
+uint32_t batteryHudUntil=0,batteryKeyCooldown=0,batteryPowerPollAt=0;
 int batteryHudPercent=0,batteryHudVoltage=0;bool batteryHudCharging=false;
 // V17.7: one tiny in-RAM checkpoint. Estimate after every 5 percentage
 // points consumed (100->95, 95->90, etc.) or 5 points below boot level.
@@ -1621,7 +1621,7 @@ static void controlTouch(){
 static void saveFrameStats(){ // Diagnostic data via Serial only; no onscreen performance overlay.
  static uint32_t prev=0;uint32_t now=millis();if(now-prev<15000)return;prev=now;
  Serial.printf("Native31 V16 effect %u, BPM %.1f conf %.2f, freePSRAM %u, frame %lums, battery %ld%%\n",
-    effectID,bpm,beatConfidence,(unsigned)ESP.getFreePsram(),(unsigned long)(now-renderStamp),M5.Power.getBatteryLevel());
+    effectID,bpm,beatConfidence,(unsigned)ESP.getFreePsram(),(unsigned long)(now-renderStamp),batteryHudPercent);
 }
 static uint8_t powerFrameCap(){
  uint8_t rate=profile==0?48:profile==1?35:24;
