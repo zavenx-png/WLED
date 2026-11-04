@@ -2,7 +2,6 @@
 // Purpose: native interpretations of browser math, not screenshot sprites.
 // Uses original C152 framebuffer/audio/beat engine. No heap allocation per frame.
 #pragma once
-#include "SpeakerPhotoV179.h"
 
 static inline float fxSine(float a,float b,float v){return a+b*sinf(v);}
 static inline uint16_t fxInk(float h,float level){return tint(hue(frac(h)),clampf(level));}
@@ -14,67 +13,6 @@ static inline void fxPoly(int sides,float radius,float turn,uint16_t color,int w
  for(int j=1;j<=sides;j++){
   float a=turn+j*TAU/sides;float x=CX+radius*cosf(a),y=CY+radius*sinf(a);
   line(px,py,x,y,color,width);px=x;py=y;
- }
-}
-// V17.7: a small speaker-stack illustration built from opaque geometric
-// polygons, inspired by Funktion-One Resolution's faceted grey horns and
-// violet enclosure. Both boxes are static: zero heap allocations per frame.
-// V17.8: compact horn-loaded club cabinets recessed into the circular
-// top corners. Mirrored faceted faces point inward at the dancing figures.
-// Each 52x84px cabinet is about half the area of V17.7's original 76x116.
-// V17.9: use the user-provided speaker PHOTO, not the previous polygon art.
-// One compact, front-facing image, alpha-background removed offline, used twice.
-// Static 2 KB RAM decoding cache; no allocations, disk, radio or scaling state.
-static void fxPhotoSpeaker(int x,int y){
- static uint8_t pixels[SPEAKER_PHOTO_BYTES]={};
- static bool decoded=false;
- if(!decoded){
-  uint32_t bits=0;int used=0,out=0;
-  for(const char *p=SPEAKER_PHOTO_BASE64;*p&&out<SPEAKER_PHOTO_BYTES;p++){
-   const char c=*p;
-   int value=-1;
-   if(c>='A'&&c<='Z')value=c-'A';
-   else if(c>='a'&&c<='z')value=c-'a'+26;
-   else if(c>='0'&&c<='9')value=c-'0'+52;
-   else if(c=='+')value=62;
-   else if(c=='/')value=63;
-   if(value<0)continue;
-   bits=(bits<<6)|(uint32_t)value;
-   used+=6;
-   if(used>=8){
-    used-=8;
-    pixels[out++]=(uint8_t)(bits>>used);
-   }
-  }
-  decoded=(out==SPEAKER_PHOTO_BYTES);
- }
- if(!decoded||!fb)return;
- // Reproduce the full vertical tower at 64 x 112 pixels. The feet of the
- // dancing figures are around y=359, while the BACKGROUND towers end at 286.
- const int drawW=64,drawH=112;
- for(int dy=0;dy<drawH;dy++){
-  const int py=y+dy;
-  if((unsigned)py>=(unsigned)H)continue;
-  const int srcY=(dy*SPEAKER_PHOTO_H)/drawH;
-  const int sourceBase=srcY*SPEAKER_PHOTO_W;
-  const int destBase=py*W;
-  for(int dx=0;dx<drawW;dx++){
-   const int px=x+dx;
-   if((unsigned)px>=(unsigned)W)continue;
-   const int srcIndex=sourceBase+(dx*SPEAKER_PHOTO_W)/drawW;
-   const uint8_t pair=pixels[srcIndex>>1];
-   const int shade=(srcIndex&1)?(pair&15):(pair>>4);
-   if(!shade)continue; // TRANSPARENT photo background, keep existing lasers
-   const int dest=destBase+px;
-   const uint16_t under=fb[dest];
-   // 1/3 photographic grey + 2/3 existing club background. Restrained
-   // enough to be background stage hardware rather than a focal element.
-   const int sr=(shade*30)/15,sg=(shade*61)/15;
-   const int rr=((((under>>11)&31)*2+sr)/3);
-   const int gg=((((under>>5)&63)*2+sg)/3);
-   const int bb=(((under&31)*2+sr)/3);
-   fb[dest]=(uint16_t)((rr<<11)|(gg<<5)|bb);
-  }
  }
 }
 static inline float fxECG(float p){
@@ -315,53 +253,36 @@ static bool fidelityClassic167(uint8_t id){
    fxPolarDot(r+scatter,a,s,fxInk(.69f+i*.005f+t*.025f,.24f+.64f*band(i%32)));
   }return true;
  }
- case 20:{ // 22 Warehouse House Duo: clean sweeping lasers + twin horn speakers
+ case 20:{ // 26 Warehouse House Duo: perspective floor grid + lasers BEHIND dancers
   black();
-  // Paint static floor / EQ FIRST. Previously these darker foreground lines
-  // were painted ON TOP of bright lasers and cut black marks through beams.
-  for(int k=-10;k<=10;k++)
-   line(CX,307,CX+k*47,H,tint(rgb(79,74,208),.38f));
-  for(int j=1;j<=9;j++){
-   float v=j/9.f,y=307+161*v*v;
+  // V17.1 merge: transplant Ribbon Pirouette's original sweeping TOP lasers.
+  // Motorized club beams sweep back and forth independently of the dancers.
+  // Three strands per lamp form a visible moving light cone; brighter on kicks.
+  const float spotDrive=clampf(.28f+.62f*bass+.34f*energy);
+  for(int beam=0;beam<9;beam++){
+    float originX=42+beam*47,phase=t*(.57f+beam*.019f)+beam*1.31f;
+    float sweep=sinf(phase)*(.48f+.27f*spotDrive);
+    float targetX=originX+tan(fminf(1.15f,fmaxf(-1.15f,sweep)))*230.f;
+    uint16_t col=fxInk(.56f+beam*.064f+t*.009f,.22f+.48f*spotDrive);
+    for(int side=-2;side<=2;side++){
+      line(originX+side*2,29,targetX+side*21,408,tint(col,side==0?.90f:.20f),side==0?2:1);
+    }
+    glow(originX,28,3+int(3*spotDrive),col);
+    // Reflected floor pool follows the beam.
+    dot(targetX,410,4+int(4*spotDrive),tint(col,.37f));
+  }
+
+  // Warehouse's own floor, EQ, and duo figures remain intact below.
+  // Floor: horizon at y310, perspective rays and compressed depth lines.
+  for(int k=-10;k<=10;k++)line(CX,307,CX+k*47,H,tint(rgb(79,74,208),.38f));
+  for(int j=1;j<=9;j++){float v=j/9.f,y=307+161*v*v;
    line(CX-235*v,y,CX+235*v,y,tint(rgb(155,85,235),.28f+.22f*v));
   }
-  // Preserve the approved short Robot Shuffle equalizer footprint.
+  // Match the shorter EQ geometry of final effect 23.
   for(int j=0;j<20;j++)
    cv.fillRect(6+j*23,H-25-int(55*band(j+2)),15,
                8+int(55*band(j+2)),
                tint(hue(.55f+j*.055f),.20f+.30f*energy));
-
-  // Motorized club spotlights: soft outer fans go down FIRST, and ALL
-  // bright central beams go down LAST. This removes dark strand crossings
-  // (and flooring marks) inside the luminous laser cores.
-  const float spotDrive=clampf(.28f+.62f*bass+.34f*energy);
-  float laserX[9],laserTarget[9];uint16_t laserColor[9];
-  for(int beam=0;beam<9;beam++){
-   const float originX=42+beam*47,phase=t*(.57f+beam*.019f)+beam*1.31f;
-   const float sweep=sinf(phase)*(.48f+.27f*spotDrive);
-   laserX[beam]=originX;
-   laserTarget[beam]=originX+tan(fminf(1.15f,fmaxf(-1.15f,sweep)))*230.f;
-   laserColor[beam]=fxInk(.56f+beam*.064f+t*.009f,.26f+.50f*spotDrive);
-  }
-  for(int beam=0;beam<9;beam++)for(int side=-2;side<=2;side++){
-   if(side==0)continue;
-   // Faint colored halos may cross; none can overpaint a bright centerline.
-   line(laserX[beam]+side*2,29,laserTarget[beam]+side*21,408,
-        tint(laserColor[beam],.26f),1);
-  }
-  for(int beam=0;beam<9;beam++){
-   line(laserX[beam],29,laserTarget[beam],408,
-        tint(laserColor[beam],.96f),2);
-   glow(laserX[beam],28,3+int(3*spotDrive),laserColor[beam]);
-   dot(laserTarget[beam],410,4+int(4*spotDrive),
-       tint(laserColor[beam],.39f));
-  }
-  // Two subtle front-facing PA stacks from the uploaded photo, transparent
-  // and behind the dancers, with clear space between them. No other artwork
-  // or animation changes: draw after lasers, before original figures.
-  fxPhotoSpeaker(94,174);
-  fxPhotoSpeaker(308,174);
-  // Preserve Warehouse's original two sound-reactive dancers.
   figure(150,303,1.f,beatClock+.2f,rgb(255,104,214));
   figure(318,303,1.f,beatClock+2.f,rgb(77,226,255));
   return true;
