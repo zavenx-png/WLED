@@ -46,16 +46,16 @@ static const char *const EFFECT_NAMES[VIS_COUNT] = {
  "zaven Kaleidoscope",
  "zaven Round Resonator",
  "zaven Fibonacci Spiral",
- "Silk Orbit",
- "Cat's Cradle",
- "Needle Chase",
- "Puppet Strings",
- "Patchwork Waltz",
- "Unravel / Restitch",
- "Cosmic Loom",
- "Spindle Vortex",
- "Sew-Clew's Clues",
- "Infinity Knot"
+ "Stitched Event Horizon",
+ "Needle Through Nebula",
+ "Star Marionette",
+ "Warp Drive Loom",
+ "Saturn's Red Thread",
+ "The Unraveling",
+ "Mobius Weave",
+ "Cosmic Patchwork Moth",
+ "Sew-Clew's Lens",
+ "Threadglass"
 };
 static constexpr uint8_t ORIGINAL_EFFECT_ID[VIS_COUNT]={23,22,20,4,24,29,30,1,2,3,6,7,8,9,10,11,12,13,17,19,25,26,27,41,42,43,44,45,46,47,48,49,50};
 static inline uint8_t originalEffect(uint8_t i);
@@ -1094,7 +1094,7 @@ static void drawCinematic(uint8_t id){
 }
 #include "assets/FidelityClassic167.h"
 #include "assets/FidelityText167.h"
-#include "assets/StringFestivalV1712.h"
+#include "assets/StringFestivalV1713.h"
 static void renderEffect(){
  const uint8_t id=originalEffect(effectID);
  if(renderStringFestivalV1712(id))return; // exclusive millis-driven festival modes
