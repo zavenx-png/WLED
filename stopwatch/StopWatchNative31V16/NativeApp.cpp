@@ -172,15 +172,12 @@ bool brightnessEntryHold=false,batteryEntryHold=false;
 uint8_t candidateBrightness=52;float candidateBpm=125;
 uint32_t batteryHudUntil=0,batteryLastPoll=0,batteryKeyCooldown=0,batteryPowerPollAt=0;
 int batteryHudPercent=0,batteryHudVoltage=0;bool batteryHudCharging=false;
-// A small RAM-only rolling discharge history. No NVS writes or background radio.
-// Estimate is deliberately hidden until the watch has OBSERVED a measurable
-// battery drop at its current brightness / render profile.
-static constexpr uint8_t BATTERY_HISTORY_CAP=90;
-struct BatteryDrainSample{uint32_t ms;uint8_t percent;};
-BatteryDrainSample batteryDrain[BATTERY_HISTORY_CAP]={};
-uint8_t batteryDrainCount=0,batteryDrainNext=0,batteryDrainMode=255;
-uint32_t batteryDrainLast=0;
-int batteryEstimatedMinutes=-1;
+// V17.7: one tiny in-RAM checkpoint. Estimate after every 5 percentage
+// points consumed (100->95, 95->90, etc.) or 5 points below boot level.
+// Sampling once a minute adds no extra rendering, Wi-Fi, or flash writes.
+uint32_t batteryDrainLast=0,batteryCheckpointMs=0;
+int batteryCheckpointPct=-1,batteryEstimatedMinutes=-1;
+bool batteryPrevCharging=false;
 // Persistent, compact NVS-backed favorites and complete per-scene parameters.
 static constexpr uint64_t FAVORITE_DEFAULT=(1ULL<<4)|(1ULL<<7)|(1ULL<<17)|(1ULL<<22);
 static constexpr uint32_t SCENE_MAGIC=0x3253435A; // "ZCS1" scene format version
@@ -1166,46 +1163,47 @@ static void refreshBatteryHud(){
 }
 static void sampleBatteryDrain(bool force=false){
  uint32_t now=millis();
- if(!force && batteryDrainLast && now-batteryDrainLast<60000UL)return;
+ // PMIC read only once per minute during normal use. The HUD may request
+ // one immediate reading when opened; zero persistent/NVS writes.
+ if(!force&&batteryDrainLast&&now-batteryDrainLast<60000UL)return;
  batteryDrainLast=now;
  refreshBatteryHud();
- // A discharge estimate while charging or changing power modes is misleading.
- const uint8_t mode=(uint8_t)(brightness/10+profile*16+(remote?64:0));
- if(batteryHudCharging||batteryHudPercent<=0||batteryHudPercent>=100){
-  batteryDrainCount=0;batteryDrainNext=0;batteryDrainMode=mode;
-  batteryEstimatedMinutes=-1;return;
+ const int current=batteryHudPercent;
+ if(batteryHudCharging||current<=0){
+  batteryCheckpointPct=-1;batteryCheckpointMs=0;
+  batteryEstimatedMinutes=-1;batteryPrevCharging=batteryHudCharging;
+  return;
  }
- if(mode!=batteryDrainMode){
-  batteryDrainCount=0;batteryDrainNext=0;batteryDrainMode=mode;
-  batteryEstimatedMinutes=-1;
+ if(batteryPrevCharging||batteryCheckpointPct<0){
+  // Capture 100% too: the first 100->95% interval must be measurable.
+  batteryCheckpointPct=current;batteryCheckpointMs=now;
+  batteryEstimatedMinutes=-1;batteryPrevCharging=false;
+  return;
  }
- // Ignore up to one point of capacity jitter; a larger upward jump means
- // the watch was connected to power, so begin a new discharge interval.
- if(batteryDrainCount){
-  uint8_t previous=(batteryDrainNext+BATTERY_HISTORY_CAP-1)%BATTERY_HISTORY_CAP;
-  if(batteryHudPercent>batteryDrain[previous].percent){
-   if(batteryHudPercent==batteryDrain[previous].percent+1)return;
-   batteryDrainCount=0;batteryDrainNext=0;batteryEstimatedMinutes=-1;
+ // Battery percentages can jitter by 1 point. Ignore minor increases,
+ // and discard stale estimates after a larger increase/reconnection.
+ if(current>batteryCheckpointPct){
+  if(current>batteryCheckpointPct+1){
+   batteryCheckpointPct=current;batteryCheckpointMs=now;
+   batteryEstimatedMinutes=-1;
   }
+  return;
  }
- batteryDrain[batteryDrainNext]={now,(uint8_t)batteryHudPercent};
- batteryDrainNext=(batteryDrainNext+1)%BATTERY_HISTORY_CAP;
- if(batteryDrainCount<BATTERY_HISTORY_CAP)batteryDrainCount++;
- batteryEstimatedMinutes=-1;
- if(batteryDrainCount<2)return;
- // Last ~90 minutes maximum. Earlier entries rotate out naturally.
- uint8_t oldest=(batteryDrainNext+BATTERY_HISTORY_CAP-batteryDrainCount)%BATTERY_HISTORY_CAP;
- uint8_t latest=(batteryDrainNext+BATTERY_HISTORY_CAP-1)%BATTERY_HISTORY_CAP;
- uint32_t observedMs=batteryDrain[latest].ms-batteryDrain[oldest].ms;
- int drop=(int)batteryDrain[oldest].percent-(int)batteryDrain[latest].percent;
- if(observedMs<15UL*60000UL || drop<2)return;
- float dischargePerMinute=(float)drop*60000.f/(float)observedMs;
- if(dischargePerMinute<.003f||dischargePerMinute>.25f)return;
- int estimate=(int)lroundf(batteryHudPercent/dischargePerMinute);
- batteryEstimatedMinutes=clampi(estimate,1,48*60);
+ const int drop=batteryCheckpointPct-current;
+ if(drop<5)return;
+ const uint32_t elapsed=now-batteryCheckpointMs; // wrap-safe millis difference
+ if(elapsed>=60000UL&&elapsed<24UL*3600000UL){
+  // Scale the measured 5-point interval to the current remaining percent.
+  // Uses actual point change when a minute poll skipped an exact boundary.
+  const float minutes=(float)elapsed*(float)current/
+                       ((float)drop*60000.f);
+  batteryEstimatedMinutes=clampi((int)lroundf(minutes),1,72*60);
+ }
+ // Rebase every 5 points; no 15-minute gate, history buffer or extra sensor.
+ batteryCheckpointPct=current;batteryCheckpointMs=now;
 }
 static void openBatteryHud(bool haptic=true){
- sampleBatteryDrain();refreshBatteryHud();batteryHudUntil=millis()+4300;overlay=BATTERY;
+ sampleBatteryDrain(true);batteryHudUntil=millis()+4300;overlay=BATTERY;
  if(haptic)vibration(124,28);
 }
 static void renderBatteryHud(){
@@ -1229,8 +1227,7 @@ static void renderBatteryHud(){
  cv.setFont(&lgfx::fonts::FreeSansBold18pt7b);
  cv.setTextSize(1.f);cv.setTextColor(vividPink);
  cv.drawString(batteryHudCharging?"CHARGING":"REMAINING",CX,262);
- // The ETA is intentionally large, with only observed measurements shown.
- // Until enough discharge has been measured, display a modest placeholder.
+ // ETA recalculates on each 5-percentage-point discharge interval.
  String eta;
  if(batteryHudCharging)eta="NO ETA";
  else if(batteryEstimatedMinutes>=0){
@@ -1243,10 +1240,18 @@ static void renderBatteryHud(){
  float nativeWidth=fmaxf(1.f,(float)cv.textWidth(eta));
  float scale=clampf((float)safeWidth/nativeWidth,.72f,1.22f);
  cv.setTextSize(scale);cv.setTextColor(rgb(252,253,255));
- cv.drawString(eta,CX,335);
+ cv.drawString(eta,CX,328);
  cv.setTextSize(1.f);
+ // Uptime since this boot, computed from the existing system clock,
+ // with no extra timer interrupts, sampling, or flash writes.
+ const uint32_t uptimeMins=millis()/60000UL;
+ const String uptime=String("POWERED ON  ")+String(uptimeMins/60UL)+
+                     "H "+String(uptimeMins%60UL)+"M";
+ cv.setFont(&lgfx::fonts::FreeSansBold12pt7b);
+ cv.setTextColor(rgb(136,204,220));
+ cv.drawString(uptime,CX,384);
  cv.setFont(&lgfx::fonts::Font0);
- textC("A / B OR TAP TO CLOSE",CX,411,rgb(104,145,165),2);
+ textC("A/B TO CLOSE",CX,423,rgb(104,145,165),2);
 }
 static void renderOverlay(){
  if(overlay==NONE)return;
@@ -1693,9 +1698,7 @@ void loop(){
   }
  }
  if(overlay==BATTERY && (int32_t)(powerNow-batteryHudUntil)>=0)overlay=NONE;
- if(overlay==BATTERY && powerNow-batteryLastPoll>900){
-  batteryLastPoll=powerNow;refreshBatteryHud();
- }
+ // Battery state and ETA are read by the 60-second sampler, not per frame.
  controlButtons();controlTouch();radioTick();audioTick();beatTick();
  uint32_t now=millis();
  // Remote-only auto blank: the radio can still receive ACKs and A+B can wake.
