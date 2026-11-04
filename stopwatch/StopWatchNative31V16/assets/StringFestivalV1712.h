@@ -14,8 +14,27 @@ static inline uint16_t sfIvory(){return rgb(240,247,255);}
 static inline uint16_t sfRed(){return rgb(255,58,92);}
 static inline float sfClamp(float v){return clampf(v,0.f,1.f);}
 static inline void sfLine(float x,float y,float X,float Y,uint16_t c,float f=1.f,int w=2){
- line(x,y,X,Y,tint(c,.19f*f),w+2);
- line(x,y,X,Y,tint(c,.91f*f),w);
+ if(w<=3){ // lightweight fiber detail
+  line(x,y,X,Y,tint(c,.16f*f),3);
+  line(x,y,X,Y,tint(c,.90f*f),w);
+  return;
+ }
+ // Physically wide shaded satin/material strokes, NOT a fake thick-line flag.
+ // The base renderer's generic line() caps out at 3px, so broad puppet limbs,
+ // needle handles and metal rims must be filled as proper quadrilaterals.
+ const float dx=X-x,dy=Y-y;
+ const float inv=1.f/fmaxf(1.f,sqrtf(dx*dx+dy*dy));
+ const float nx=-dy*inv,ny=dx*inv;
+ for(int pass=0;pass<2;pass++){
+  const float r=(w+(pass==0?5:0))*.5f;
+  const uint16_t ink=tint(c,pass==0?.17f*f:.87f*f);
+  const float ax=x+nx*r,ay=y+ny*r,bx=x-nx*r,by=y-ny*r;
+  const float cx=X+nx*r,cy=Y+ny*r,ex=X-nx*r,ey=Y-ny*r;
+  cv.fillTriangle(ax,ay,bx,by,cx,cy,ink);
+  cv.fillTriangle(bx,by,ex,ey,cx,cy,ink);
+  cv.fillCircle((int)x,(int)y,(int)(r+.5f),ink);
+  cv.fillCircle((int)X,(int)Y,(int)(r+.5f),ink);
+ }
 }
 static inline void sfLight(float x,float y,uint16_t c,int r=4){
  dot(x,y,r+9,tint(c,.11f));
