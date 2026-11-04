@@ -1,0 +1,141 @@
+name: StopWatch C152 V17.12 String Festival - 10 Time-Based Effects
+on:
+  push:
+    branches: [stopwatch-v17-12-string-festival-10-effects]
+    paths:
+      - 'stopwatch/StopWatchNative31V16/**'
+      - '.github/workflows/stopwatch-v17-12.yml'
+  workflow_dispatch:
+jobs:
+  build-v17-12:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: arduino/setup-arduino-cli@v2
+      - name: Install official M5Stack StopWatch board and display libraries
+        run: |
+          arduino-cli config init
+          arduino-cli config add board_manager.additional_urls https://static-cdn.m5stack.com/resource/arduino/package_m5stack_index.json
+          arduino-cli core update-index
+          arduino-cli core install m5stack:esp32
+          arduino-cli lib install M5Unified
+          arduino-cli lib install M5GFX
+      - name: Verify V17.12 effect count and input contract
+        run: |
+          sed -i -E "s/^#define STOPWATCH_FONT_TRIAL [0-9]+/#define STOPWATCH_FONT_TRIAL 2/" stopwatch/StopWatchNative31V16/assets/FontTrial.h
+          grep -Fq '#define STOPWATCH_FONT_TRIAL 2' stopwatch/StopWatchNative31V16/assets/FontTrial.h
+          grep -Fq 'VIS_COUNT=33' stopwatch/StopWatchNative31V16/NativeApp.cpp
+          grep -Fq 'renderStringFestivalV1712(id)' stopwatch/StopWatchNative31V16/NativeApp.cpp
+          grep -Fq 'if(remote || originalEffect(effectID)>=41' stopwatch/StopWatchNative31V16/NativeApp.cpp
+          grep -Fq 'case 50:' stopwatch/StopWatchNative31V16/assets/StringFestivalV1712.h
+
+          grep -Fq 'V17.8: reboot always enters effect 1' stopwatch/StopWatchNative31V16/NativeApp.cpp
+          grep -Fq 'effectID=0;' stopwatch/StopWatchNative31V16/NativeApp.cpp
+          grep -Fq 'V171_TO_V178[VIS_COUNT]' stopwatch/StopWatchNative31V16/NativeApp.cpp
+          grep -Fq 'const bool hasV178=' stopwatch/StopWatchNative31V16/NativeApp.cpp
+          grep -Fq 'eff178' stopwatch/StopWatchNative31V16/NativeApp.cpp
+          grep -Fq 'gain178' stopwatch/StopWatchNative31V16/NativeApp.cpp
+          grep -Fq 'sc178' stopwatch/StopWatchNative31V16/NativeApp.cpp
+          grep -Fq 's178' stopwatch/StopWatchNative31V16/NativeApp.cpp
+          if grep -Fq 'prefs.putUChar("sortrev",17)' stopwatch/StopWatchNative31V16/NativeApp.cpp; then exit 1; fi
+          grep -Fq 'batteryEntryHold=true' stopwatch/StopWatchNative31V16/NativeApp.cpp
+          grep -Fq 'cv.setTextSize(1.036f)' stopwatch/StopWatchNative31V16/NativeApp.cpp
+          grep -Fq 'QW_TOP[3]={155,224,293}' stopwatch/StopWatchNative31V16/NativeApp.cpp
+          grep -Fq 'QW_DEL_X=138' stopwatch/StopWatchNative31V16/NativeApp.cpp
+          grep -Fq 'deleteHit(x,y)' stopwatch/StopWatchNative31V16/NativeApp.cpp
+          grep -Fq 'nameDeleteConsumed=true' stopwatch/StopWatchNative31V16/NativeApp.cpp
+          grep -Fq 'sampleBatteryDrain()' stopwatch/StopWatchNative31V16/NativeApp.cpp
+          grep -Fq 'ESTIMATING' stopwatch/StopWatchNative31V16/NativeApp.cpp
+          grep -Fq 'cv.drawString("BATTERY",CX,89)' stopwatch/StopWatchNative31V16/NativeApp.cpp
+          grep -Fq 'user-approved minimal battery mock' stopwatch/StopWatchNative31V16/NativeApp.cpp
+          grep -Fq 'revert Robot Shuffle names to the exact V17.4 font size' stopwatch/StopWatchNative31V16/NativeApp.cpp
+          grep -Fq 'textC("BASS",CX,CY-15,rgb(217,231,255),4)' stopwatch/StopWatchNative31V16/assets/FidelityClassic167.h
+          grep -Fq 'fmaxf(6,n)' stopwatch/StopWatchNative31V16/assets/BrowserFiveRenderer.h
+          if grep -Fq 'for(int k=0;k<60;k++)' stopwatch/StopWatchNative31V16/NativeApp.cpp; then exit 1; fi
+          # No horizontal level bar, voltage, or 1.6x Robot labels.
+          if grep -Fq 'const int bx=78,by=231,bw=W-156,bh=15' stopwatch/StopWatchNative31V16/NativeApp.cpp; then exit 1; fi
+          if grep -Fq 'cv.setTextSize(1.60f)' stopwatch/StopWatchNative31V16/NativeApp.cpp; then exit 1; fi
+          grep -Fq '(yBlue-116)' stopwatch/StopWatchNative31V16/NativeApp.cpp
+          grep -Fq '(yPink-116)' stopwatch/StopWatchNative31V16/NativeApp.cpp
+          grep -Fq '0.80f*1.70f' stopwatch/StopWatchNative31V16/assets/BrowserFiveRenderer.h
+          grep -Fq 'nameRobotBlueEdited' stopwatch/StopWatchNative31V16/NativeApp.cpp
+          if grep -Fq 'uiButton(248,376,112,48,"SPACE"' stopwatch/StopWatchNative31V16/NativeApp.cpp; then exit 1; fi
+          grep -Fq 'H-25-int(55*band(j+2))' stopwatch/StopWatchNative31V16/assets/FidelityClassic167.h
+          grep -Fq 'toV171Effect' stopwatch/StopWatchNative31V16/NativeApp.cpp
+          
+          
+          
+          if grep -q 'SpeakerPhotoV179\|fxPhotoSpeaker\|fxFunktionHornSpeaker\|SPEAKER_PHOTO' stopwatch/StopWatchNative31V16/assets/FidelityClassic167.h; then exit 1; fi
+          test ! -e stopwatch/StopWatchNative31V16/assets/SpeakerPhotoV179.h
+          grep -Fq 'soft outer fans go down FIRST' stopwatch/StopWatchNative31V16/assets/FidelityClassic167.h
+          grep -Fq 'bright central beams go down LAST' stopwatch/StopWatchNative31V16/assets/FidelityClassic167.h
+          grep -Fq 'figure(150,303,1.f' stopwatch/StopWatchNative31V16/assets/FidelityClassic167.h
+          grep -Fq 'figure(318,303,1.f' stopwatch/StopWatchNative31V16/assets/FidelityClassic167.h
+          if grep -Fq 'fxPhotoSpeaker' stopwatch/StopWatchNative31V16/assets/FidelityClassic167.h; then exit 1; fi
+          grep -Fq 'if(drop<5)return' stopwatch/StopWatchNative31V16/NativeApp.cpp
+          grep -Fq 'POWERED ON' stopwatch/StopWatchNative31V16/NativeApp.cpp
+          if grep -Fq 'BATTERY_HISTORY_CAP' stopwatch/StopWatchNative31V16/NativeApp.cpp; then exit 1; fi
+          if grep -Fq ' "Ribbon Pirouette",' stopwatch/StopWatchNative31V16/NativeApp.cpp; then exit 1; fi
+          if grep -Fq 'CLUB LIBRARY' stopwatch/StopWatchNative31V16/NativeApp.cpp; then exit 1; fi
+          if grep -Fq 'trialCharSoft' stopwatch/StopWatchNative31V16/assets/BrowserFiveRenderer.h; then exit 1; fi
+      - name: Verify 33 original effects, the ten new loops, and zero audio dependence
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          src=Path('stopwatch/StopWatchNative31V16/NativeApp.cpp').read_text()
+          art=Path('stopwatch/StopWatchNative31V16/assets/StringFestivalV1712.h').read_text()
+          names_block=re.search(r'EFFECT_NAMES\[VIS_COUNT\] = \{(.*?)\};',src,re.S)
+          assert names_block
+          names=re.findall(r'"([^"]+)"',names_block.group(1))
+          first23=['zaven Chromatic EQ','Robot Shuffle','Warehouse House Duo',
+          'Matrix Phosphor','zaven Psychedelic Halo','zaven Electric Aurora',
+          'zaven Flowing Halo','Prism EQ','Psychedelic Bloom','Vapor Scope',
+          'Frequency Towers','Radial Spectrum','Heartbeat Neon','Round Resonator',
+          'Kaleidoscope Reactor','Fibonacci Sunflower','Infinity Tunnel',
+          'Cymatic Mandala','Orbital Harmonics','Nebula Particles',
+          'zaven Kaleidoscope','zaven Round Resonator','zaven Fibonacci Spiral']
+          new10=['Silk Orbit',"Cat's Cradle",'Needle Chase','Puppet Strings',
+          'Patchwork Waltz','Unravel / Restitch','Cosmic Loom','Spindle Vortex',
+          "Sew-Clew's Clues",'Infinity Knot']
+          assert names==first23+new10,(len(names),names)
+          ids=[int(x) for x in re.search(r'ORIGINAL_EFFECT_ID\[VIS_COUNT\]=\{([^}]+)\}',src).group(1).split(',')]
+          assert len(ids)==len(set(ids))==33
+          assert ids[:23]==[23,22,20,4,24,29,30,1,2,3,6,7,8,9,10,11,12,13,17,19,25,26,27]
+          assert ids[23:]==list(range(41,51))
+          mic=re.search(r'AUTO_MIC_TYPES\[VIS_COUNT\]=\{([^}]+)\}',src,re.S).group(1)
+          mic_types=re.findall(r'MIC_\w+',mic)
+          assert len(mic_types)==33 and mic_types[-10:]==['MIC_FIXED']*10
+          cases=[int(x) for x in re.findall(r'case\s+(4[1-9]|50)\s*:',art)]
+          assert cases==list(range(41,51)),cases
+          assert 'millis()' in art
+          # Ignore comments to check the actual renderer uses no audio state.
+          code=re.sub(r'//[^\n]*','',art)
+          code=re.sub(r'/\*.*?\*/','',code,flags=re.S)
+          for banned in ['beatClock','beatPhase','beatPulse','energy','bass','mids','highs','bins','band(','T()','M5.Mic']:
+           assert banned not in code,banned
+          assert 'if(renderStringFestivalV1712(id))return;' in src
+          assert 'originalEffect(effectID)>=41' in src
+          assert 'uint8_t oldGain[VIS_COUNT]' in src
+          assert 'nGain==33' in src
+          assert 'hasV1712' in src and 's1712' in src
+          assert not re.search(r'prefs\.put\w*\("(gain178|eff178|fav178|s178|man178)"',src)
+          assert 'const bool hasV178=' in src
+          print('PASS: 23 originals unchanged, 10 time-based effects, rollback-safe NVS')
+          PY
+      - name: Compile V17.12 for M5Stack StopWatch C152
+        run: |
+          mkdir -p build/v17-12
+          arduino-cli compile --fqbn m5stack:esp32:m5stack_stopwatch --output-dir build/v17-12 --warnings all stopwatch/StopWatchNative31V16
+          cp build/v17-12/StopWatchNative31V16.ino.bin build/v17-12/StopWatch_V17_12_33_Effects.app.bin
+          cd build/v17-12
+          sha256sum StopWatch_V17_12_33_Effects.app.bin > SHA256SUMS.txt
+          ls -lh StopWatch_V17_12_33_Effects.app.bin
+      - uses: actions/upload-artifact@v4
+        with:
+          name: StopWatch-V17-12-33-Effects-C152
+          path: |
+            build/v17-12/StopWatch_V17_12_33_Effects.app.bin
+            build/v17-12/SHA256SUMS.txt
+          if-no-files-found: error
