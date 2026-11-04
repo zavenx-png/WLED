@@ -76,13 +76,19 @@ jobs:
           mkdir -p build/v17-15
           arduino-cli compile --fqbn m5stack:esp32:m5stack_stopwatch --output-dir build/v17-15 --warnings all stopwatch/StopWatchNative31V16
           cp build/v17-15/StopWatchNative31V16.ino.bin build/v17-15/StopWatch_V17_15_31_Effects.app.bin
+          # Keep the entire exact editable source project in the build artifact.
+          mkdir -p build/v17-15/source-snapshot
+          cp -R stopwatch/StopWatchNative31V16 build/v17-15/source-snapshot/
+          cp .github/workflows/stopwatch-v17-15.yml build/v17-15/source-snapshot/
           cd build/v17-15
-          sha256sum StopWatch_V17_15_31_Effects.app.bin > SHA256SUMS.txt
+          zip -q -r StopWatch_V17_15_Editable_Source.zip source-snapshot
+          sha256sum StopWatch_V17_15_31_Effects.app.bin StopWatch_V17_15_Editable_Source.zip > SHA256SUMS.txt
           ls -lh StopWatch_V17_15_31_Effects.app.bin
       - uses: actions/upload-artifact@v4
         with:
           name: StopWatch-V17-15-31-Effects-C152
           path: |
             build/v17-15/StopWatch_V17_15_31_Effects.app.bin
+            build/v17-15/StopWatch_V17_15_Editable_Source.zip
             build/v17-15/SHA256SUMS.txt
           if-no-files-found: error
