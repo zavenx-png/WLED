@@ -1,0 +1,88 @@
+name: StopWatch C152 V17.15 — 31 effects with yarn + thread visuals
+on:
+  push:
+    branches: [stopwatch-v17-15-five-thread-effects]
+    paths:
+      - 'stopwatch/StopWatchNative31V16/**'
+      - '.github/workflows/stopwatch-v17-15.yml'
+  workflow_dispatch:
+
+jobs:
+  build-v17-15:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: arduino/setup-arduino-cli@v2
+      - name: Install official M5Stack board package and libraries
+        run: |
+          arduino-cli config init
+          arduino-cli config add board_manager.additional_urls https://static-cdn.m5stack.com/resource/arduino/package_m5stack_index.json
+          arduino-cli core update-index
+          arduino-cli core install m5stack:esp32
+          arduino-cli lib install M5Unified
+          arduino-cli lib install M5GFX
+      - name: Check exact V17.14 baseline and new effect integration
+        run: |
+          sed -i -E "s/^#define STOPWATCH_FONT_TRIAL [0-9]+/#define STOPWATCH_FONT_TRIAL 2/" stopwatch/StopWatchNative31V16/assets/FontTrial.h
+          python3 - <<'PY'
+          import re
+          from pathlib import Path
+          src=Path('stopwatch/StopWatchNative31V16/NativeApp.cpp').read_text()
+          old=Path('stopwatch/StopWatchNative31V16/assets/StringFestivalV1714.h').read_text()
+          new=Path('stopwatch/StopWatchNative31V16/assets/StringFestivalV1715.h').read_text()
+          names=re.findall(r'"([^"]+)"',re.search(r'EFFECT_NAMES\[VIS_COUNT\] = \{(.*?)\};',src,re.S).group(1))
+          originals=['zaven Chromatic EQ','Robot Shuffle','Warehouse House Duo',
+            'Matrix Phosphor','zaven Psychedelic Halo','zaven Electric Aurora',
+            'zaven Flowing Halo','Prism EQ','Psychedelic Bloom','Vapor Scope',
+            'Frequency Towers','Radial Spectrum','Heartbeat Neon','Round Resonator',
+            'Kaleidoscope Reactor','Fibonacci Sunflower','Infinity Tunnel',
+            'Cymatic Mandala','Orbital Harmonics','Nebula Particles',
+            'zaven Kaleidoscope','zaven Round Resonator','zaven Fibonacci Spiral',
+            'Star Marionette','Warp Drive Loom','Cosmic Patchwork Moth']
+          additions=['Yarnfall Cathedral','Celestial Buttonwork','Spiral Spindle',
+            'Aurora Fishing Net','Tidal Cable Knit']
+          assert names == originals+additions, names
+          ids=[int(v) for v in re.search(r'ORIGINAL_EFFECT_ID\[VIS_COUNT\]=\{([^}]+)\}',src).group(1).split(',')]
+          assert ids[:26]==[23,22,20,4,24,29,30,1,2,3,6,7,8,9,10,11,12,13,17,19,25,26,27,43,44,48]
+          assert ids[26:]==[49,50,51,52,53] and len(set(ids))==31
+          mic=re.search(r'AUTO_MIC_TYPES\[VIS_COUNT\]=\{([^}]+)\}',src,re.S).group(1)
+          assert len(re.findall(r'MIC_\w+',mic))==31
+          assert 'if(renderStringFestivalV1714(id))return;' in src
+          assert 'if(renderStringFestivalV1715(id))return;' in src
+          assert 'case 43:' in old and 'case 44:' in old and 'case 48:' in old
+          assert 'case 49:' in new and 'case 50:' in new and 'case 51:' in new
+          assert 'case 52:' in new and 'case 53:' in new
+          assert 'static void selectEffect(int d)' in src
+          nav=re.search(r'static void selectEffect\(int d\)\{(.*?)\n\}',src,re.S)
+          assert nav and 'vibration(' not in nav.group(1)
+          assert 'selectEffect(dx>0?-1:+1)' in src
+          assert 'effectID=0;' in src
+          assert 'uint8_t oldGain[33]' in src
+          assert 'const bool hasV1714=' in src and 'const bool hasV1715=' in src
+          assert 'if(hasV1714)return slot<26?slot:0xff;' in src
+          assert 'sourceCount=hasV1715?31:(hasV1714?26:' in src
+          assert 'prefs.putUChar("s1715",20);' in src
+          assert 'prefs.putUChar("eff1715"' in src
+          assert 'prefs.putBytes("gain1715"' in src
+          assert 'prefs.putBytes("fav1715"' in src
+          assert 'if(originalEffect(effectID)>=49)return profile==2?14:20' in src
+          assert 'case 49:' not in old and 'case 49:' in new
+          assert '#define STOPWATCH_FONT_TRIAL 2' in Path('stopwatch/StopWatchNative31V16/assets/FontTrial.h').read_text()
+          print('PASS: original 26 preserved by name/ID; 5 new renderers; no effect-switch vibration; isolated V17.15 preferences')
+          PY
+      - name: Compile 31-effect application for M5Stack StopWatch C152
+        run: |
+          mkdir -p build/v17-15
+          arduino-cli compile --fqbn m5stack:esp32:m5stack_stopwatch --output-dir build/v17-15 --warnings all stopwatch/StopWatchNative31V16
+          cp build/v17-15/StopWatchNative31V16.ino.bin build/v17-15/StopWatch_V17_15_31_Effects.app.bin
+          cd build/v17-15
+          sha256sum StopWatch_V17_15_31_Effects.app.bin > SHA256SUMS.txt
+          ls -lh StopWatch_V17_15_31_Effects.app.bin
+      - uses: actions/upload-artifact@v4
+        with:
+          name: StopWatch-V17-15-31-Effects-C152
+          path: |
+            build/v17-15/StopWatch_V17_15_31_Effects.app.bin
+            build/v17-15/SHA256SUMS.txt
+          if-no-files-found: error
