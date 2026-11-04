@@ -231,6 +231,22 @@ static bool renderStringFestivalV1713(uint8_t id){
    sfLine(CX+k*9,CY-36,ax,CY-194,k%2?sfCyan():sfViolet(),.31f,2);
    sfLine(CX+k*9,CY+36,ax,CY+194,k%2?sfPink():sfGold(),.31f,2);
   }
+  // A physical loom: broad metal top/bottom beams and upright silver columns.
+  // The large filled structures add material and depth missing in the old sketch.
+  sfLine(87,77,379,77,sfGold(),.78f,12);
+  sfLine(87,387,379,387,sfGold(),.78f,12);
+  sfLine(88,77,88,387,sfIvory(),.67f,9);
+  sfLine(378,77,378,387,sfIvory(),.67f,9);
+  for(int i=0;i<9;i++){
+   float x=107+i*31;
+   sfLine(x,98,x,366,i%2?sfCyan():sfViolet(),.43f,2);
+  }
+  // Substantial satin weft ribbons cross the warp, with a cyclic shuttle pass.
+  for(int row=0;row<5;row++){
+   const float y=128+row*53+10*sinf(t*.63f+row*.71f);
+   sfBezier(105,y,174,y+16*sinf(row+t*.28f),309,y-14*sinf(row+t*.28f),363,y,
+            row%2?sfPink():sfCyan(),.47f+row*.095f,4);
+  }
   // Gold shuttle: a strong diamond silhouette flying across the portal.
   const float sh=CX+154*sinf(t*.9f);
   const float sy=CY+28*sinf(t*1.4f);
@@ -365,6 +381,18 @@ static bool renderStringFestivalV1713(uint8_t id){
    cv.fillTriangle(x0,243,mid,244,low,388,rgb(19,145,174));
    cv.fillTriangle(x0,243,low,388,CX+side*57,350,rgb(31,54,144));
    cv.fillTriangle(CX+side*75,155,tip,76,mid,244,rgb(146,49,220));
+   // Large shaded appliqué panels, not just four flat kite triangles.
+   cv.fillTriangle(CX+side*75,164,CX+side*177*flap,105,
+                   CX+side*126*flap,215,rgb(233,112,190));
+   cv.fillTriangle(CX+side*66,282,CX+side*135*flap,335,
+                   CX+side*74*flap,354,rgb(54,194,236));
+   sfLine(CX+side*78,160,CX+side*151*flap,116,sfIvory(),.40f,2);
+   sfLine(CX+side*75,283,CX+side*125*flap,345,sfIvory(),.40f,2);
+   for(int stitch=1;stitch<=8;stitch++){
+    float p=stitch/9.f;
+    float px=x0+(tip-x0)*p,py=208+(76-208)*p;
+    dot(px+side*6,py,2,tint(sfIvory(),.66f));
+   }
    // 2 luminous eye spots evoke an actual moth's wings.
    sfOrb(CX+side*(106*flap),169,27,rgb(39,28,106),sfCyan());
    dot(CX+side*(106*flap),169,12,rgb(14,11,45));
@@ -433,6 +461,27 @@ static bool renderStringFestivalV1713(uint8_t id){
   float topY=97+107*fill,botY=371-118*fill;
   cv.fillTriangle(127,topY,339,topY,CX,226,tint(sfPink(),.29f));
   cv.fillTriangle(127,botY,339,botY,CX,245,tint(sfCyan(),.37f));
+  // Woven reservoirs occupy BOTH chambers; these large bright threads
+  // turn the previous empty triangles into visible cosmic-silk surfaces.
+  for(int k=0;k<9;k++){
+   float y=109+k*11.5f;
+   float span=104*(1.f-(y-80.f)/151.f);
+   sfLine(CX-span,y,CX+span,y+2*sinf(t*.38f+k*.48f),
+          k%3==0?sfGold():k%2?sfPink():sfViolet(),.48f+k*.037f,4);
+  }
+  for(int k=0;k<10;k++){
+   float y=265+k*10.5f;
+   float span=22+(y-252)*.63f;
+   sfLine(CX-span,y,CX+span,y+2*sinf(t*.29f+k*.62f),
+          k%3==0?sfGold():k%2?sfCyan():sfPink(),.50f+k*.028f,4);
+  }
+  for(int j=0;j<15;j++){
+   const float p=frac(j*.618f+t*.11f);
+   const float y=260+p*106;
+   const float span=17+(y-250)*.6f;
+   const float x=CX+(2*frac(j*.381f)-1)*span;
+   dot(x,y,j%4?2:3,j%3?sfCyan():sfGold());
+  }
   // Animated bundled filaments spiral through the narrow glass neck.
   for(int j=0;j<9;j++){
    const float phase=t*.63f+j*TAU/9.f;
