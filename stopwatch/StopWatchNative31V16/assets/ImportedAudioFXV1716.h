@@ -1,6 +1,6 @@
 // V17.16: six renderers ported from stopwatch-fx.zip, with four explicit
 // variants. Uses ONLY NativeApp.cpp's mic/FFT, bins[32], kick/bass/mids/highs,
-// and beatStamp. The uploaded corona::AudioFeatures / esp_dsp are NOT included.
+// and beatStamp. The alternate mic and transform implementations supplied in the ZIP are NOT included.
 // Adapted for the existing 466x466 RGB565 PSRAM sprite and round OLED.
 #pragma once
 #include <esp_heap_caps.h>
