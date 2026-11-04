@@ -24,16 +24,15 @@ constexpr int NFFT=512, FS=16000, NBANDS=32;
 constexpr float PI_F=3.14159265358979323846f, TAU=6.28318530717958647692f;
 static const char *const EFFECT_NAMES[VIS_COUNT] = {
  "zaven Chromatic EQ",
+ "Robot Shuffle",
+ "Warehouse House Duo",
+ "Matrix Phosphor",
  "zaven Psychedelic Halo",
- "zaven Kaleidoscope",
- "zaven Round Resonator",
- "zaven Fibonacci Spiral",
  "zaven Electric Aurora",
  "zaven Flowing Halo",
  "Prism EQ",
  "Psychedelic Bloom",
  "Vapor Scope",
- "Matrix Phosphor",
  "Frequency Towers",
  "Radial Spectrum",
  "Heartbeat Neon",
@@ -44,10 +43,11 @@ static const char *const EFFECT_NAMES[VIS_COUNT] = {
  "Cymatic Mandala",
  "Orbital Harmonics",
  "Nebula Particles",
- "Warehouse House Duo",
- "Robot Shuffle",
+ "zaven Kaleidoscope",
+ "zaven Round Resonator",
+ "zaven Fibonacci Spiral"
 };
-static constexpr uint8_t ORIGINAL_EFFECT_ID[VIS_COUNT]={23,24,25,26,27,29,30,1,2,3,4,6,7,8,9,10,11,12,13,17,19,20,22};
+static constexpr uint8_t ORIGINAL_EFFECT_ID[VIS_COUNT]={23,22,20,4,24,29,30,1,2,3,6,7,8,9,10,11,12,13,17,19,25,26,27};
 static inline uint8_t originalEffect(uint8_t i);
 // V12 presentation order -> V13, prior to the two V16.8 effect removals.
 static constexpr uint8_t V12_INDEX_TO_V13[31]={9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,0,1,2,3,4,5,6,7,8,28,29,30};
@@ -76,6 +76,15 @@ static inline uint8_t toV171Effect(uint8_t n,uint8_t savedRevision){
  return n<22?n:n-1;
 }
 
+
+// V17.8 exact bijective remap of V17.1-V17.7 menu positions.
+static constexpr uint8_t V171_TO_V178[VIS_COUNT]={0,4,20,21,22,5,6,7,8,9,3,10,11,12,13,14,15,16,17,18,19,2,1};
+static inline uint8_t toV178Effect(uint8_t n,uint8_t savedRevision){
+ if(savedRevision>=17)return n<VIS_COUNT?n:0xff;
+ if(savedRevision<16)n=toV171Effect(n,savedRevision);
+ if(n>=VIS_COUNT)return 0xff;
+ return V171_TO_V178[n];
+}
 
 static const char *const Z_NAMES[Z_COUNT]={
  "Nokia Snake","Chunchun Harness","Neural Pulse","Plasma Veins","Electric Organism","Gravity Well",
@@ -179,7 +188,7 @@ uint32_t batteryDrainLast=0,batteryCheckpointMs=0;
 int batteryCheckpointPct=-1,batteryEstimatedMinutes=-1;
 bool batteryPrevCharging=false;
 // Persistent, compact NVS-backed favorites and complete per-scene parameters.
-static constexpr uint64_t FAVORITE_DEFAULT=(1ULL<<4)|(1ULL<<7)|(1ULL<<17)|(1ULL<<22);
+static constexpr uint64_t FAVORITE_DEFAULT=(1ULL<<22)|(1ULL<<7)|(1ULL<<16)|(1ULL<<1);
 static constexpr uint32_t SCENE_MAGIC=0x3253435A; // "ZCS1" scene format version
 static const char *const SCENE_LABELS[4]={"WARMUP","PEAK HOUR","HYPNOTIC","AFTERHOURS"};
 struct SceneData {
@@ -342,11 +351,11 @@ static void registerOnset(uint32_t now){
 // expansions; wave: the oscilloscope trace. Rendering functions are unchanged.
 enum AutoMicType : uint8_t {MIC_FIXED=0,MIC_SPECTRUM=1,MIC_BASS=2,MIC_ENERGY=3,MIC_WAVE=4};
 static constexpr uint8_t AUTO_MIC_TYPES[VIS_COUNT]={
- MIC_SPECTRUM, MIC_BASS, MIC_ENERGY, MIC_SPECTRUM, MIC_BASS,
+ MIC_SPECTRUM, MIC_ENERGY, MIC_ENERGY, MIC_WAVE, MIC_BASS,
  MIC_ENERGY, MIC_ENERGY, MIC_SPECTRUM, MIC_ENERGY, MIC_ENERGY,
- MIC_WAVE, MIC_SPECTRUM, MIC_SPECTRUM, MIC_WAVE, MIC_ENERGY,
- MIC_ENERGY, MIC_ENERGY, MIC_BASS, MIC_BASS, MIC_SPECTRUM,
- MIC_ENERGY, MIC_ENERGY, MIC_ENERGY
+ MIC_SPECTRUM, MIC_SPECTRUM, MIC_WAVE, MIC_ENERGY, MIC_ENERGY,
+ MIC_ENERGY, MIC_BASS, MIC_BASS, MIC_SPECTRUM, MIC_ENERGY,
+ MIC_ENERGY, MIC_SPECTRUM, MIC_BASS
 };
 static_assert(sizeof(AUTO_MIC_TYPES)/sizeof(AUTO_MIC_TYPES[0])==VIS_COUNT,"auto mic profile count");
 static constexpr float AUTO_MIC_TARGET=.80f;
@@ -480,26 +489,26 @@ static void loadSettings(){
  const bool hadSaved=prefs.isKey("effect")||prefs.isKey("favs")||prefs.isKey("gains")||prefs.isKey("scn0");
  const uint8_t sortVersion=prefs.getUChar("sortrev",12);
  const bool legacyV12=hadSaved&&sortVersion<13;
- const bool remapToV171=hadSaved&&sortVersion<16;
+ const bool remapToV178=hadSaved&&sortVersion<17;
 
  // Selected effect: old 06/09 are intentionally removed; fall back to first effect.
  uint8_t oldSelected=prefs.getUChar("effect",0);
- uint8_t mapped=remapToV171?toV171Effect(oldSelected,sortVersion):oldSelected;
+ uint8_t mapped=remapToV178?toV178Effect(oldSelected,sortVersion):oldSelected;
  effectID=mapped<VIS_COUNT?mapped:0;
 
  brightness=clampi(prefs.getUChar("bright",52),8,100);
  profile=prefs.getUChar("profile",1)%3;
  uint64_t oldFavorites=FAVORITE_DEFAULT;
  if(prefs.getBytes("favs",&oldFavorites,sizeof(oldFavorites))!=sizeof(oldFavorites)){
-  oldFavorites=remapToV171
+  oldFavorites=remapToV178
     ? ((1ULL<<4)|(1ULL<<9)|(1ULL<<19)|(1ULL<<27)|(1ULL<<28)|(1ULL<<29)|(1ULL<<30))
     : FAVORITE_DEFAULT;
   if(legacyV12)oldFavorites=(1ULL<<0)|(1ULL<<10)|(1ULL<<18)|(1ULL<<23)|(1ULL<<28)|(1ULL<<29)|(1ULL<<30);
  }
- if(remapToV171){
+ if(remapToV178){
   favoriteBits=0;
   for(uint8_t i=0;i<31;i++)if(oldFavorites&(1ULL<<i)){
-   uint8_t dest=toV171Effect(i,sortVersion);
+   uint8_t dest=toV178Effect(i,sortVersion);
    if(dest<VIS_COUNT)favoriteBits|=(1ULL<<dest);
   }
  }else favoriteBits=oldFavorites;
@@ -508,10 +517,10 @@ static void loadSettings(){
 
  uint64_t storedManual=0;
  if(prefs.getBytes("micmodes",&storedManual,sizeof(storedManual))!=sizeof(storedManual))storedManual=0;
- if(remapToV171){
+ if(remapToV178){
   micManualMask=0;
   for(uint8_t i=0;i<31;i++)if(storedManual&(1ULL<<i)){
-   uint8_t dest=toV171Effect(i,sortVersion);
+   uint8_t dest=toV178Effect(i,sortVersion);
    if(dest<VIS_COUNT)micManualMask|=1ULL<<dest;
   }
  }else micManualMask=storedManual;
@@ -523,7 +532,7 @@ static void loadSettings(){
   SceneData v;
   size_t n=prefs.getBytes((String("scn")+String(j)).c_str(),&v,sizeof(v));
   if(n!=sizeof(v)||v.magic!=SCENE_MAGIC)continue;
-  uint8_t dest=remapToV171?toV171Effect(v.effect,sortVersion):v.effect;
+  uint8_t dest=remapToV178?toV178Effect(v.effect,sortVersion):v.effect;
   if(dest>=VIS_COUNT)continue; // A scene selecting a removed effect cannot be loaded.
   v.effect=dest;scenes[j]=v;
  }
@@ -535,16 +544,16 @@ static void loadSettings(){
  size_t nGain=prefs.getBytesLength("gains");
  if(nGain==23||nGain==24||nGain==26||nGain==28||nGain==31)prefs.getBytes("gains",oldGain,nGain);
  for(uint8_t i=0;i<VIS_COUNT;i++)gainPct[i]=135;
- int limit=remapToV171?31:VIS_COUNT;
+ int limit=remapToV178?31:VIS_COUNT;
  for(int i=0;i<limit;i++){
-  uint8_t dest=remapToV171?toV171Effect((uint8_t)i,sortVersion):(uint8_t)i;
+  uint8_t dest=remapToV178?toV178Effect((uint8_t)i,sortVersion):(uint8_t)i;
   if(dest>=VIS_COUNT)continue;
   if(oldGain[i]>=20&&oldGain[i]<=250)gainPct[dest]=oldGain[i];
  }
 
  // Text fields are stored by menu index; old 07/08 shift to 06/07 after removals.
  for(int i=0;i<31;i++){
-  uint8_t dest=remapToV171?toV171Effect((uint8_t)i,sortVersion):(uint8_t)i;
+  uint8_t dest=remapToV178?toV178Effect((uint8_t)i,sortVersion):(uint8_t)i;
   if(dest>=VIS_COUNT||!isTextEffect(dest))continue;
   userText[dest]=prefs.getString((String("t")+String(i)).c_str(),"");
  }
@@ -564,7 +573,7 @@ static void loadSettings(){
  micGain=gainPct[effectID]/100.f;
 
  // Make upgrade idempotent. Commit the marker only after all values are written.
- if(remapToV171){
+ if(remapToV178){
   prefs.putUChar("effect",effectID);
   prefs.putBytes("favs",&favoriteBits,sizeof(favoriteBits));
   prefs.putBytes("micmodes",&micManualMask,sizeof(micManualMask));
@@ -574,10 +583,10 @@ static void loadSettings(){
   for(uint8_t j=0;j<4;j++)if(scenes[j].magic==SCENE_MAGIC)
     prefs.putBytes((String("scn")+String(j)).c_str(),&scenes[j],sizeof(SceneData));
  }
- if(prefs.getUChar("sortrev",0)!=16)prefs.putUChar("sortrev",16);
- // Always boot directly into the FINAL effect (Robot Shuffle).
- // Do not persist the forced startup choice, so older rollback preferences survive.
- effectID=VIS_COUNT-1;
+ if(prefs.getUChar("sortrev",0)!=17)prefs.putUChar("sortrev",17);
+ // V17.8: reboot always enters effect 1, Chromatic EQ.
+ // The forced startup choice is not written into saved preferences.
+ effectID=0;
  micGain=gainPct[effectID]/100.f;
 }
 static void persistEffect(){prefs.putUChar("effect",effectID);micGain=gainPct[effectID]/100.f;}
