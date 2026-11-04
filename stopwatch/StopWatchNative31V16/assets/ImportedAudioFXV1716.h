@@ -8,6 +8,8 @@ static constexpr int AF_G=116;
 static lgfx::LGFX_Sprite afSmall(&M5.Display);
 static bool afSmallOK=false,afSmallBad=false;
 static uint8_t *afHeat=nullptr;
+static float *afRmap=nullptr,*afAmap=nullptr;
+static bool afMapOK=false;
 static int16_t *afWave=nullptr,*afPrev=nullptr;
 static float afX[9],afY[9],afVX[9],afVY[9],afRad[9];
 static float afPX[300],afPY[300],afPZ[300],afEX[300],afEY[300],afEZ[300];
@@ -60,6 +62,18 @@ static void afColors(int pal){
   afLut[i]=afSwap(rgb((int)(rr*255),(int)(gg*255),(int)(bb*255)));
  }
 }
+static bool afKaleidoMap(){
+ if(afMapOK)return true;
+ if(!afRmap)afRmap=(float*)heap_caps_malloc(AF_G*AF_G*sizeof(float),MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT);
+ if(!afAmap)afAmap=(float*)heap_caps_malloc(AF_G*AF_G*sizeof(float),MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT);
+ if(!afRmap||!afAmap)return false;
+ for(int y=0;y<AF_G;y++)for(int x=0;x<AF_G;x++){
+  const float X=(x+.5f)*2.f/AF_G-1.f,Y=(y+.5f)*2.f/AF_G-1.f;
+  afRmap[y*AF_G+x]=sqrtf(X*X+Y*Y);
+  afAmap[y*AF_G+x]=atan2f(Y,X);
+ }
+ afMapOK=true;return true;
+}
 static void afResetBlobs(){
  for(int i=0;i<9;i++){
   float a=TAU*i/9.f,d=.13f+.23f*((i*37)%11)/11.f;
@@ -82,7 +96,7 @@ static void afInit(uint8_t id){
  cv.fillScreen(0);
  if(!afTrigReady){for(int k=0;k<1024;k++)afSine[k]=sinf(TAU*k/1024.f);afTrigReady=true;}
  if(id==55||id==61)afResetBlobs();
- if(id==56||id==62){
+ if(id==56){
   if(!afWave)afWave=(int16_t*)heap_caps_calloc(AF_G*AF_G,sizeof(int16_t),MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT);
   if(!afPrev)afPrev=(int16_t*)heap_caps_calloc(AF_G*AF_G,sizeof(int16_t),MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT);
   if(afWave)memset(afWave,0,AF_G*AF_G*2);
@@ -187,7 +201,7 @@ static void afRipple(bool echo,bool onset){
  if(echo)circ(CX,CY,190,tint(rgb(225,127,255),.27f),2);
 }
 static void afKaleido(bool hyper,bool onset){
- if(!afGrid())return;
+ if(!afGrid()||!afKaleidoMap())return;
  if(onset&&afBeatCount-afFoldBeat>=(hyper?8:24)){
   afFoldBeat=afBeatCount;
   static const int folds[]={6,8,12,10,16};
@@ -198,9 +212,8 @@ static void afKaleido(bool hyper,bool onset){
  const float z=(hyper?9.f:6.f)+5.f*bass+2.f*afBassPulse;
  uint16_t *pix=(uint16_t*)afSmall.getBuffer();
  for(int y=0;y<AF_G;y++)for(int x=0;x<AF_G;x++){
-  float X=(x+.5f)*2.f/AF_G-1.f,Y=(y+.5f)*2.f/AF_G-1.f;
-  float r=sqrtf(X*X+Y*Y);if(r>1.f){pix[y*AF_G+x]=0;continue;}
-  float a=atan2f(Y,X)+rot;
+  const int q=y*AF_G+x;float r=afRmap[q];if(r>1.f){pix[q]=0;continue;}
+  float a=afAmap[q]+rot;
   a-=seg*floorf(a/seg);a=fabsf(a-seg*.5f);
   float U=r*afCos(a)*z,V=r*afSin(a)*z;
   float value=(afSin(U*1.9f+afTime*.86f)+afSin(V*2.4f-afTime*.74f)
