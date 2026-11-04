@@ -35,7 +35,7 @@ jobs:
           grep -Fq 'nameDeleteConsumed=true' stopwatch/StopWatchNative31V16/NativeApp.cpp
           grep -Fq 'sampleBatteryDrain()' stopwatch/StopWatchNative31V16/NativeApp.cpp
           grep -Fq 'ESTIMATING' stopwatch/StopWatchNative31V16/NativeApp.cpp
-          grep -Fq 'cv.drawString("BATTERY",CX,85)' stopwatch/StopWatchNative31V16/NativeApp.cpp
+          grep -Fq 'cv.drawString("BATTERY",CX,89)' stopwatch/StopWatchNative31V16/NativeApp.cpp
           grep -Fq 'user-approved minimal battery mock' stopwatch/StopWatchNative31V16/NativeApp.cpp
           grep -Fq 'revert Robot Shuffle names to the exact V17.4 font size' stopwatch/StopWatchNative31V16/NativeApp.cpp
           grep -Fq 'textC("BASS",CX,CY-15,rgb(217,231,255),4)' stopwatch/StopWatchNative31V16/assets/FidelityClassic167.h
