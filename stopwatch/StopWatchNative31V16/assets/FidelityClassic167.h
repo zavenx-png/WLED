@@ -15,6 +15,36 @@ static inline void fxPoly(int sides,float radius,float turn,uint16_t color,int w
   line(px,py,x,y,color,width);px=x;py=y;
  }
 }
+// V17.7: a small speaker-stack illustration built from opaque geometric
+// polygons, inspired by Funktion-One Resolution's faceted grey horns and
+// violet enclosure. Both boxes are static: zero heap allocations per frame.
+static void fxFunktionHornSpeaker(int x,int y){
+ const uint16_t shell=rgb(38,29,62),trim=rgb(104,83,140);
+ cv.fillRoundRect(x,y,76,116,5,shell);
+ cv.drawRoundRect(x,y,76,116,5,trim);
+ // Angled grey horn mouth at top.
+ cv.fillRoundRect(x+7,y+7,62,65,3,rgb(157,161,180));
+ cv.fillTriangle(x+8,y+8,x+68,y+8,x+38,y+30,rgb(207,208,216));
+ cv.fillTriangle(x+8,y+9,x+8,y+71,x+35,y+40,rgb(113,118,141));
+ cv.fillTriangle(x+68,y+9,x+68,y+71,x+41,y+40,rgb(103,108,130));
+ cv.fillTriangle(x+9,y+70,x+67,y+70,x+38,y+51,rgb(75,81,108));
+ // The center white horn projects out of a deep, dark acoustic aperture.
+ cv.fillRoundRect(x+20,y+28,36,24,4,rgb(26,28,47));
+ cv.fillTriangle(x+15,y+37,x+61,y+37,x+39,y+32,rgb(222,225,230));
+ cv.fillTriangle(x+15,y+37,x+61,y+37,x+39,y+46,rgb(141,149,171));
+ // Smaller recessed high-frequency port beneath the main waveguide.
+ cv.fillRoundRect(x+24,y+57,28,10,2,rgb(45,51,73));
+ cv.fillTriangle(x+27,y+59,x+49,y+59,x+38,y+65,rgb(112,128,157));
+ // Deep lower bass opening characteristic of the Resolution cabinets.
+ cv.fillRoundRect(x+6,y+79,64,31,3,rgb(11,12,24));
+ cv.fillTriangle(x+11,y+82,x+38,y+104,x+38,y+82,rgb(37,32,60));
+ cv.fillTriangle(x+65,y+82,x+38,y+104,x+38,y+82,rgb(28,24,51));
+ cv.drawFastVLine(x+38,y+88,19,rgb(68,56,93));
+ cv.drawFastHLine(x+15,y+76,46,rgb(113,90,139));
+ // Tiny mounting bolts / grille points, without pixel-heavy fake text.
+ for(int side=0;side<2;side++)for(int row=0;row<2;row++)
+  cv.fillCircle(x+(side?69:7),y+13+row*52,1,rgb(201,197,209));
+}
 static inline float fxECG(float p){
  auto g=[](float x,float y,float w)->float{float z=(x-y)/w;return expf(-.5f*z*z);};
  return .18f*g(p,.18f,.044f)-.12f*g(p,.355f,.013f)+1.15f*g(p,.386f,.008f)
@@ -253,36 +283,52 @@ static bool fidelityClassic167(uint8_t id){
    fxPolarDot(r+scatter,a,s,fxInk(.69f+i*.005f+t*.025f,.24f+.64f*band(i%32)));
   }return true;
  }
- case 20:{ // 26 Warehouse House Duo: perspective floor grid + lasers BEHIND dancers
+ case 20:{ // 22 Warehouse House Duo: clean sweeping lasers + twin horn speakers
   black();
-  // V17.1 merge: transplant Ribbon Pirouette's original sweeping TOP lasers.
-  // Motorized club beams sweep back and forth independently of the dancers.
-  // Three strands per lamp form a visible moving light cone; brighter on kicks.
-  const float spotDrive=clampf(.28f+.62f*bass+.34f*energy);
-  for(int beam=0;beam<9;beam++){
-    float originX=42+beam*47,phase=t*(.57f+beam*.019f)+beam*1.31f;
-    float sweep=sinf(phase)*(.48f+.27f*spotDrive);
-    float targetX=originX+tan(fminf(1.15f,fmaxf(-1.15f,sweep)))*230.f;
-    uint16_t col=fxInk(.56f+beam*.064f+t*.009f,.22f+.48f*spotDrive);
-    for(int side=-2;side<=2;side++){
-      line(originX+side*2,29,targetX+side*21,408,tint(col,side==0?.90f:.20f),side==0?2:1);
-    }
-    glow(originX,28,3+int(3*spotDrive),col);
-    // Reflected floor pool follows the beam.
-    dot(targetX,410,4+int(4*spotDrive),tint(col,.37f));
-  }
-
-  // Warehouse's own floor, EQ, and duo figures remain intact below.
-  // Floor: horizon at y310, perspective rays and compressed depth lines.
-  for(int k=-10;k<=10;k++)line(CX,307,CX+k*47,H,tint(rgb(79,74,208),.38f));
-  for(int j=1;j<=9;j++){float v=j/9.f,y=307+161*v*v;
+  // Paint static floor / EQ FIRST. Previously these darker foreground lines
+  // were painted ON TOP of bright lasers and cut black marks through beams.
+  for(int k=-10;k<=10;k++)
+   line(CX,307,CX+k*47,H,tint(rgb(79,74,208),.38f));
+  for(int j=1;j<=9;j++){
+   float v=j/9.f,y=307+161*v*v;
    line(CX-235*v,y,CX+235*v,y,tint(rgb(155,85,235),.28f+.22f*v));
   }
-  // Match the shorter EQ geometry of final effect 23.
+  // Preserve the approved short Robot Shuffle equalizer footprint.
   for(int j=0;j<20;j++)
    cv.fillRect(6+j*23,H-25-int(55*band(j+2)),15,
                8+int(55*band(j+2)),
                tint(hue(.55f+j*.055f),.20f+.30f*energy));
+
+  // Motorized club spotlights: soft outer fans go down FIRST, and ALL
+  // bright central beams go down LAST. This removes dark strand crossings
+  // (and flooring marks) inside the luminous laser cores.
+  const float spotDrive=clampf(.28f+.62f*bass+.34f*energy);
+  float laserX[9],laserTarget[9];uint16_t laserColor[9];
+  for(int beam=0;beam<9;beam++){
+   const float originX=42+beam*47,phase=t*(.57f+beam*.019f)+beam*1.31f;
+   const float sweep=sinf(phase)*(.48f+.27f*spotDrive);
+   laserX[beam]=originX;
+   laserTarget[beam]=originX+tan(fminf(1.15f,fmaxf(-1.15f,sweep)))*230.f;
+   laserColor[beam]=fxInk(.56f+beam*.064f+t*.009f,.26f+.50f*spotDrive);
+  }
+  for(int beam=0;beam<9;beam++)for(int side=-2;side<=2;side++){
+   if(side==0)continue;
+   // Faint colored halos may cross; none can overpaint a bright centerline.
+   line(laserX[beam]+side*2,29,laserTarget[beam]+side*21,408,
+        tint(laserColor[beam],.26f),1);
+  }
+  for(int beam=0;beam<9;beam++){
+   line(laserX[beam],29,laserTarget[beam],408,
+        tint(laserColor[beam],.96f),2);
+   glow(laserX[beam],28,3+int(3*spotDrive),laserColor[beam]);
+   dot(laserTarget[beam],410,4+int(4*spotDrive),
+       tint(laserColor[beam],.39f));
+  }
+  // Purple, faceted horn-loaded cabinets in the visible top corners.
+  // Speakers sit IN FRONT of the ceiling beams, like a physical club PA.
+  fxFunktionHornSpeaker(66,94);
+  fxFunktionHornSpeaker(324,94);
+  // Preserve Warehouse's original two sound-reactive dancers.
   figure(150,303,1.f,beatClock+.2f,rgb(255,104,214));
   figure(318,303,1.f,beatClock+2.f,rgb(77,226,255));
   return true;
