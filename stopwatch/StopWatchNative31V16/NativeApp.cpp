@@ -19,7 +19,7 @@
 #undef sq
 #endif
 
-constexpr uint8_t VIS_COUNT=41, Z_COUNT=28, REMOTE_PAGES=5;
+constexpr uint8_t VIS_COUNT=27, Z_COUNT=28, REMOTE_PAGES=5;
 constexpr int NFFT=512, FS=16000, NBANDS=32;
 constexpr float PI_F=3.14159265358979323846f, TAU=6.28318530717958647692f;
 static const char *const EFFECT_NAMES[VIS_COUNT] = {
@@ -46,18 +46,12 @@ static const char *const EFFECT_NAMES[VIS_COUNT] = {
  "zaven Kaleidoscope",
  "zaven Round Resonator",
  "zaven Fibonacci Spiral",
- "Star Marionette",
  "Warp Drive Loom",
- "Cosmic Patchwork Moth",
- "Yarnfall Cathedral",
- "Celestial Buttonwork",
  "Spiral Spindle",
- "Aurora Fishing Net",
  "Tidal Cable Knit",
- "Corona", "Magma", "Ripple Tank", "Kaleido", "Inferno", "Spike Ball",
- "Corona Prism (variant)", "Magma Reactor (variant)", "Inferno Icefire (variant)", "Spike Ball Nova (variant)"
+ "Spike Ball Nova (variant)"
 };
-static constexpr uint8_t ORIGINAL_EFFECT_ID[VIS_COUNT]={23,22,20,4,24,29,30,1,2,3,6,7,8,9,10,11,12,13,17,19,25,26,27,43,44,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63};
+static constexpr uint8_t ORIGINAL_EFFECT_ID[VIS_COUNT]={23,22,20,4,24,29,30,1,2,3,6,7,8,9,10,11,12,13,17,19,25,26,27,44,51,53,63};
 static inline uint8_t originalEffect(uint8_t i);
 // V12 presentation order -> V13, prior to the two V16.8 effect removals.
 static constexpr uint8_t V12_INDEX_TO_V13[31]={9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,0,1,2,3,4,5,6,7,8,28,29,30};
@@ -105,6 +99,16 @@ static inline uint8_t toV1714Index(uint8_t n,bool fromV1713){
  if(n==25)return 23; // Star Marionette (was 26)
  if(n==26)return 24; // Warp Drive Loom (was 27)
  if(n==30)return 25; // Cosmic Patchwork Moth (was 31)
+ return 0xff;
+}
+// V17.17: menu migration from V17.16 and V17.15 (first 31 IDs shared).
+// Removed effects are intentionally omitted; retain last unreviewed Nova.
+static inline uint8_t toV1717Index(uint8_t n){
+ if(n<23)return n;
+ if(n==24)return 23; // Warp Drive Loom
+ if(n==28)return 24; // Spiral Spindle
+ if(n==30)return 25; // Tidal Cable Knit
+ if(n==40)return 26; // Spike Ball Nova, pending feedback
  return 0xff;
 }
 static const char *const Z_NAMES[Z_COUNT]={
@@ -188,7 +192,7 @@ static bool gainIsManual(uint8_t id){return id<VIS_COUNT && (micManualMask&(1ULL
 static void setGainManual(uint8_t id,bool manual){
  if(id>=VIS_COUNT)return;
  if(manual)micManualMask|=(1ULL<<id);else micManualMask&=~(1ULL<<id);
- prefs.putBytes("man1716",&micManualMask,sizeof(micManualMask));
+ prefs.putBytes("man1717",&micManualMask,sizeof(micManualMask));
 }
 String userText[VIS_COUNT];String sharedName="",blueRobot="",pinkRobot="";
 static const String DEFAULT_WORD="zaven";
@@ -225,7 +229,7 @@ bool favoritesOnly=false,adaptiveRender=true,displayBlank=false;
 uint8_t libraryPage=0,remoteIdleSecs=20;
 uint32_t lastRemoteActivity=0;
 static bool isFavorite(uint8_t i){return i<VIS_COUNT && (favoriteBits&(1ULL<<i));}
-static void storeLibrary(){prefs.putBytes("fav1716",&favoriteBits,sizeof(favoriteBits));prefs.putBool("favonly",favoritesOnly);}
+static void storeLibrary(){prefs.putBytes("fav1717",&favoriteBits,sizeof(favoriteBits));prefs.putBool("favonly",favoritesOnly);}
 static void vibration(uint8_t strength,int ms);
 static inline int clampi(int v,int a,int b);
 static void saveNames();
@@ -234,9 +238,9 @@ static void saveScene(uint8_t slot){
  v.palette=selectedPalette;v.harnessBrightness=remoteBrightness;v.speed=remoteSpeed;v.intensity=remoteIntensity;v.remoteFx=remoteSelected;
  v.adaptive=adaptiveRender?1:0;v.remoteIdle=remoteIdleSecs;
  sharedName.toCharArray(v.name,sizeof(v.name));blueRobot.toCharArray(v.blue,sizeof(v.blue));pinkRobot.toCharArray(v.pink,sizeof(v.pink));
- scenes[slot]=v;prefs.putBytes((String("sc1716")+String(slot)).c_str(),&v,sizeof(v));
+ scenes[slot]=v;prefs.putBytes((String("sc1717")+String(slot)).c_str(),&v,sizeof(v));
  // Keep original SceneData binary layout compatible with V11-V15.
- prefs.putBool((String("scna1716")+String(slot)).c_str(),gainIsManual(effectID));
+ prefs.putBool((String("scna1717")+String(slot)).c_str(),gainIsManual(effectID));
  vibration(170,72);
 }
 static void loadScene(uint8_t slot){
@@ -249,14 +253,14 @@ static void loadScene(uint8_t slot){
  selectedPalette=clampi(v.palette,0,PAL_COUNT-1);remoteBrightness=v.harnessBrightness;remoteSpeed=v.speed;
  remoteIntensity=v.intensity;remoteSelected=clampi(v.remoteFx,0,Z_COUNT+WLED_COUNT-1);
  adaptiveRender=v.adaptive!=0;remoteIdleSecs=v.remoteIdle==0?0:clampi(v.remoteIdle,10,120);favoritesOnly=false;
- prefs.putUChar("eff1716",effectID);prefs.putUChar("bright",brightness);prefs.putUChar("profile",profile);
- prefs.putBool("adaptive",adaptiveRender);prefs.putUChar("idle",remoteIdleSecs);prefs.putBytes("gain1716",gainPct,sizeof(gainPct));
+ prefs.putUChar("eff1717",effectID);prefs.putUChar("bright",brightness);prefs.putUChar("profile",profile);
+ prefs.putBool("adaptive",adaptiveRender);prefs.putUChar("idle",remoteIdleSecs);prefs.putBytes("gain1717",gainPct,sizeof(gainPct));
  storeLibrary();saveNames();M5.Display.setBrightness((uint8_t)(brightness*255/100));
  // No automatic transmissions from a recalled scene: avoid unexpected harness changes.
  if(!remote)setCpuFrequencyMhz(profile==2?160:240);
  overlay=NONE;vibration(180,85);
 }
-static void clearScene(uint8_t slot){if(slot>=4)return;scenes[slot]=SceneData();prefs.remove((String("sc1716")+String(slot)).c_str());vibration(140,70);}
+static void clearScene(uint8_t slot){if(slot>=4)return;scenes[slot]=SceneData();prefs.remove((String("sc1717")+String(slot)).c_str());vibration(140,70);}
 static uint8_t nextFavorite(uint8_t start,int dir){
  for(int n=0;n<VIS_COUNT;n++){start=(start+VIS_COUNT+(dir<0?-1:1))%VIS_COUNT;if(isFavorite(start))return start;}return start;
 }
@@ -372,15 +376,7 @@ static void registerOnset(uint32_t now){
 // expansions; wave: the oscilloscope trace. Rendering functions are unchanged.
 enum AutoMicType : uint8_t {MIC_FIXED=0,MIC_SPECTRUM=1,MIC_BASS=2,MIC_ENERGY=3,MIC_WAVE=4};
 static constexpr uint8_t AUTO_MIC_TYPES[VIS_COUNT]={
- MIC_SPECTRUM, MIC_ENERGY, MIC_ENERGY, MIC_WAVE, MIC_BASS,
- MIC_ENERGY, MIC_ENERGY, MIC_SPECTRUM, MIC_ENERGY, MIC_ENERGY,
- MIC_SPECTRUM, MIC_SPECTRUM, MIC_WAVE, MIC_ENERGY, MIC_ENERGY,
- MIC_ENERGY, MIC_BASS, MIC_BASS, MIC_SPECTRUM, MIC_ENERGY,
- MIC_ENERGY, MIC_SPECTRUM, MIC_BASS,
- MIC_FIXED, MIC_FIXED, MIC_FIXED,
- MIC_ENERGY, MIC_BASS, MIC_BASS, MIC_ENERGY, MIC_ENERGY,
- MIC_SPECTRUM, MIC_BASS, MIC_WAVE, MIC_ENERGY, MIC_ENERGY, MIC_SPECTRUM,
- MIC_SPECTRUM, MIC_BASS, MIC_ENERGY, MIC_SPECTRUM
+ MIC_SPECTRUM, MIC_ENERGY, MIC_ENERGY, MIC_WAVE, MIC_BASS, MIC_ENERGY, MIC_ENERGY, MIC_SPECTRUM, MIC_ENERGY, MIC_ENERGY, MIC_SPECTRUM, MIC_SPECTRUM, MIC_WAVE, MIC_ENERGY, MIC_ENERGY, MIC_ENERGY, MIC_BASS, MIC_BASS, MIC_SPECTRUM, MIC_ENERGY, MIC_ENERGY, MIC_SPECTRUM, MIC_BASS, MIC_FIXED, MIC_BASS, MIC_ENERGY, MIC_SPECTRUM
 };
 static_assert(sizeof(AUTO_MIC_TYPES)/sizeof(AUTO_MIC_TYPES[0])==VIS_COUNT,"auto mic profile count");
 static constexpr float AUTO_MIC_TARGET=.80f;
@@ -505,39 +501,41 @@ static void saveNames(){
  prefs.putString("globalname",sharedName);
  for(int i=0;i<VIS_COUNT;i++)if(isTextEffect(i)){
    userText[i]=sharedName;
-   prefs.putString((String("t1716")+String(i)).c_str(),sharedName);
+   prefs.putString((String("t1717")+String(i)).c_str(),sharedName);
  }
  prefs.putString("bluerobot",blueRobot);prefs.putString("pinkrobot",pinkRobot);
 }
 static void loadSettings(){
  prefs.begin("clubnative31",false);
  // V17.14 uses separate index-based NVS keys so V17.13 rollback remains safe.
+ const bool hasV1717=prefs.getUChar("s1717",0)==22;
  const bool hasV1716=prefs.getUChar("s1716",0)==21;
  const bool hasV1715=prefs.getUChar("s1715",0)==20;
  const bool hasV1714=prefs.getUChar("s1714",0)==19;
  const bool hasV1712=prefs.getUChar("s1712",0)==18;
  const bool hasV178=prefs.getUChar("s178",0)==17;
- const bool hadSaved=hasV1716||hasV1715||hasV1714||hasV1712||hasV178||
+ const bool hadSaved=hasV1717||hasV1716||hasV1715||hasV1714||hasV1712||hasV178||
        prefs.isKey("effect")||prefs.isKey("favs")||prefs.isKey("gains")||prefs.isKey("scn0");
- const uint8_t sortVersion=(hasV1716||hasV1715||hasV1714||hasV1712||hasV178)?17:prefs.getUChar("sortrev",12);
+ const uint8_t sortVersion=(hasV1717||hasV1716||hasV1715||hasV1714||hasV1712||hasV178)?17:prefs.getUChar("sortrev",12);
  const bool legacyV12=hadSaved&&sortVersion<13;
- const bool remapToV178=hadSaved&&!hasV1716&&!hasV1715&&!hasV1714&&!hasV1712&&!hasV178&&sortVersion<17;
+ const bool remapToV178=hadSaved&&!hasV1717&&!hasV1716&&!hasV1715&&!hasV1714&&!hasV1712&&!hasV178&&sortVersion<17;
  // For an old 33-slot menu, only index 25->23, 26->24 and 30->25
  // survive; seven discarded String modes are deliberately not migrated.
  const auto mapSlot=[&](uint8_t slot)->uint8_t{
-  if(hasV1716)return slot<VIS_COUNT?slot:0xff;
-  if(hasV1715)return slot<31?slot:0xff;
-  if(hasV1714)return slot<26?slot:0xff;
+  if(hasV1717)return slot<VIS_COUNT?slot:0xff;
+  if(hasV1716)return toV1717Index(slot);
+  if(hasV1715)return slot<31?toV1717Index(slot):0xff;
+  if(hasV1714)return slot<26?toV1717Index(slot):0xff;
   if(remapToV178)slot=toV178Effect(slot,sortVersion);
-  return toV1714Index(slot,hasV1712);
+  return toV1717Index(toV1714Index(slot,hasV1712));
  };
- const int sourceCount=hasV1716?41:(hasV1715?31:(hasV1714?26:(hasV1712?33:(remapToV178?31:23))));
- const char *effectKey=hasV1716?"eff1716":(hasV1715?"eff1715":(hasV1714?"eff1714":(hasV1712?"eff1712":(hasV178?"eff178":"effect"))));
- const char *favoriteKey=hasV1716?"fav1716":(hasV1715?"fav1715":(hasV1714?"fav1714":(hasV1712?"fav1712":(hasV178?"fav178":"favs"))));
- const char *manualKey=hasV1716?"man1716":(hasV1715?"man1715":(hasV1714?"man1714":(hasV1712?"man1712":(hasV178?"man178":"micmodes"))));
- const char *gainKey=hasV1716?"gain1716":(hasV1715?"gain1715":(hasV1714?"gain1714":(hasV1712?"gain1712":(hasV178?"gain178":"gains"))));
- const char *sceneStem=hasV1716?"sc1716":(hasV1715?"sc1715":(hasV1714?"sc1714":(hasV1712?"sc1712":(hasV178?"sc178":"scn"))));
- const char *textStem=hasV1716?"t1716":(hasV1715?"t1715":(hasV1714?"t1714":(hasV1712?"t1712":(hasV178?"t178":"t"))));
+ const int sourceCount=hasV1717?27:(hasV1716?41:(hasV1715?31:(hasV1714?26:(hasV1712?33:(remapToV178?31:23)))));
+ const char *effectKey=hasV1717?"eff1717":(hasV1716?"eff1716":(hasV1715?"eff1715":(hasV1714?"eff1714":(hasV1712?"eff1712":(hasV178?"eff178":"effect")))));
+ const char *favoriteKey=hasV1717?"fav1717":(hasV1716?"fav1716":(hasV1715?"fav1715":(hasV1714?"fav1714":(hasV1712?"fav1712":(hasV178?"fav178":"favs")))));
+ const char *manualKey=hasV1717?"man1717":(hasV1716?"man1716":(hasV1715?"man1715":(hasV1714?"man1714":(hasV1712?"man1712":(hasV178?"man178":"micmodes")))));
+ const char *gainKey=hasV1717?"gain1717":(hasV1716?"gain1716":(hasV1715?"gain1715":(hasV1714?"gain1714":(hasV1712?"gain1712":(hasV178?"gain178":"gains")))));
+ const char *sceneStem=hasV1717?"sc1717":(hasV1716?"sc1716":(hasV1715?"sc1715":(hasV1714?"sc1714":(hasV1712?"sc1712":(hasV178?"sc178":"scn")))));
+ const char *textStem=hasV1717?"t1717":(hasV1716?"t1716":(hasV1715?"t1715":(hasV1714?"t1714":(hasV1712?"t1712":(hasV178?"t178":"t")))));
 
  const uint8_t selected=mapSlot(prefs.getUChar(effectKey,0));
  effectID=selected<VIS_COUNT?selected:0;
@@ -577,7 +575,7 @@ static void loadSettings(){
  }
  rxChannel=clampi(prefs.getUChar("radio",1),1,11);
 
- // Important: older releases stored 26, 31 or 33 bytes. Never read them into a 41-byte
+ // Important: older releases stored up to 41 bytes. Never read them into a 27-byte
  // destination. The full legacy buffer is temporary stack storage only.
  uint8_t oldGain[41]={};
  const size_t nGain=prefs.getBytesLength(gainKey);
@@ -607,25 +605,25 @@ static void loadSettings(){
  pinkRobot=prefs.getString("pinkrobot","");
  micGain=gainPct[effectID]/100.f;
 
- // V17.16: copy 31 V17.15 slots into separate keys; preserve all older NVS for rollback.
+ // V17.17: remap all retained V17.16 slots into independent keys; preserve older NVS for rollback.
  // On upgrade write new ordering ONCE and mark completion LAST.
  // These writes do not touch V17.13's effect/gain/favorite/scene keys.
- if(!hasV1716){
-  prefs.putUChar("eff1716",effectID);
-  prefs.putBytes("fav1716",&favoriteBits,sizeof(favoriteBits));
-  prefs.putBytes("man1716",&micManualMask,sizeof(micManualMask));
-  prefs.putBytes("gain1716",gainPct,sizeof(gainPct));
+ if(!hasV1717){
+  prefs.putUChar("eff1717",effectID);
+  prefs.putBytes("fav1717",&favoriteBits,sizeof(favoriteBits));
+  prefs.putBytes("man1717",&micManualMask,sizeof(micManualMask));
+  prefs.putBytes("gain1717",gainPct,sizeof(gainPct));
   for(uint8_t i=0;i<VIS_COUNT;i++)if(isTextEffect(i))
-   prefs.putString((String("t1716")+String(i)).c_str(),userText[i]);
+   prefs.putString((String("t1717")+String(i)).c_str(),userText[i]);
   for(uint8_t j=0;j<4;j++)if(scenes[j].magic==SCENE_MAGIC)
-   prefs.putBytes((String("sc1716")+String(j)).c_str(),&scenes[j],sizeof(SceneData));
-  prefs.putUChar("s1716",21);
+   prefs.putBytes((String("sc1717")+String(j)).c_str(),&scenes[j],sizeof(SceneData));
+  prefs.putUChar("s1717",22);
  }
  // Always boot into 01 Chromatic EQ, unchanged from V17.8 onward.
  effectID=0;
  micGain=gainPct[effectID]/100.f;
 }
-static void persistEffect(){prefs.putUChar("eff1716",effectID);micGain=gainPct[effectID]/100.f;}
+static void persistEffect(){prefs.putUChar("eff1717",effectID);micGain=gainPct[effectID]/100.f;}
 static void radioSend(uint8_t cmd,uint8_t value){
  if(!radioReady)return;
  uint32_t seq=++remoteSeq;uint8_t payload[12]={'Z','H','R','1',1,cmd,value,0,
@@ -1433,7 +1431,7 @@ static void saveNameOverlay(){
   // never silently wipes an existing robot name.
   if(nameRobotBlueEdited&&draftBlue.length())blueRobot=draftBlue;
   if(nameRobotPinkEdited&&draftPink.length())pinkRobot=draftPink;
- }else if(isTextEffect(effectID)){
+ }else if(isTextEffect(effectID)||originalEffect(effectID)==44){
   // Empty initial editor is a request to type, not to erase all prior names.
   if(inputName.length())sharedName=inputName;
  }
@@ -1661,7 +1659,7 @@ static void controlTouch(){
    if(overlay!=NONE){editorTouch(x,y);return;}
    if(remote){lastRemoteActivity=millis();remoteTouch(x,y);return;}
    if(abs(dx)>64){selectEffect(dx>0?-1:+1);return;}
-   if(originalEffect(effectID)==22||isTextEffect(effectID)){showTextEditor();return;}
+   if(originalEffect(effectID)==22||isTextEffect(effectID)||originalEffect(effectID)==44){showTextEditor();return;}
    // No manual microphone screen: all audio is calibrated automatically.
    if(originalEffect(effectID)==32||originalEffect(effectID)==36||
       originalEffect(effectID)==41||originalEffect(effectID)==43){
@@ -1679,7 +1677,8 @@ static uint8_t powerFrameCap(){
  uint8_t rate=profile==0?48:profile==1?35:24;
  if(overlay==NAME)return profile==2?24:32; // smoother, visibly held key popovers
  if(remote||overlay!=NONE)return 15;
- if(originalEffect(effectID)>=49)return profile==2?14:20; // cap layered textile and imported audio scenes
+ if(originalEffect(effectID)==51||originalEffect(effectID)==53)return profile==2?18:26; // smoother/faster surviving yarn effects
+ if(originalEffect(effectID)>=49)return profile==2?14:20; // limit imported Nova for power
  if(!adaptiveRender)return rate;
  if(originalEffect(effectID)==2||originalEffect(effectID)==3||originalEffect(effectID)==27)return rate;
  // Lighter, ambient artwork is intentionally drawn less often; the FFT and
