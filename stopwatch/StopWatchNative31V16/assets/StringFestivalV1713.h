@@ -91,7 +91,7 @@ static void sfStitch(float x0,float y0,float x1,float y1,uint16_t c,int n,float 
        x0+(x1-x0)*v,y0+(y1-y0)*v,tint(c,a),2);
  }
 }
-static bool renderStringFestivalV1712(uint8_t id){
+static bool renderStringFestivalV1713(uint8_t id){
  if(id<41||id>50)return false;
  const float t=millis()*.001f;
  black();
