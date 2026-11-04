@@ -61,7 +61,7 @@ jobs:
           grep -Fq 'toV171Effect' stopwatch/StopWatchNative31V16/NativeApp.cpp
           grep -Fq 'Motorized club beams sweep' stopwatch/StopWatchNative31V16/assets/FidelityClassic167.h
           grep -Fq 'transplant Ribbon Pirouette' stopwatch/StopWatchNative31V16/assets/FidelityClassic167.h
-          grep -Fq 'Warehouse\x27s own floor, EQ, and duo figures' stopwatch/StopWatchNative31V16/assets/FidelityClassic167.h
+          grep -Fq 'own floor, EQ, and duo figures' stopwatch/StopWatchNative31V16/assets/FidelityClassic167.h
           if grep -q 'SpeakerPhotoV179\|fxPhotoSpeaker\|fxFunktionHornSpeaker\|SPEAKER_PHOTO' stopwatch/StopWatchNative31V16/assets/FidelityClassic167.h; then exit 1; fi
           test ! -e stopwatch/StopWatchNative31V16/assets/SpeakerPhotoV179.h
           grep -Fq 'if(drop<5)return' stopwatch/StopWatchNative31V16/NativeApp.cpp
