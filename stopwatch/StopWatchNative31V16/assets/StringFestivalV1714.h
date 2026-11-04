@@ -188,6 +188,20 @@ static bool renderStringFestivalV1714(uint8_t id){
   sfLine(sh-47,sy,sh+47,sy,sfIvory(),.94f,2);
   sfLight(sh,sy,sfIvory(),3);
   sfBezier(sh-41,sy+1,CX,sy+68,CX+81,sy-32,CX+166,sy+65,sfPink(),.8f,3);
+  // V17.17: user's name engraved directly into the loom's top cross-beam.
+  // Use M5GFX native font, not a slow pixel-by-pixel software text pass.
+  String loomName=sharedName.length()?sharedName:DEFAULT_WORD;
+  loomName.trim();loomName.toUpperCase();
+  if(loomName.length()>10)loomName=loomName.substring(0,10);
+  cv.fillRoundRect(CX-99,57,198,40,10,rgb(23,13,49));
+  cv.drawRoundRect(CX-99,57,198,40,10,tint(sfGold(),.84f));
+  cv.setFont(&lgfx::fonts::FreeSansBold18pt7b);
+  cv.setTextDatum(middle_center);
+  cv.setTextSize(loomName.length()>8?.68f:loomName.length()>6?.78f:.92f);
+  cv.setTextColor(sfIvory());
+  cv.drawString(loomName,CX,76);
+  cv.setTextSize(1.f);
+  cv.setFont(&lgfx::fonts::Font0);
   break;
  }
  case 48:{ // COSMIC PATCHWORK MOTH — huge sentient stitched wings and needle body.
