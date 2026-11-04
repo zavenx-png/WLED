@@ -500,110 +500,113 @@ static void saveNames(){
  prefs.putString("bluerobot",blueRobot);prefs.putString("pinkrobot",pinkRobot);
 }
 static void loadSettings(){
- prefs.begin("clubnative31",false); // Same storage namespace to preserve V16.6/16.7 preferences.
+ prefs.begin("clubnative31",false);
+ // V17.14 uses separate index-based NVS keys so V17.13 rollback remains safe.
+ const bool hasV1714=prefs.getUChar("s1714",0)==19;
  const bool hasV1712=prefs.getUChar("s1712",0)==18;
  const bool hasV178=prefs.getUChar("s178",0)==17;
- // Keep legacy V17.7 indexing in its own keys, so rollback does not misread it.
- const bool hadSaved=hasV1712||hasV178||prefs.isKey("effect")||prefs.isKey("favs")||prefs.isKey("gains")||prefs.isKey("scn0");
- const uint8_t sortVersion=(hasV1712||hasV178)?17:prefs.getUChar("sortrev",12);
+ const bool hadSaved=hasV1714||hasV1712||hasV178||
+       prefs.isKey("effect")||prefs.isKey("favs")||prefs.isKey("gains")||prefs.isKey("scn0");
+ const uint8_t sortVersion=(hasV1714||hasV1712||hasV178)?17:prefs.getUChar("sortrev",12);
  const bool legacyV12=hadSaved&&sortVersion<13;
- const bool remapToV178=hadSaved&&!hasV1712&&!hasV178&&sortVersion<17;
+ const bool remapToV178=hadSaved&&!hasV1714&&!hasV1712&&!hasV178&&sortVersion<17;
+ // For an old 33-slot menu, only index 25->23, 26->24 and 30->25
+ // survive; seven discarded String modes are deliberately not migrated.
+ const auto mapSlot=[&](uint8_t slot)->uint8_t{
+  if(hasV1714)return slot<VIS_COUNT?slot:0xff;
+  if(remapToV178)slot=toV178Effect(slot,sortVersion);
+  return toV1714Index(slot,hasV1712);
+ };
+ const int sourceCount=hasV1714?26:(hasV1712?33:(remapToV178?31:23));
+ const char *effectKey=hasV1714?"eff1714":(hasV1712?"eff1712":(hasV178?"eff178":"effect"));
+ const char *favoriteKey=hasV1714?"fav1714":(hasV1712?"fav1712":(hasV178?"fav178":"favs"));
+ const char *manualKey=hasV1714?"man1714":(hasV1712?"man1712":(hasV178?"man178":"micmodes"));
+ const char *gainKey=hasV1714?"gain1714":(hasV1712?"gain1712":(hasV178?"gain178":"gains"));
+ const char *sceneStem=hasV1714?"sc1714":(hasV1712?"sc1712":(hasV178?"sc178":"scn"));
+ const char *textStem=hasV1714?"t1714":(hasV1712?"t1712":(hasV178?"t178":"t"));
 
- // Selected effect: old 06/09 are intentionally removed; fall back to first effect.
- uint8_t oldSelected=prefs.getUChar(hasV1712?"eff1712":(hasV178?"eff178":"effect"),0);
- uint8_t mapped=remapToV178?toV178Effect(oldSelected,sortVersion):oldSelected;
- effectID=mapped<VIS_COUNT?mapped:0;
-
+ const uint8_t selected=mapSlot(prefs.getUChar(effectKey,0));
+ effectID=selected<VIS_COUNT?selected:0;
  brightness=clampi(prefs.getUChar("bright",52),8,100);
  profile=prefs.getUChar("profile",1)%3;
+
  uint64_t oldFavorites=FAVORITE_DEFAULT;
- if(prefs.getBytes(hasV1712?"fav1712":(hasV178?"fav178":"favs"),&oldFavorites,sizeof(oldFavorites))!=sizeof(oldFavorites)){
+ if(prefs.getBytes(favoriteKey,&oldFavorites,sizeof(oldFavorites))!=sizeof(oldFavorites)){
   oldFavorites=remapToV178
     ? ((1ULL<<4)|(1ULL<<9)|(1ULL<<19)|(1ULL<<27)|(1ULL<<28)|(1ULL<<29)|(1ULL<<30))
     : FAVORITE_DEFAULT;
   if(legacyV12)oldFavorites=(1ULL<<0)|(1ULL<<10)|(1ULL<<18)|(1ULL<<23)|(1ULL<<28)|(1ULL<<29)|(1ULL<<30);
  }
- if(remapToV178){
-  favoriteBits=0;
-  for(uint8_t i=0;i<31;i++)if(oldFavorites&(1ULL<<i)){
-   uint8_t dest=toV178Effect(i,sortVersion);
-   if(dest<VIS_COUNT)favoriteBits|=(1ULL<<dest);
-  }
- }else favoriteBits=oldFavorites;
+ favoriteBits=0;
+ for(int i=0;i<sourceCount;i++)if(oldFavorites&(1ULL<<i)){
+  const uint8_t dest=mapSlot((uint8_t)i);
+  if(dest<VIS_COUNT)favoriteBits|=1ULL<<dest;
+ }
  favoriteBits&=((1ULL<<VIS_COUNT)-1ULL);
- favoritesOnly=false; // V17.1: no library/favorites-only UI; cycle all 23 effects.
+ favoritesOnly=false;
 
+ // Match current auto mic behavior. Retain stored compatibility, but all
+ // auto/manual controls continue in their prior automatically calibrated mode.
  uint64_t storedManual=0;
- if(prefs.getBytes(hasV1712?"man1712":(hasV178?"man178":"micmodes"),&storedManual,sizeof(storedManual))!=sizeof(storedManual))storedManual=0;
- if(remapToV178){
-  micManualMask=0;
-  for(uint8_t i=0;i<31;i++)if(storedManual&(1ULL<<i)){
-   uint8_t dest=toV178Effect(i,sortVersion);
-   if(dest<VIS_COUNT)micManualMask|=1ULL<<dest;
-  }
- }else micManualMask=storedManual;
- micManualMask=0; // All effects automatically calibrated in V16.9.
+ if(prefs.getBytes(manualKey,&storedManual,sizeof(storedManual))!=sizeof(storedManual))storedManual=0;
+ micManualMask=0;
 
  adaptiveRender=prefs.getBool("adaptive",true);
  remoteIdleSecs=prefs.getUChar("idle",20);
  for(uint8_t j=0;j<4;j++){
   SceneData v;
-  size_t n=prefs.getBytes((String(hasV1712?"sc1712":(hasV178?"sc178":"scn"))+String(j)).c_str(),&v,sizeof(v));
+  const size_t n=prefs.getBytes((String(sceneStem)+String(j)).c_str(),&v,sizeof(v));
   if(n!=sizeof(v)||v.magic!=SCENE_MAGIC)continue;
-  uint8_t dest=remapToV178?toV178Effect(v.effect,sortVersion):v.effect;
-  if(dest>=VIS_COUNT)continue; // A scene selecting a removed effect cannot be loaded.
+  const uint8_t dest=mapSlot(v.effect);
+  if(dest>=VIS_COUNT)continue; // Ignore scenes bound to deleted effects.
   v.effect=dest;scenes[j]=v;
  }
  rxChannel=clampi(prefs.getUChar("radio",1),1,11);
 
- // Previous releases stored 31 or 28 entries. Read the entire old array BEFORE
- // indexing by the new 26-entry menu so per-effect gain values cannot shift.
- uint8_t oldGain[VIS_COUNT]={};
- size_t nGain=prefs.getBytesLength(hasV1712?"gain1712":(hasV178?"gain178":"gains"));
- if(nGain==23||nGain==24||nGain==26||nGain==28||nGain==31||nGain==33)prefs.getBytes(hasV1712?"gain1712":(hasV178?"gain178":"gains"),oldGain,nGain);
+ // Important: V17.13 stored 33 bytes. Never read them into a 26-byte
+ // destination. The full legacy buffer is temporary stack storage only.
+ uint8_t oldGain[33]={};
+ const size_t nGain=prefs.getBytesLength(gainKey);
+ if(nGain>0&&nGain<=sizeof(oldGain))prefs.getBytes(gainKey,oldGain,nGain);
  for(uint8_t i=0;i<VIS_COUNT;i++)gainPct[i]=135;
- int limit=remapToV178?31:VIS_COUNT;
- for(int i=0;i<limit;i++){
-  uint8_t dest=remapToV178?toV178Effect((uint8_t)i,sortVersion):(uint8_t)i;
+ for(int i=0;i<sourceCount&&i<(int)sizeof(oldGain);i++){
+  const uint8_t dest=mapSlot((uint8_t)i);
   if(dest>=VIS_COUNT)continue;
   if(oldGain[i]>=20&&oldGain[i]<=250)gainPct[dest]=oldGain[i];
  }
 
- // Text fields are stored by menu index; old 07/08 shift to 06/07 after removals.
- for(int i=0;i<31;i++){
-  uint8_t dest=remapToV178?toV178Effect((uint8_t)i,sortVersion):(uint8_t)i;
+ for(int i=0;i<sourceCount;i++){
+  const uint8_t dest=mapSlot((uint8_t)i);
   if(dest>=VIS_COUNT||!isTextEffect(dest))continue;
-  userText[dest]=prefs.getString((String(hasV1712?"t1712":(hasV178?"t178":"t"))+String(i)).c_str(),"");
+  userText[dest]=prefs.getString((String(textStem)+String(i)).c_str(),"");
  }
- // V16.11: one shared name for all text effects. Migrate the current effect's
- // legacy name first, otherwise the earliest saved text effect.
  if(prefs.isKey("globalname"))sharedName=prefs.getString("globalname","");
  else{
-   if(isTextEffect(effectID)&&userText[effectID].length())sharedName=userText[effectID];
-   else for(uint8_t i=0;i<VIS_COUNT;i++)if(isTextEffect(i)&&userText[i].length()){
-     sharedName=userText[i];break;
-   }
-   prefs.putString("globalname",sharedName);
+  if(isTextEffect(effectID)&&userText[effectID].length())sharedName=userText[effectID];
+  else for(uint8_t i=0;i<VIS_COUNT;i++)if(isTextEffect(i)&&userText[i].length()){
+   sharedName=userText[i];break;
+  }
+  prefs.putString("globalname",sharedName);
  }
  for(uint8_t i=0;i<VIS_COUNT;i++)if(isTextEffect(i))userText[i]=sharedName;
  blueRobot=prefs.getString("bluerobot","");
  pinkRobot=prefs.getString("pinkrobot","");
  micGain=gainPct[effectID]/100.f;
 
- // Make upgrade idempotent. Commit the marker only after all values are written.
- if(!hasV1712){
+ // On upgrade write new ordering ONCE and mark completion LAST.
+ // These writes do not touch V17.13's effect/gain/favorite/scene keys.
+ if(!hasV1714){
   prefs.putUChar("eff1714",effectID);
   prefs.putBytes("fav1714",&favoriteBits,sizeof(favoriteBits));
   prefs.putBytes("man1714",&micManualMask,sizeof(micManualMask));
   prefs.putBytes("gain1714",gainPct,sizeof(gainPct));
   for(uint8_t i=0;i<VIS_COUNT;i++)if(isTextEffect(i))
-    prefs.putString((String("t1714")+String(i)).c_str(),userText[i]);
+   prefs.putString((String("t1714")+String(i)).c_str(),userText[i]);
   for(uint8_t j=0;j<4;j++)if(scenes[j].magic==SCENE_MAGIC)
-    prefs.putBytes((String("sc1714")+String(j)).c_str(),&scenes[j],sizeof(SceneData));
+   prefs.putBytes((String("sc1714")+String(j)).c_str(),&scenes[j],sizeof(SceneData));
+  prefs.putUChar("s1714",19);
  }
- if(prefs.getUChar("s1712",0)!=18)prefs.putUChar("s1712",18);
- // V17.8: reboot always enters effect 1, Chromatic EQ.
- // The forced startup choice is not written into saved preferences.
+ // Always boot into 01 Chromatic EQ, unchanged from V17.8 onward.
  effectID=0;
  micGain=gainPct[effectID]/100.f;
 }
