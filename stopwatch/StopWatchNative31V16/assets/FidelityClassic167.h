@@ -2,6 +2,7 @@
 // Purpose: native interpretations of browser math, not screenshot sprites.
 // Uses original C152 framebuffer/audio/beat engine. No heap allocation per frame.
 #pragma once
+#include "SpeakerPhotoV179.h"
 
 static inline float fxSine(float a,float b,float v){return a+b*sinf(v);}
 static inline uint16_t fxInk(float h,float level){return tint(hue(frac(h)),clampf(level));}
@@ -21,29 +22,60 @@ static inline void fxPoly(int sides,float radius,float turn,uint16_t color,int w
 // V17.8: compact horn-loaded club cabinets recessed into the circular
 // top corners. Mirrored faceted faces point inward at the dancing figures.
 // Each 52x84px cabinet is about half the area of V17.7's original 76x116.
-static void fxFunktionHornSpeaker(int x,int y,bool faceRight){
- const uint16_t shell=rgb(33,27,49),edge=rgb(91,81,118);
- const auto X=[&](int p)->int{return x+(faceRight?p:52-p);};
- cv.fillRoundRect(x,y,52,84,5,shell);
- cv.drawRoundRect(x,y,52,84,5,edge);
- // The wedge is narrow at the back and opens toward the stage (center).
- cv.fillTriangle(X(7),y+8,X(46),y+15,X(46),y+68,rgb(70,64,91));
- cv.fillTriangle(X(7),y+8,X(7),y+70,X(46),y+68,rgb(129,124,154));
- // Dark recessed horn bell, enlarged at the inward-facing edge.
- cv.fillTriangle(X(14),y+20,X(45),y+14,X(45),y+51,rgb(13,16,31));
- cv.fillTriangle(X(14),y+20,X(45),y+51,X(14),y+48,rgb(38,42,61));
- cv.fillTriangle(X(16),y+31,X(44),y+22,X(44),y+42,rgb(196,199,210));
- cv.fillTriangle(X(18),y+32,X(44),y+42,X(18),y+41,rgb(106,117,146));
- // Small high-frequency throat and angled metallic flare.
- cv.fillTriangle(X(23),y+30,X(44),y+29,X(23),y+38,rgb(232,227,227));
- // Compact, deep sub opening below the horn, not a large flat rectangle.
- cv.fillTriangle(X(11),y+59,X(45),y+56,X(45),y+74,rgb(10,11,22));
- cv.fillTriangle(X(11),y+59,X(45),y+74,X(13),y+74,rgb(25,22,42));
- cv.drawLine(X(14),y+75,X(45),y+75,rgb(122,100,150));
- cv.drawLine(X(6),y+10,X(6),y+72,rgb(82,70,104));
- // Two simple mounting screws on the inward-facing baffle.
- cv.fillCircle(X(46),y+10,1,rgb(188,179,201));
- cv.fillCircle(X(46),y+79,1,rgb(188,179,201));
+// V17.9: use the user-provided speaker PHOTO, not the previous polygon art.
+// One compact, front-facing image, alpha-background removed offline, used twice.
+// Static 2 KB RAM decoding cache; no allocations, disk, radio or scaling state.
+static void fxPhotoSpeaker(int x,int y){
+ static uint8_t pixels[SPEAKER_PHOTO_BYTES]={};
+ static bool decoded=false;
+ if(!decoded){
+  uint32_t bits=0;int used=0,out=0;
+  for(const char *p=SPEAKER_PHOTO_BASE64;*p&&out<SPEAKER_PHOTO_BYTES;p++){
+   const char c=*p;
+   int value=-1;
+   if(c>='A'&&c<='Z')value=c-'A';
+   else if(c>='a'&&c<='z')value=c-'a'+26;
+   else if(c>='0'&&c<='9')value=c-'0'+52;
+   else if(c=='+')value=62;
+   else if(c=='/')value=63;
+   if(value<0)continue;
+   bits=(bits<<6)|(uint32_t)value;
+   used+=6;
+   if(used>=8){
+    used-=8;
+    pixels[out++]=(uint8_t)(bits>>used);
+   }
+  }
+  decoded=(out==SPEAKER_PHOTO_BYTES);
+ }
+ if(!decoded||!fb)return;
+ // Reproduce the full vertical tower at 64 x 112 pixels. The feet of the
+ // dancing figures are around y=359, while the BACKGROUND towers end at 286.
+ const int drawW=64,drawH=112;
+ for(int dy=0;dy<drawH;dy++){
+  const int py=y+dy;
+  if((unsigned)py>=(unsigned)H)continue;
+  const int srcY=(dy*SPEAKER_PHOTO_H)/drawH;
+  const int sourceBase=srcY*SPEAKER_PHOTO_W;
+  const int destBase=py*W;
+  for(int dx=0;dx<drawW;dx++){
+   const int px=x+dx;
+   if((unsigned)px>=(unsigned)W)continue;
+   const int srcIndex=sourceBase+(dx*SPEAKER_PHOTO_W)/drawW;
+   const uint8_t pair=pixels[srcIndex>>1];
+   const int shade=(srcIndex&1)?(pair&15):(pair>>4);
+   if(!shade)continue; // TRANSPARENT photo background, keep existing lasers
+   const int dest=destBase+px;
+   const uint16_t under=fb[dest];
+   // 1/3 photographic grey + 2/3 existing club background. Restrained
+   // enough to be background stage hardware rather than a focal element.
+   const int sr=(shade*30)/15,sg=(shade*61)/15;
+   const int rr=((((under>>11)&31)*2+sr)/3);
+   const int gg=((((under>>5)&63)*2+sg)/3);
+   const int bb=(((under&31)*2+sr)/3);
+   fb[dest]=(uint16_t)((rr<<11)|(gg<<5)|bb);
+  }
+ }
 }
 static inline float fxECG(float p){
  auto g=[](float x,float y,float w)->float{float z=(x-y)/w;return expf(-.5f*z*z);};
@@ -324,10 +356,11 @@ static bool fidelityClassic167(uint8_t id){
    dot(laserTarget[beam],410,4+int(4*spotDrive),
        tint(laserColor[beam],.39f));
   }
-  // Compact, recessed top-corner PA stacks, angled toward the dancers.
-  // Left fires rightwards; right fires leftwards into the club.
-  fxFunktionHornSpeaker(46,126,true);
-  fxFunktionHornSpeaker(368,126,false);
+  // Two subtle front-facing PA stacks from the uploaded photo, transparent
+  // and behind the dancers, with clear space between them. No other artwork
+  // or animation changes: draw after lasers, before original figures.
+  fxPhotoSpeaker(94,174);
+  fxPhotoSpeaker(308,174);
   // Preserve Warehouse's original two sound-reactive dancers.
   figure(150,303,1.f,beatClock+.2f,rgb(255,104,214));
   figure(318,303,1.f,beatClock+2.f,rgb(77,226,255));
