@@ -13,7 +13,7 @@
  */
 #pragma once
 #ifndef STOPWATCH_FONT_TRIAL
-#define STOPWATCH_FONT_TRIAL 1
+#define STOPWATCH_FONT_TRIAL 2
 #endif
 #if STOPWATCH_FONT_TRIAL<1 || STOPWATCH_FONT_TRIAL>3
 #error "STOPWATCH_FONT_TRIAL must be 1, 2 or 3"
