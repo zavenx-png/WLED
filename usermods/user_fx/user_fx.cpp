@@ -1841,9 +1841,9 @@ static void mode_z_neural_pulse(void)
   const uint32_t t = strip.now;
   const uint16_t L = CHUNCHUN_HARNESS_PATH_LEN;
   const uint16_t width = 9 + (SEGMENT.intensity >> 5);
-  const uint16_t p0 = zh_wrap((t * (2 + (SEGMENT.speed >> 5))) / 8U);
-  const uint16_t p1 = zh_wrap((t * (3 + (SEGMENT.speed >> 6))) / 11U + 137U);
-  const uint16_t p2 = zh_wrap((t * (1 + (SEGMENT.speed >> 6))) / 6U + 276U);
+  const uint16_t p0 = zh_wrap((t * (2 + (SEGMENT.speed >> 5))) / 96U);
+  const uint16_t p1 = zh_wrap((t * (3 + (SEGMENT.speed >> 6))) / 125U + 137U);
+  const uint16_t p2 = zh_wrap((t * (1 + (SEGMENT.speed >> 6))) / 75U + 276U);
 
   for (uint16_t p = 0; p < L; p++) {
     uint8_t b0 = zh_soft(zh_cyclic_distance(p, p0), width);
@@ -1852,8 +1852,8 @@ static void mode_z_neural_pulse(void)
     uint8_t b = max(b0, max(b1, b2));
     if (b < 3) continue;
 
-    uint16_t h = (uint16_t)(p * 65535UL / L) + (uint16_t)(t * 19U);
-    if (b1 > b && b1 >= b0 && b1 >= b2) h += 21000;
+    uint16_t h = (uint16_t)(p * 65535UL / L) + (uint16_t)(t * 2U);
+    if (b1 >= b0 && b1 >= b2) h += 21000;
     else if (b2 > b0 && b2 >= b1) h += 43000;
 
     uint8_t boosted = qadd8(b, (uint8_t)(SEGMENT.intensity >> 2));
@@ -1904,44 +1904,32 @@ static const char _data_FX_MODE_Z_PLASMA_VEINS[] PROGMEM =
 static void mode_z_electric_organism(void)
 {
   if (SEGLEN <= 1) FX_FALLBACK_STATIC;
-  SEGMENT.fade_out(218);
-
-  if (SEGENV.call == 0) {
-    SEGENV.aux0 = 0;
-    SEGENV.aux1 = hw_random16() % CHUNCHUN_HARNESS_PATH_LEN;
-  }
-
-  if (SEGENV.aux0 > 0) SEGENV.aux0--;
-  if (SEGENV.aux0 == 0) {
-    SEGENV.aux1 = hw_random16() % CHUNCHUN_HARNESS_PATH_LEN;
-    SEGENV.aux0 = 10 + (hw_random8() % (45 + ((255 - SEGMENT.speed) >> 3)));
-  }
-
-  const uint16_t head = SEGENV.aux1 % CHUNCHUN_HARNESS_PATH_LEN;
-  const uint16_t width = 4 + (SEGMENT.intensity >> 6);
+  // v5.1: the organic electrical field illuminates the entire harness.
+  // Three moving nerve fronts and rare brighter discharges add structure,
+  // instead of a single 4-8 LED spark that leaves almost everything dark.
+  if (SEGENV.call == 0) { SEGENV.aux0 = 0; SEGENV.aux1 = 0; }
   const uint32_t t = strip.now;
-  for (uint16_t p = 0; p < CHUNCHUN_HARNESS_PATH_LEN; p++) {
-    uint8_t b = zh_soft(zh_cyclic_distance(p, head), width);
-    if (b < 4) continue;
-    uint16_t h = (uint16_t)(t * 45U) + (uint16_t)(p * 401U);
-    uint8_t flicker = 180 + (hw_random8() >> 4);
-    b = scale8(b, flicker);
-    uint32_t c = zh_palette(h, b);
-    if (b > 220) c = color_fade(0xFFFFFFFF, b);
-    SEGMENT.setPixelColor(zh_path_led(p), c);
+  const uint16_t L = CHUNCHUN_HARNESS_PATH_LEN;
+  const uint16_t lead = zh_wrap(t / (42U - (SEGMENT.speed >> 5)));
+  const uint16_t branch = zh_wrap(L/3U + t / 65U);
+  const uint16_t returnArc = zh_wrap((2U*L)/3U + L - (t / 84U) % L);
+  const uint16_t arcWidth = 32U + (SEGMENT.intensity >> 3);
+  for (uint16_t p=0; p<L; p++) {
+  uint16_t x = (uint32_t)p * 65535UL / L;
+  uint8_t field = (uint8_t)((sin16_t(x*3U + (uint16_t)(t*3U)) + 32768) >> 8);
+  uint8_t shimmer = (uint8_t)((sin16_t(x*13U - (uint16_t)t) + 32768) >> 8);
+  uint8_t base = qadd8(90U, scale8(field, 65U));
+  base = qadd8(base, scale8(shimmer, 25U));
+  uint8_t a = zh_soft(zh_cyclic_distance(p,lead),arcWidth);
+  uint8_t b = zh_soft(zh_cyclic_distance(p,branch),arcWidth+12U);
+  uint8_t c = zh_soft(zh_cyclic_distance(p,returnArc),arcWidth+20U);
+  uint8_t power = qadd8(base, scale8(max(a,max(b,c)), 125U));
+  uint16_t hue = x + (uint16_t)(t*2U) + (uint16_t)(field*65U);
+  uint32_t col=zh_palette(hue,power);
+  if (a>245U || b>250U || c>250U) col=color_fade(0xFFDDEEFF, power);
+  SEGMENT.setPixelColor(zh_path_led(p),col);
   }
-
-  // A synchronized electrical discharge every so often.
-  if ((t / 900U) % 7U == 3U) {
-    uint8_t flash = (uint8_t)(255U - ((t % 900U) * 255U / 900U));
-    if (flash > 190) {
-      uint16_t center = (uint16_t)(CHUNCHUN_HARNESS_PATH_LEN / 2U);
-      for (uint16_t p = 0; p < CHUNCHUN_HARNESS_PATH_LEN; p++) {
-        uint8_t b = zh_soft(zh_cyclic_distance(p, center), 20);
-        if (b > 0) SEGMENT.setPixelColor(zh_path_led(p), color_fade(0xFFFFFFFF, scale8(b, flash)));
-      }
-    }
-  }
+  // No whole-strip flashes: only the moving, connected luminous fronts.
 }
 
 static const char _data_FX_MODE_Z_ELECTRIC_ORGANISM[] PROGMEM =
@@ -2010,8 +1998,8 @@ static void mode_z_wormhole(void)
   SEGMENT.fade_out(224);
 
   const uint16_t L = CHUNCHUN_HARNESS_PATH_LEN;
-  const uint32_t cycle = 1800U - (uint32_t)SEGMENT.speed * 4U;
-  const uint32_t c = cycle < 650U ? 650U : cycle;
+  const uint32_t cycle = 16000U - (uint32_t)SEGMENT.speed * 20U;
+  const uint32_t c = cycle < 10500U ? 10500U : cycle;
   const uint32_t ph = strip.now % c;
   const uint16_t head = (uint32_t)L * ph * ph / (uint64_t)c / c;
   const uint16_t width = 18 + (SEGMENT.intensity >> 4);
@@ -2022,7 +2010,7 @@ static void mode_z_wormhole(void)
     if (br < 2) continue;
     uint8_t tail = (d < width / 2U) ? 255 : (uint8_t)(255U - (uint32_t)(d - width / 2U) * 180U / width);
     br = scale8(br, tail);
-    uint16_t hue = (uint16_t)(ph * 43U) + (uint16_t)(d * 390U);
+    uint16_t hue = (uint16_t)(ph * 6U) + (uint16_t)(d * 390U);
     if (d < 4) br = 255;
     SEGMENT.setPixelColor(zh_path_led(p), zh_palette(hue, br));
   }
@@ -2073,11 +2061,11 @@ static void mode_z_starlight(void)
 
   const uint32_t t = strip.now;
   const uint16_t L = CHUNCHUN_HARNESS_PATH_LEN;
-  const uint16_t constellation = zh_wrap((t * (1 + (SEGMENT.speed >> 6))) / 20U);
+  const uint16_t constellation = zh_wrap((t * (1 + (SEGMENT.speed >> 6))) / 28U);
 
   for (uint16_t p = 0; p < L; p++) {
     // Cheap integer hash: stable for a frame but changes as time advances.
-    uint32_t h = (uint32_t)p * 1103515245UL + (t / 75U) * 12345UL + 0x9E3779B9UL;
+    uint32_t h = (uint32_t)p * 1103515245UL + (t / 110U) * 12345UL + 0x9E3779B9UL;
     h ^= h >> 16;
     h *= 2246822519UL;
     h ^= h >> 13;
@@ -2097,7 +2085,7 @@ static void mode_z_starlight(void)
 
   // A rare white neural flash crossing the full topology.
   if ((t / 1400U) % 9U == 4U) {
-    uint16_t head = zh_wrap((t * 2U) / 5U);
+    uint16_t head = zh_wrap((t * 2U) / 8U);
     for (uint16_t p = 0; p < L; p++) {
       uint8_t br = zh_soft(zh_cyclic_distance(p, head), 5);
       if (br > 0) SEGMENT.setPixelColor(zh_path_led(p), color_fade(0xFFFFFFFF, br));
@@ -2133,8 +2121,8 @@ static void mode_z_phoenix_flight(void)
 
   const uint32_t t = strip.now;
   const uint16_t L = CHUNCHUN_HARNESS_PATH_LEN;
-  uint32_t cycle = 2600U - (uint32_t)SEGMENT.speed * 6U;
-  if (cycle < 800U) cycle = 800U;
+  uint32_t cycle = 21000U - (uint32_t)SEGMENT.speed * 22U;
+  if (cycle < 14500U) cycle = 14500U;
   const uint16_t head = zh_wrap(((uint64_t)t * L) / cycle);
   const uint16_t width = 12 + (SEGMENT.intensity >> 4);
 
@@ -2142,9 +2130,9 @@ static void mode_z_phoenix_flight(void)
     uint16_t d = zh_cyclic_distance(p, head);
     if (d >= width) continue;
     uint8_t br = zh_soft(d, width);
-    uint16_t hue = 4000U + (uint16_t)(d * 40U); // white-yellow core cooling to deep red tail
+    uint16_t hue = 46000U + (uint16_t)(d * 260U); // white-yellow core cooling to deep red tail
     uint32_t col = zh_palette(hue, br);
-    if (br > 225) col = color_fade(0xFFFFFFFF, br);
+    if (br > 245) col = color_fade(0xFFFFC8FF, br);
     SEGMENT.setPixelColor(zh_path_led(p), col);
   }
 
@@ -2153,13 +2141,13 @@ static void mode_z_phoenix_flight(void)
       uint16_t emberOffset = hw_random16(width, (uint16_t)(width * 4));
       uint16_t emberPos = zh_wrap((uint32_t)head + L - emberOffset);
       uint8_t emberBr = 100 + hw_random8(100);
-      SEGMENT.setPixelColor(zh_path_led(emberPos), zh_palette((uint16_t)(3500 + hw_random16(2500)), emberBr));
+      SEGMENT.setPixelColor(zh_path_led(emberPos), zh_palette((uint16_t)(45000U + hw_random16(9000U)), emberBr));
     }
   }
 }
 
 static const char _data_FX_MODE_Z_PHOENIX_FLIGHT[] PROGMEM =
-  "Z - Phoenix Flight@Speed,Blaze,Tail width,Embers;!,!;!;01;pal=35";
+  "Z - Phoenix Flight@Speed,Blaze,Tail width,Embers;!,!;!;01;pal=40";
 
 // ---------------------------------------------------------------------------
 // Z - Comet Storm
@@ -2179,6 +2167,7 @@ static void mode_z_comet_storm(void)
   const uint16_t L = CHUNCHUN_HARNESS_PATH_LEN;
 
   if (SEGENV.call == 0) {
+    SEGENV.step = strip.now;
     for (uint8_t i = 0; i < Z_MAX_COMETS; i++) {
       comets[i].pos = hw_random16(L);
       comets[i].vel = (int16_t)((hw_random8(2) ? 1 : -1) * (int16_t)hw_random16(1, 4));
@@ -2186,17 +2175,23 @@ static void mode_z_comet_storm(void)
     }
   }
 
-  SEGMENT.fade_out(220);
-  const uint8_t speedScale = 1 + (SEGMENT.speed >> 5);
+  SEGMENT.fade_out(222);
+  // Real-time motion cadence, rather than moving 1-24 LEDs *per frame*.
+  // Keeps speed consistent across different WLED frame rates.
+  const uint32_t tickMs = 105U - (SEGMENT.speed >> 3);
+  const bool advance = (strip.now - SEGENV.step >= tickMs);
+  if (advance) SEGENV.step = strip.now;
   const uint8_t numComets = 2 + (SEGMENT.intensity >> 6); // 2 - 5
 
   for (uint8_t i = 0; i < numComets && i < Z_MAX_COMETS; i++) {
-    int32_t np = (int32_t)comets[i].pos + comets[i].vel * speedScale;
-    while (np < 0) np += L;
-    while (np >= (int32_t)L) np -= L;
-    comets[i].pos = (uint16_t)np;
+    if (advance) {
+      int32_t np = (int32_t)comets[i].pos + comets[i].vel;
+      while (np < 0) np += L;
+      while (np >= (int32_t)L) np -= L;
+      comets[i].pos = (uint16_t)np;
+    }
 
-    const uint16_t tailLen = 14;
+    const uint16_t tailLen = 23;
     int8_t dir = (comets[i].vel > 0) ? 1 : -1;
     for (uint16_t k = 0; k < tailLen; k++) {
       int32_t tp = (int32_t)comets[i].pos - dir * k;
@@ -2275,36 +2270,29 @@ static const char _data_FX_MODE_Z_DEEP_CURRENT[] PROGMEM =
 static void mode_z_tidal_interference(void)
 {
   if (SEGLEN <= 1) FX_FALLBACK_STATIC;
-
-  const uint32_t t = strip.now;
-  const uint16_t L = CHUNCHUN_HARNESS_PATH_LEN;
-
-  const uint16_t src0 = 0;
-  const uint16_t src1 = L / 3U;
-  const uint16_t src2 = (L * 2U) / 3U;
-  const uint16_t k = 40U + (SEGMENT.intensity >> 2); // spatial wavelength
-  const uint16_t w = 6U + (SEGMENT.speed >> 5);      // temporal frequency (slow)
-
-  for (uint16_t p = 0; p < L; p++) {
-    uint16_t d0 = zh_cyclic_distance(p, src0);
-    uint16_t d1 = zh_cyclic_distance(p, src1);
-    uint16_t d2 = zh_cyclic_distance(p, src2);
-
-    int32_t s0 = sin16_t((uint16_t)(d0 * k - t * w));
-    int32_t s1 = sin16_t((uint16_t)(d1 * k - t * (w + 1U)));
-    int32_t s2 = sin16_t((uint16_t)(d2 * k - t * (w + 2U)));
-
-    int32_t sum = s0 + s1 + s2; // range approx -98304..98301
-    uint8_t br = (uint8_t)(((sum + 98304) * 255L) / 196608L);
-    br = scale8(br, br); // compress toward dark so interference minima read as calm troughs
-    if (br < 4) continue;
-    uint16_t hue = 34000U + (uint16_t)(br * 60U) + (uint16_t)(t / 40U);
-    SEGMENT.setPixelColor(zh_path_led(p), zh_palette(hue, br));
+  const uint32_t t=strip.now;
+  const uint16_t L=CHUNCHUN_HARNESS_PATH_LEN;
+  const uint16_t src1=L/3U, src2=(2U*L)/3U;
+  // Wavelength used to be k=40-103 (effectively flat over 592 LEDs).
+  // v5.1: multiple visible interference fringes sweep around the harness.
+  const uint16_t k=770U+(SEGMENT.intensity>>1);
+  const uint16_t w=5U+(SEGMENT.speed>>6);
+  for(uint16_t p=0;p<L;p++) {
+  const uint16_t d0=zh_cyclic_distance(p,0);
+  const uint16_t d1=zh_cyclic_distance(p,src1);
+  const uint16_t d2=zh_cyclic_distance(p,src2);
+  int32_t sum=(int32_t)sin16_t((uint16_t)(d0*k-t*w))
+  + (int32_t)sin16_t((uint16_t)(d1*k-t*(w+1U)))
+  + (int32_t)sin16_t((uint16_t)(d2*k-t*(w+2U)));
+  uint8_t crest=(uint8_t)(((sum+98304L)*255L)/196608L);
+  uint8_t br=qadd8(30U,scale8(crest,205U));
+  uint16_t hue=(uint16_t)(p*170U)+(uint16_t)(crest*150U)+(uint16_t)(t*2U);
+  SEGMENT.setPixelColor(zh_path_led(p),zh_palette(hue,br));
   }
 }
 
 static const char _data_FX_MODE_Z_TIDAL_INTERFERENCE[] PROGMEM =
-  "Z - Tidal Interference@Speed,Wavelength,,;!,!;!;01;pal=15";
+  "Z - Tidal Interference@Speed,Wavelength,,;!,!;!;01;pal=11";
 
 // ---------------------------------------------------------------------------
 // Z - Ember Drift
@@ -2330,8 +2318,8 @@ static void mode_z_ember_drift(void)
     uint8_t n = perlin8(nx, z, 0);
     uint8_t n2 = perlin8(nx + 4000U, z + 1700U, 900U);
 
-    uint8_t br = scale8(n, n); // gentle compression toward dark, ember-like glow
-    br = qadd8(br, SEGMENT.custom1 >> 4);
+    uint8_t br = qadd8(56U, scale8(n, 173U)); // v5.1: clearly visible warm glow
+    br = qadd8(br, SEGMENT.custom1 >> 3);
     if (br < 5) continue;
     uint16_t hue = 3500U + (uint16_t)(n2 * 90U);
     SEGMENT.setPixelColor(zh_path_led(p), zh_palette(hue, br));
@@ -2366,9 +2354,9 @@ static void mode_z_orbital_waltz(void)
   const uint16_t ecc = 6000U + ((uint16_t)SEGMENT.intensity << 5); // eccentricity strength
 
   for (uint8_t body = 0; body < 2; body++) {
-    uint32_t period = (body == 0) ? periodBase : (periodBase * 3U) / 2U; // 2:3 resonance
+    uint32_t period = (body == 0) ? periodBase : periodBase * 3U; // v5.1: second orbit moves noticeably slower
     uint16_t M = (uint16_t)(((uint64_t)t * 65536U) / period);
-    int32_t centerEq = ((int32_t)sin16_t(M) * (int32_t)ecc) >> 14; // ~2*e*sin(M)
+    int32_t centerEq = ((int32_t)sin16_t(M) * (int32_t)(body ? ecc/2U : ecc)) >> 14; // ~2*e*sin(M)
     uint16_t theta = (uint16_t)((uint32_t)M + centerEq + (body * 32768U)); // start bodies opposed
     uint16_t pos = (uint16_t)(((uint32_t)theta * L) >> 16);
 
@@ -2387,7 +2375,7 @@ static void mode_z_orbital_waltz(void)
 }
 
 static const char _data_FX_MODE_Z_ORBITAL_WALTZ[] PROGMEM =
-  "Z - Orbital Waltz@Speed,Eccentricity,Width,;!,!;!;01;pal=38";
+  "Z - Orbital Waltz@Speed,Eccentricity,Width,;!,!;!;01;pal=11";
 
 
 
@@ -2412,7 +2400,7 @@ static void mode_z_silk_ribbon(void)
 
   const uint32_t t = strip.now;
   const uint16_t L = CHUNCHUN_HARNESS_PATH_LEN;
-  uint16_t head = zh_wrap((t * (6U + (SEGMENT.speed >> 5))) / 32U);
+  uint16_t head = zh_wrap((t * (6U + (SEGMENT.speed >> 5))) / 80U);
   uint16_t width = 18U + (SEGMENT.intensity >> 3);
 
   for (int16_t d = -(int16_t)width; d <= (int16_t)width; d++) {
@@ -2470,7 +2458,7 @@ static void mode_z_liquid_mercury(void)
   if (SEGLEN <= 1) FX_FALLBACK_STATIC;
   const uint32_t t = strip.now;
   const uint16_t L = CHUNCHUN_HARNESS_PATH_LEN;
-  const uint16_t flow = (uint16_t)(t * (3U + (SEGMENT.speed >> 5)) / 24U);
+  const uint16_t flow = (uint16_t)(t * (3U + (SEGMENT.speed >> 5)) / 165U);
 
   for (uint16_t p = 0; p < L; p++) {
     uint16_t x = p + flow;
@@ -2500,7 +2488,7 @@ static void mode_z_echo_chamber(void)
 
   const uint32_t t = strip.now;
   const uint16_t L = CHUNCHUN_HARNESS_PATH_LEN;
-  uint16_t head = zh_wrap((t * (5U + (SEGMENT.speed >> 5))) / 28U);
+  uint16_t head = zh_wrap((t * (5U + (SEGMENT.speed >> 5))) / 185U);
   uint16_t width = 14U + (SEGMENT.intensity >> 4);
 
   for (int16_t d = -(int16_t)width; d <= (int16_t)width; d++) {
@@ -2530,22 +2518,23 @@ static const char _data_FX_MODE_Z_ECHO_CHAMBER[] PROGMEM =
 static void mode_z_prism_cascade(void)
 {
   if (SEGLEN <= 1) FX_FALLBACK_STATIC;
-  const uint32_t t = strip.now;
-  const uint16_t L = CHUNCHUN_HARNESS_PATH_LEN;
-
-  for (uint16_t p = 0; p < L; p++) {
-    uint8_t b0 = (uint8_t)((sin16_t((uint16_t)(p * 12U + t * 2U)) + 32768) >> 8);
-    uint8_t b1 = (uint8_t)((sin16_t((uint16_t)(p * 19U - t * 3U)) + 32768) >> 8);
-    uint8_t b2 = (uint8_t)((sin16_t((uint16_t)(p * 27U + t )) + 32768) >> 8);
-    uint8_t br = scale8(qadd8(qadd8(b0, b1) / 2, b2 / 3), 190);
-    br = qadd8(br, SEGMENT.custom1 >> 5);
-    if (br < 8) continue;
-    uint16_t hue = (uint16_t)(p * 40U + t / 40U);
-    SEGMENT.setPixelColor(zh_path_led(p), zh_palette(hue, br));
+  const uint32_t t=strip.now;
+  const uint16_t L=CHUNCHUN_HARNESS_PATH_LEN;
+  // Broad prismatic stripes with contrasting crests and troughs; unlike
+  // the old almost-uniform cyan haze, these bands are obvious at a distance.
+  for(uint16_t p=0;p<L;p++) {
+  uint16_t x=(uint32_t)p*65535UL/L;
+  uint8_t a=(uint8_t)((sin16_t((uint16_t)(x*3U-(uint16_t)(t*4U)))+32768)>>8);
+  uint8_t b=(uint8_t)((sin16_t((uint16_t)(x*5U+(uint16_t)(t*2U)))+32768)>>8);
+  uint8_t wave=max(a,scale8(b,195U));
+  uint8_t br=qadd8(25U,scale8(wave,217U));
+  br=qadd8(br,SEGMENT.custom1>>4);
+  uint16_t hue=x+(uint16_t)(t*3U)+(uint16_t)(b*90U);
+  SEGMENT.setPixelColor(zh_path_led(p),zh_palette(hue,br));
   }
 }
 static const char _data_FX_MODE_Z_PRISM_CASCADE[] PROGMEM =
-  "Z - Prism Cascade@Speed,Complexity,Floor,;!,!;!;01;pal=37";
+  "Z - Prism Cascade@Speed,Complexity,Floor,;!,!;!;01;pal=11";
 
 // ---------------------------------------------------------------------------
 // Z - Gravity Lens
@@ -2555,23 +2544,25 @@ static const char _data_FX_MODE_Z_PRISM_CASCADE[] PROGMEM =
 static void mode_z_gravity_lens(void)
 {
   if (SEGLEN <= 1) FX_FALLBACK_STATIC;
-  const uint32_t t = strip.now;
-  const uint16_t L = CHUNCHUN_HARNESS_PATH_LEN;
-
-  uint16_t m1 = zh_wrap((t * 3U) / 40U);
-  uint16_t m2 = zh_wrap((t * 5U) / 55U + L / 2U);
-  uint16_t influence = 50U + (SEGMENT.intensity >> 2);
-
-  for (uint16_t p = 0; p < L; p++) {
-    uint16_t d1 = zh_cyclic_distance(p, m1);
-    uint16_t d2 = zh_cyclic_distance(p, m2);
-    uint16_t inv1 = (d1 < influence) ? (influence - d1) : 0;
-    uint16_t inv2 = (d2 < influence) ? (influence - d2) : 0;
-    uint8_t br = scale8(qadd8(inv1 * 2, inv2 * 2), 180);
-    br = qadd8(br, SEGMENT.custom1 >> 5);
-    if (br < 8) continue;
-    uint16_t hue = 5000U + (uint16_t)(inv1 * 40U) + (uint16_t)(t / 90U);
-    SEGMENT.setPixelColor(zh_path_led(p), zh_palette(hue, br));
+  const uint32_t t=strip.now;
+  const uint16_t L=CHUNCHUN_HARNESS_PATH_LEN;
+  // Clear, high-contrast lensing rings move slowly around two masses,
+  // rather than the previous dim, tiny drifting spots.
+  const uint16_t m1=zh_wrap(t/(75U-(SEGMENT.speed>>5)));
+  const uint16_t m2=zh_wrap((L/2U)+L-(t/108U)%L);
+  const uint16_t radius1=37U+(uint16_t)((sin16_t((uint16_t)(t*5U))+32768)>>11);
+  const uint16_t radius2=51U+(uint16_t)((sin16_t((uint16_t)(t*3U))+32768)>>11);
+  const uint16_t width=15U+(SEGMENT.intensity>>5);
+  for(uint16_t p=0;p<L;p++){
+  uint16_t d1=zh_cyclic_distance(p,m1),d2=zh_cyclic_distance(p,m2);
+  uint16_t e1=d1>radius1?d1-radius1:radius1-d1;
+  uint16_t e2=d2>radius2?d2-radius2:radius2-d2;
+  uint8_t ring1=zh_soft(e1,width);
+  uint8_t ring2=zh_soft(e2,width+6U);
+  uint8_t br=qadd8(30U,scale8(max(ring1,ring2),215U));
+  br=qadd8(br,SEGMENT.custom1>>4);
+  uint16_t hue=32000U+(uint16_t)(p*70U)+(uint16_t)(t*2U);
+  SEGMENT.setPixelColor(zh_path_led(p),zh_palette(hue,br));
   }
 }
 static const char _data_FX_MODE_Z_GRAVITY_LENS[] PROGMEM =
@@ -2585,23 +2576,25 @@ static const char _data_FX_MODE_Z_GRAVITY_LENS[] PROGMEM =
 static void mode_z_quiet_storm(void)
 {
   if (SEGLEN <= 1) FX_FALLBACK_STATIC;
-  const uint32_t t = strip.now;
-  const uint16_t L = CHUNCHUN_HARNESS_PATH_LEN;
-  const uint16_t z = (uint16_t)(t / (45U + (255 - SEGMENT.speed) / 5U));
-
-  for (uint16_t p = 0; p < L; p++) {
-    uint8_t n = perlin8(p * 2U, z, 0);
-    uint8_t n2 = perlin8(p * 6U + 3000U, z / 2U, 800U);
-    uint8_t br = scale8(n, 140);
-    br = qadd8(br, scale8(n2, 60));
-    br = qadd8(br, SEGMENT.custom1 >> 4);
-    if (br < 10) continue;
-    uint16_t hue = 36000U + (uint16_t)(n2 * 25U);
-    SEGMENT.setPixelColor(zh_path_led(p), zh_palette(hue, br));
+  const uint32_t t=strip.now;
+  const uint16_t L=CHUNCHUN_HARNESS_PATH_LEN;
+  const uint16_t z=(uint16_t)(t/(60U+(255U-SEGMENT.speed)/4U));
+  // Visible rolling fronts, layered blue-violet storm banks and highlights.
+  for(uint16_t p=0;p<L;p++){
+  uint16_t x=(uint32_t)p*65535UL/L;
+  uint8_t n=perlin8(p*5U,z,0);
+  uint8_t front=(uint8_t)((sin16_t(x*3U+(uint16_t)(t*3U))+32768)>>8);
+  uint8_t crest=(uint8_t)((sin16_t(x*7U-(uint16_t)(t*2U))+32768)>>8);
+  uint8_t br=qadd8(32U,scale8(front,104U));
+  br=qadd8(br,scale8(crest,65U));
+  br=qadd8(br,scale8(n,50U));
+  br=qadd8(br,SEGMENT.custom1>>5);
+  uint16_t hue=38000U+(uint16_t)(n*105U)+(uint16_t)(t*2U);
+  SEGMENT.setPixelColor(zh_path_led(p),zh_palette(hue,br));
   }
 }
 static const char _data_FX_MODE_Z_QUIET_STORM[] PROGMEM =
-  "Z - Quiet Storm@Speed,Grain,Floor,;!,!;!;01;pal=41";
+  "Z - Quiet Storm@Speed,Grain,Floor,;!,!;!;01;pal=63";
 
 // ---------------------------------------------------------------------------
 // Z - Infinite Corridor
@@ -2617,7 +2610,7 @@ static void mode_z_infinite_corridor(void)
   const uint16_t spacing = 55U + (SEGMENT.intensity >> 2);
 
   for (uint16_t p = 0; p < L; p++) {
-    uint16_t dist = (p + (t * speed) / 32U) % spacing;
+    uint16_t dist = (p + (t * speed) / 560U) % spacing;
     uint8_t br = zh_soft(dist, spacing / 3U);
     br = qadd8(br, SEGMENT.custom1 >> 5);
     if (br < 8) continue;
@@ -2736,7 +2729,7 @@ static const char _data_FX_MODE_Z_METEOR_CIRCUIT[] PROGMEM =
 static void mode_z_meteor_twin_sync(void) {
   if (SEGLEN < 290) FX_FALLBACK_STATIC;
   SEGMENT.fill(BLACK);
-  const uint32_t cycle=6900U-(uint32_t)SEGMENT.speed*15U;
+  const uint32_t cycle=10000U-(uint32_t)SEGMENT.speed*17U;
   float theta=6.283185307f*(float)(strip.now%cycle)/(float)cycle;
   float p=0.5f*(1.0f-cosf(theta));
   float end=(float)(CHUNCHUN_HARNESS_PATH_LEN-1U);
@@ -3107,7 +3100,10 @@ strip.addEffect(255, &mode_z_prism_cascade, _data_FX_MODE_Z_PRISM_CASCADE);
 
   void addToJsonInfo(JsonObject& info) override {
     JsonObject status = info.createNestedObject("harnessFX");
-    status["build"] = "20-section-5meteors-espnow-snakefix";
+    status["build"] = "Harness v5.1";
+    status["harnessVersion"] = "5.1";
+    status["virtualPositions"] = CHUNCHUN_HARNESS_PATH_LEN;
+    status["physicalP0LEDs"] = 34;
     status["snakeRecoveryCount"] = snakeRecoveryCount;
     status["snakeAllowed"] = allowSnake;
     status["perEffectMemory"] = true;
