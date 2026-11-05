@@ -19,7 +19,7 @@
 #undef sq
 #endif
 
-constexpr uint8_t VIS_COUNT=27, Z_COUNT=28, REMOTE_PAGES=5;
+constexpr uint8_t VIS_COUNT=31, Z_COUNT=28, REMOTE_PAGES=5;
 constexpr int NFFT=512, FS=16000, NBANDS=32;
 constexpr float PI_F=3.14159265358979323846f, TAU=6.28318530717958647692f;
 static const char *const EFFECT_NAMES[VIS_COUNT] = {
@@ -49,9 +49,13 @@ static const char *const EFFECT_NAMES[VIS_COUNT] = {
  "Warp Drive Loom",
  "Spiral Spindle",
  "Tidal Cable Knit",
- "Spike Ball Nova (variant)"
+ "Spike Ball Nova (variant)",
+ "String Theory",
+ "FluidBox Classic",
+ "Gravity Lab",
+ "Beat Laboratory"
 };
-static constexpr uint8_t ORIGINAL_EFFECT_ID[VIS_COUNT]={23,22,20,4,24,29,30,1,2,3,6,7,8,9,10,11,12,13,17,19,25,26,27,44,51,53,63};
+static constexpr uint8_t ORIGINAL_EFFECT_ID[VIS_COUNT]={23,22,20,4,24,29,30,1,2,3,6,7,8,9,10,11,12,13,17,19,25,26,27,44,51,53,63,64,65,66,67};
 static inline uint8_t originalEffect(uint8_t i);
 // V12 presentation order -> V13, prior to the two V16.8 effect removals.
 static constexpr uint8_t V12_INDEX_TO_V13[31]={9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,0,1,2,3,4,5,6,7,8,28,29,30};
@@ -229,6 +233,22 @@ bool favoritesOnly=false,adaptiveRender=true,displayBlank=false;
 uint8_t libraryPage=0,remoteIdleSecs=20;
 uint32_t lastRemoteActivity=0;
 static bool isFavorite(uint8_t i){return i<VIS_COUNT && (favoriteBits&(1ULL<<i));}
+// V17.22 harness remote favorites are independent of the 31 local watch favorites.
+static constexpr int REMOTE_FX_COUNT=Z_COUNT+WLED_COUNT;
+static uint8_t remoteFavBits[(REMOTE_FX_COUNT+7)/8]={};
+static uint16_t remoteFavScroll=0,remotePaletteScroll=0,remoteSettingsScroll=0;
+static uint8_t remoteCustom[3]={128,128,16};
+static bool remoteAwaitingApply=false;
+static bool remoteIsFavorite(int i){return i>=0&&i<REMOTE_FX_COUNT&&(remoteFavBits[i/8]&(1u<<(i%8)));}
+static void remoteToggleFavorite(int i){
+ if(i<0||i>=REMOTE_FX_COUNT)return;
+ remoteFavBits[i/8]^=(1u<<(i%8));
+ prefs.putBytes("rfav1722",remoteFavBits,sizeof(remoteFavBits));
+}
+static int remoteFavCount(){int n=0;for(int i=0;i<REMOTE_FX_COUNT;i++)if(remoteIsFavorite(i))n++;return n;}
+static int remoteFavIndexAt(int pos){for(int i=0;i<REMOTE_FX_COUNT;i++)if(remoteIsFavorite(i)&&pos--==0)return i;return -1;}
+static String remoteEffectName(int i){return i<Z_COUNT?String(Z_NAMES[i]):String(WLED_NAMES[clampi(i-Z_COUNT,0,WLED_COUNT-1)]);}
+
 static void storeLibrary(){prefs.putBytes("fav1717",&favoriteBits,sizeof(favoriteBits));prefs.putBool("favonly",favoritesOnly);}
 static void vibration(uint8_t strength,int ms);
 static inline int clampi(int v,int a,int b);
@@ -376,7 +396,7 @@ static void registerOnset(uint32_t now){
 // expansions; wave: the oscilloscope trace. Rendering functions are unchanged.
 enum AutoMicType : uint8_t {MIC_FIXED=0,MIC_SPECTRUM=1,MIC_BASS=2,MIC_ENERGY=3,MIC_WAVE=4};
 static constexpr uint8_t AUTO_MIC_TYPES[VIS_COUNT]={
- MIC_SPECTRUM, MIC_ENERGY, MIC_ENERGY, MIC_WAVE, MIC_BASS, MIC_ENERGY, MIC_ENERGY, MIC_SPECTRUM, MIC_ENERGY, MIC_ENERGY, MIC_SPECTRUM, MIC_SPECTRUM, MIC_WAVE, MIC_ENERGY, MIC_ENERGY, MIC_ENERGY, MIC_BASS, MIC_BASS, MIC_SPECTRUM, MIC_ENERGY, MIC_ENERGY, MIC_SPECTRUM, MIC_BASS, MIC_FIXED, MIC_BASS, MIC_ENERGY, MIC_SPECTRUM
+ MIC_SPECTRUM, MIC_ENERGY, MIC_ENERGY, MIC_WAVE, MIC_BASS, MIC_ENERGY, MIC_ENERGY, MIC_SPECTRUM, MIC_ENERGY, MIC_ENERGY, MIC_SPECTRUM, MIC_SPECTRUM, MIC_WAVE, MIC_ENERGY, MIC_ENERGY, MIC_ENERGY, MIC_BASS, MIC_BASS, MIC_SPECTRUM, MIC_ENERGY, MIC_ENERGY, MIC_SPECTRUM, MIC_BASS, MIC_FIXED, MIC_BASS, MIC_ENERGY, MIC_SPECTRUM, MIC_ENERGY, MIC_FIXED, MIC_ENERGY, MIC_SPECTRUM
 };
 static_assert(sizeof(AUTO_MIC_TYPES)/sizeof(AUTO_MIC_TYPES[0])==VIS_COUNT,"auto mic profile count");
 static constexpr float AUTO_MIC_TARGET=.80f;
@@ -452,6 +472,7 @@ static void adaptMicSensitivity(float rms,float spectrum,float lowBass,float wav
  // No Preferences writes in the audio callback, so no extra flash wear.
 }
 
+#include "assets/BeatLabDSP.h"
 static void processMic(){
  float power=0,powerBass=0,powerMid=0,powerHi=0;
  float strongest[5]={},ungainedBass=0,rawWave=0;
@@ -483,6 +504,7 @@ static void processMic(){
  flux=fmaxf(0,bass-oldBass);oldBass=smooth(oldBass,bass,.075f);
  kick=smooth(kick,clampf(flux*2.5f+bass*.28f),.4f);
  uint32_t now=millis();if(flux>.042f && bass>.105f && now-beatStamp>260)registerOnset(now);
+ if(originalEffect(effectID)==67)BeatLabDSP::engine.consume(bins,bass,mids,highs,energy,now);
  haveSamples=true;micStamp=now;
 }
 static void audioTick(){
@@ -529,7 +551,7 @@ static void loadSettings(){
   if(remapToV178)slot=toV178Effect(slot,sortVersion);
   return toV1717Index(toV1714Index(slot,hasV1712));
  };
- const int sourceCount=hasV1717?27:(hasV1716?41:(hasV1715?31:(hasV1714?26:(hasV1712?33:(remapToV178?31:23)))));
+ const int sourceCount=hasV1717?30:(hasV1716?41:(hasV1715?31:(hasV1714?26:(hasV1712?33:(remapToV178?31:23)))));
  const char *effectKey=hasV1717?"eff1717":(hasV1716?"eff1716":(hasV1715?"eff1715":(hasV1714?"eff1714":(hasV1712?"eff1712":(hasV178?"eff178":"effect")))));
  const char *favoriteKey=hasV1717?"fav1717":(hasV1716?"fav1716":(hasV1715?"fav1715":(hasV1714?"fav1714":(hasV1712?"fav1712":(hasV178?"fav178":"favs")))));
  const char *manualKey=hasV1717?"man1717":(hasV1716?"man1716":(hasV1715?"man1715":(hasV1714?"man1714":(hasV1712?"man1712":(hasV178?"man178":"micmodes")))));
@@ -565,6 +587,7 @@ static void loadSettings(){
 
  adaptiveRender=prefs.getBool("adaptive",true);
  remoteIdleSecs=prefs.getUChar("idle",20);
+ if(prefs.getBytesLength("rfav1722")==sizeof(remoteFavBits))prefs.getBytes("rfav1722",remoteFavBits,sizeof(remoteFavBits));
  for(uint8_t j=0;j<4;j++){
   SceneData v;
   const size_t n=prefs.getBytes((String(sceneStem)+String(j)).c_str(),&v,sizeof(v));
@@ -628,7 +651,7 @@ static void radioSend(uint8_t cmd,uint8_t value){
  if(!radioReady)return;
  uint32_t seq=++remoteSeq;uint8_t payload[12]={'Z','H','R','1',1,cmd,value,0,
    (uint8_t)seq,(uint8_t)(seq>>8),(uint8_t)(seq>>16),(uint8_t)(seq>>24)};
- radioPending=(esp_now_send(BROADCAST,payload,sizeof(payload))==ESP_OK);remoteLast=millis();radioSuccess=false;
+ radioPending=(esp_now_send(BROADCAST,payload,sizeof(payload))==ESP_OK);remoteLast=millis();radioSuccess=false;remoteAwaitingApply=true;
 }
 #if ESP_IDF_VERSION_MAJOR >= 5
 static void radioCallback(const esp_now_recv_info_t *info,const uint8_t *data,int n)
@@ -642,7 +665,7 @@ static void radioCallback(const uint8_t *mac,const uint8_t *data,int n)
  portENTER_CRITICAL(&ackMux);rxAck=a;newAck=true;portEXIT_CRITICAL(&ackMux);
 }
 static void radioTick(){if(newAck){Ack a;portENTER_CRITICAL(&ackMux);a=rxAck;newAck=false;portEXIT_CRITICAL(&ackMux);
- if(a.ready&&a.seq==remoteSeq){radioPending=false;radioSuccess=a.status==0;vibration(radioSuccess?135:90,radioSuccess?45:100);}}
+ if(a.ready&&a.seq==remoteSeq){radioPending=false;radioSuccess=a.status==0;remoteAwaitingApply=false;vibration(radioSuccess?135:90,radioSuccess?45:100);}}
  if(radioPending&&millis()-remoteLast>1500)radioPending=false;}
 static void startRadio(){
  WiFi.mode(WIFI_STA);WiFi.disconnect(false,false);WiFi.setSleep(false);
@@ -652,7 +675,7 @@ static void startRadio(){
  radioReady=esp_now_init()==ESP_OK;
  if(radioReady){esp_now_register_recv_cb(radioCallback);esp_now_peer_info_t peer={};memcpy(peer.peer_addr,BROADCAST,6);peer.channel=rxChannel;peer.encrypt=false;esp_now_add_peer(&peer);}
 }
-static void setRemote(bool on){if(remote==on)return;remote=on;overlay=NONE;remotePage=0;displayBlank=false;lastRemoteActivity=millis();
+static void setRemote(bool on){if(remote==on)return;remote=on;overlay=NONE;remotePage=0;remoteSettingsScroll=0;displayBlank=false;lastRemoteActivity=millis();
  M5.Display.setBrightness((uint8_t)(brightness*255/100));radioSuccess=false;radioPending=false;
  if(remote)M5.Mic.end();else{M5.Mic.begin();pendingMic=false;}
  vibration(190,82);}
@@ -974,8 +997,7 @@ static void textEffects(uint8_t id){
     spoke(CX,CY,29,223,a,tint(hue(k*.083f),.24f),3);
     for(int m=0;m<4;m++){float r=58+m*39+7*sinf(beatClock*.15f+k);
      float x=CX+r*cosf(a+.14f*sinf(m+t*.14f)),y=CY+r*sinf(a+.14f*sinf(m+t*.14f));
-     glow(x,y,2+(m%3),hue(k*.075f+m*.05f));}}
-  nameGlyphsOnRing(word,141,t*.13f+norm*.04f,cyan);break;}
+     glow(x,y,2+(m%3),hue(k*.075f+m*.05f));}}  nameGlyphsOnRing(word,141,t*.13f+norm*.04f,cyan);break;}
  case 26:{ // Round Resonator: letters on rings only, no stationary central text.
   for(int j=0;j<12;j++){float r=26+j*17+8*sinf(q*.25f+j*.4f);
     circ(CX,CY,r,tint(hue(.52f+j*.045f),.25f+.28f*norm),2);}
@@ -1116,8 +1138,14 @@ static void drawCinematic(uint8_t id){
 #include "assets/StringFestivalV1714.h"
 #include "assets/StringFestivalV1715.h"
 #include "assets/ImportedAudioFXV1716.h"
+#include "assets/StringTheoryV1719.h"
+#include "assets/GravityLabV1720.h"
+#include "assets/BeatLabV1721.h"
 static void renderEffect(){
  const uint8_t id=originalEffect(effectID);
+ if(id==64){StringTheory::render();return;}
+ if(id==65||id==66){GravityLab::render(id==65);return;}
+ if(id==67){BeatLab::render();return;}
  if(renderStringFestivalV1714(id))return; // original three, completely unchanged
  if(renderStringFestivalV1715(id))return; // five unchanged textile scenes
  if(renderImportedAudioV1716(id))return; // 10 imported/adapted audio faces, IDs 54..63
@@ -1383,41 +1411,109 @@ static void applyRemoteSelection(){
  }
  vibration(137,25);
 }
+// Visual geometry is kept inside the 466px round OLED: 392px nav fits at x=110..356.
+static void remoteNav(){
+ uiButton(104,391,100,42,"< PAGE");uiButton(262,391,100,42,"PAGE >");
+ textC(String(remotePage+1)+"/5",CX,374,rgb(145,199,213),2);
+}
+static void remoteBrightnessControl(int y){
+ uint16_t cyan=rgb(91,239,232);
+ textC("BRIGHTNESS",157,y,rgb(235,249,255),3);
+ textC(String((remoteBrightness*100+127)/255)+"%",334,y,cyan,3);
+ uiBar(y+22,99,367,remoteBrightness/255.f,cyan);
+}
+static uint16_t remotePaletteColor(int pal,int slot){
+ // Representative WLED palette colors; actual LED colors still come from harness palette.
+ static const uint8_t sample[18][9]={
+  {46,227,221,255,120,79,109,79,255}, {255,58,139,35,255,215,245,202,90},
+  {255,71,64,244,176,47,0,131,250},{255,110,35,221,47,206,64,217,246},
+  {255,140,33,248,57,95,51,199,211},{255,224,89,111,56,237,52,211,179},
+  {252,41,143,242,196,46,54,183,250},{245,244,255,99,169,247,25,78,175},
+  {252,177,35,251,57,33,123,12,21},{43,139,255,15,218,234,8,46,147},
+  {23,82,37,58,181,48,197,225,72},{251,63,64,250,205,47,40,222,209},
+  {252,52,63,46,232,242,245,221,66},{252,177,96,241,78,103,53,29,90},
+  {96,150,245,180,114,236,47,222,204},{168,224,250,55,174,237,22,53,125},
+  {249,51,61,52,112,255,175,35,141},{255,233,51,255,124,5,117,28,20}
+ };
+ const uint8_t *c=sample[pal%18]+3*slot;
+ return rgb(c[0],c[1],c[2]);
+}
+// This is a local compatibility map, not a substitute for live /json/fxdata.
+// WLED metadata controls are available only when the matching ESP-NOW receiver supports them.
+struct RemoteFxParam { const char *name;uint8_t cmd;uint8_t value; };
+static int remoteFxParams(RemoteFxParam out[5]){
+ if(remoteSelected<Z_COUNT){out[0]={"Speed",10,remoteSpeed};out[1]={"Intensity",11,remoteIntensity};return 2;}
+ int id=remoteSelected-Z_COUNT;
+ if(id==0)return 0; // Solid has no effect sliders.
+ if(id==1||id==2||id==3||id==9){out[0]={"Speed",10,remoteSpeed};return 1;}
+ out[0]={"Speed",10,remoteSpeed};out[1]={"Intensity",11,remoteIntensity};
+ // Extended WLED metadata-inspired fields; commands 14-16 require matching receiver.
+ if(id==66||id==38||id==97||id==161){out[2]={"Custom 1",14,remoteCustom[0]};return 3;}
+ return 2;
+}
 static void renderRemote(){
- panelBg(remotePage==0?"HARNESS FX":remotePage==1?"PRESETS":remotePage==2?"EFFECT SETTINGS":remotePage==3?"PALETTES":"RADIO");
- uint16_t white=rgb(241,251,255),cyan=rgb(102,244,239),dim=rgb(143,184,205);
+ const uint16_t white=rgb(238,252,255),dim=rgb(156,196,214),cyan=rgb(90,238,234);
+ const char *heads[]={"HARNESS FX","FAVORITES","FX SETTINGS","PALETTES","RADIO"};
+ panelBg(heads[remotePage]);
  if(remotePage==0){
-   bool isZ=remoteSelected<Z_COUNT;int idx=isZ?remoteSelected:remoteSelected-Z_COUNT;
-   textC(isZ?"CUSTOM Z":"BUILT-IN WLED",CX,147,dim,2);
-   textC(String(remoteSelected+1)+" / "+String(Z_COUNT+WLED_COUNT),CX,180,cyan,3);
-   String name=isZ?Z_NAMES[idx]:WLED_NAMES[clampi(idx,0,WLED_COUNT-1)];
-   if(name.length()>19)name=name.substring(0,19);
-   textC(name,CX,240,white,3);
-   uiButton(63,290,89,60,"<");uiButton(156,290,155,60,"APPLY",true);uiButton(315,290,89,60,">");
+  remoteBrightnessControl(124);
+  bool custom=remoteSelected<Z_COUNT;
+  textC(custom?"CUSTOM Z":"BUILT-IN WLED",CX,204,dim,3);
+  textC(String(remoteSelected+1)+" / "+String(REMOTE_FX_COUNT),CX,235,cyan,3);
+  String name=remoteEffectName(remoteSelected);if(name.length()>21)name=name.substring(0,20)+"~";
+  textC(name,CX,273,white,name.length()>17?2:3);
+  uiButton(83,291,83,49,"<");uiButton(169,291,128,49,"APPLY",true);uiButton(300,291,83,49,">");
+  uiButton(134,346,198,37,remoteIsFavorite(remoteSelected)?"REMOVE STAR":"ADD FAVORITE",remoteIsFavorite(remoteSelected));
  }else if(remotePage==1){
-   textC("PRESET "+String(remotePreset),CX,199,white,5);
-   uiButton(61,270,95,64,"-");uiButton(163,270,140,64,"RECALL",true);uiButton(310,270,96,64,"+");
+  textC(String(remoteFavCount())+" SAVED EFFECTS",CX,130,dim,3);
+  int total=remoteFavCount();if(remoteFavScroll> (uint16_t)(total>4?total-4:0))remoteFavScroll=(uint16_t)(total>4?total-4:0);
+  if(total==0)textC("STAR FX ON PAGE 1",CX,240,dim,3);
+  for(int row=0;row<4&&row+remoteFavScroll<total;row++){
+    int id=remoteFavIndexAt(row+remoteFavScroll),y=150+row*54;
+    if(id<0)continue;
+    cv.fillRoundRect(75,y,316,46,10,id==remoteSelected?rgb(24,112,133):rgb(18,46,69));
+    cv.drawRoundRect(75,y,316,46,10,id==remoteSelected?cyan:rgb(66,118,145));
+    String name=remoteEffectName(id);if(name.length()>18)name=name.substring(0,17)+"~";
+    textC(name,216,y+23,white,name.length()>14?2:3);
+    textC("*",370,y+22,rgb(255,209,108),3);
+  }
+  if(total>4){textC("SWIPE LIST",CX,366,dim,2);}
  }else if(remotePage==2){
-   labelSmall("BRIGHTNESS",CX,140,dim);uiBar(162,80,W-80,remoteBrightness/255.f,cyan);
-   labelSmall("SPEED",CX,211,dim);uiBar(234,80,W-80,remoteSpeed/255.f,rgb(216,94,240));
-   labelSmall("INTENSITY",CX,284,dim);uiBar(309,80,W-80,remoteIntensity/255.f,rgb(252,167,100));
-   labelSmall("TAP BAR TO APPLY",CX,362,dim);
+  // Brightness is an ordinary FX settings row, aligned with all others.
+  remoteBrightnessControl(139);
+  RemoteFxParam params[5];int n=remoteFxParams(params);
+  for(int row=0;row<3&&row+remoteSettingsScroll<n;row++){
+   RemoteFxParam &p=params[row+remoteSettingsScroll];int y=206+row*61;
+   textC(String(p.name),163,y,white,3);textC(String((int)p.value),326,y,cyan,3);
+   uiBar(y+17,99,367,p.value/255.f,rgb(180,116,236));
+  }
+  if(n==0)textC("NO EFFECT SLIDERS",CX,270,dim,3);
  }else if(remotePage==3){
-   int id=clampi(selectedPalette,0,PAL_COUNT-1);
-   textC(String(id)+" / "+String(PAL_COUNT-1),CX,166,cyan,3);
-   textC(PAL_NAMES[id],CX,230,white,4);
-   uiButton(63,290,88,60,"<");uiButton(155,290,154,60,"APPLY",true);uiButton(313,290,89,60,">");
-   labelSmall("Requires protocol v2",CX,366,dim);
+  textC("TAP TO APPLY",CX,127,dim,3);
+  for(int row=0;row<4;row++){
+   int p=remotePaletteScroll+row;if(p>=PAL_COUNT)break;
+   int y=151+row*54;
+   cv.fillRoundRect(78,y,310,47,10,p==selectedPalette?rgb(20,104,118):rgb(17,43,66));
+   cv.drawRoundRect(78,y,310,47,10,p==selectedPalette?cyan:rgb(65,109,134));
+   String name=PAL_NAMES[p];if(name.length()>13)name=name.substring(0,12)+"~";
+   textC(name,171,y+23,white,name.length()>11?2:3);
+   for(int j=0;j<3;j++){
+    int px=291+j*31;cv.fillCircle(px,y+23,11,remotePaletteColor(p,j));
+    cv.drawCircle(px,y+23,11,rgb(182,199,213));
+   }
+  }
  }else{
-   textC("CH "+String(rxChannel),CX,167,cyan,5);
-   String mac=WiFi.macAddress();textC(mac.substring(0,14),CX,222,white,2);
-   textC(mac.substring(14),CX,247,white,2);
-   uiButton(118,296,104,53,"CH -");uiButton(240,296,104,53,"CH +");
+  textC("ESP-NOW CHANNEL",CX,143,dim,3);
+  textC(String(rxChannel),CX,203,cyan,5);
+  uiButton(117,224,107,50,"CH -");uiButton(242,224,107,50,"CH +");
+  String mac=WiFi.macAddress();
+  textC(mac.substring(0,14),CX,310,white,2);
+  textC(mac.substring(14),CX,334,white,2);
+  textC("PAIR IN WLED REMOTES",CX,362,dim,2);
  }
- // Bottom page navigation without big page fractions on the watch face.
- uiButton(95,386,88,45,"< PAGE");uiButton(280,386,93,45,"PAGE >");
- if(radioPending)textC("WAIT ACK",CX,365,rgb(252,182,76),2);
- else if(radioSuccess)textC("APPLIED",CX,365,rgb(117,255,171),2);
+ if(radioPending)textC("SENDING",CX,110,rgb(255,188,96),2);
+ else if(radioSuccess)textC("APPLIED",CX,110,rgb(107,255,181),2);
+ remoteNav();
 }
 static void showTextEditor(){
  // Always start with a BLANK name entry; no previous name is prefilled.
@@ -1437,30 +1533,39 @@ static void saveNameOverlay(){
  }
  saveNames();overlay=NONE;vibration(180,65);
 }
-static void remoteTouch(int x,int y){
- if(y>=380){remotePage=(remotePage+(x<CX?REMOTE_PAGES-1:1))%REMOTE_PAGES;vibration();return;}
- if(remotePage==0&&y>=274&&y<360){
-   if(x<155)remoteSelected=(remoteSelected+Z_COUNT+WLED_COUNT-1)%(Z_COUNT+WLED_COUNT);
-   else if(x>309)remoteSelected=(remoteSelected+1)%(Z_COUNT+WLED_COUNT);
+static void remoteTouch(int x,int y,int dx,int dy){
+ if(y>=390){remotePage=(remotePage+(x<CX?REMOTE_PAGES-1:1))%REMOTE_PAGES;vibration(90,16);return;}
+ if(remotePage==0){
+  if(y>=145&&y<180){remoteBrightness=(uint8_t)clampi((x-99)*255/268,0,255);radioSend(2,remoteBrightness);}
+  else if(y>=286&&y<341){
+   if(x<168)remoteSelected=(remoteSelected+REMOTE_FX_COUNT-1)%REMOTE_FX_COUNT;
+   else if(x>297)remoteSelected=(remoteSelected+1)%REMOTE_FX_COUNT;
    else applyRemoteSelection();
- }else if(remotePage==1&&y>=260&&y<=349){
-   if(x<160)remotePreset=clampi(remotePreset-1,1,250);
-   else if(x>306)remotePreset=clampi(remotePreset+1,1,250);
-   else radioSend(1,remotePreset);
- }else if(remotePage==2&&y>155&&y<325){
-   uint8_t v=clampi((int)((x-80)*255.f/(W-160)),0,255);
-   if(y<204){remoteBrightness=v;radioSend(2,v);}
-   else if(y<272){remoteSpeed=v;radioSend(10,v);}
-   else {remoteIntensity=v;radioSend(11,v);}
- }else if(remotePage==3&&y>=280&&y<367){
-   if(x<155)selectedPalette=(selectedPalette+PAL_COUNT-1)%PAL_COUNT;
-   else if(x>310)selectedPalette=(selectedPalette+1)%PAL_COUNT;
-   else radioSend(13,selectedPalette); // requires harness-side update
- }else if(remotePage==4&&y>=292&&y<=357){
-    rxChannel=clampi(rxChannel+(x<CX?-1:1),1,11);prefs.putUChar("radio",rxChannel);
-    esp_now_deinit();WiFi.mode(WIFI_OFF);startRadio();
+  }else if(y>=343&&y<389)remoteToggleFavorite(remoteSelected);
+ }else if(remotePage==1){
+  if(abs(dy)>24){int count=remoteFavCount();remoteFavScroll=clampi((int)remoteFavScroll+(dy<0?1:-1),0,count>4?count-4:0);}
+  else if(y>=145&&y<366){int idx=remoteFavIndexAt(remoteFavScroll+(y-150)/54);
+   if(idx>=0){remoteSelected=idx;applyRemoteSelection();}}
+ }else if(remotePage==2){
+  RemoteFxParam params[5];int n=remoteFxParams(params);
+  if(abs(dy)>26){remoteSettingsScroll=clampi((int)remoteSettingsScroll+(dy<0?1:-1),0,n>3?n-3:0);}
+  else if(y>=151&&y<180){remoteBrightness=(uint8_t)clampi((x-99)*255/268,0,255);radioSend(2,remoteBrightness);}
+  else if(y>=213&&y<377){int row=(y-207)/61;
+    int index=row+remoteSettingsScroll;
+    if(row>=0&&row<3&&index<n){uint8_t v=(uint8_t)clampi((x-99)*255/268,0,255);
+      if(params[index].cmd==10)remoteSpeed=v;else if(params[index].cmd==11)remoteIntensity=v;
+      else if(params[index].cmd>=14&&params[index].cmd<=16)remoteCustom[params[index].cmd-14]=v;
+      radioSend(params[index].cmd,v);
+    }
+  }
+ }else if(remotePage==3){
+  if(abs(dy)>25){remotePaletteScroll=clampi((int)remotePaletteScroll+(dy<0?2:-2),0,PAL_COUNT>4?PAL_COUNT-4:0);}
+  else if(y>=149&&y<368){int id=remotePaletteScroll+(y-151)/54;
+   if(id>=0&&id<PAL_COUNT){selectedPalette=id;radioSend(13,selectedPalette);}}
+ }else if(remotePage==4){
+  if(y>=224&&y<281){rxChannel=clampi(rxChannel+(x<CX?-1:1),1,11);prefs.putUChar("radio",rxChannel);
+    if(radioReady){esp_now_deinit();radioReady=false;}WiFi.mode(WIFI_OFF);startRadio();}
  }
- vibration(100,26);
 }
 static void editorTouch(int x,int y){
  if(overlay==BRIGHTNESS){
@@ -1508,10 +1613,16 @@ static void editorTouch(int x,int y){
  }
 }
 static void selectEffect(int d){
- // V17.14: effect navigation is silent to save power (button/swipe).
- // Other explicit UI confirmations keep their previous haptic behavior.
+ // V17.19: ONLY physical A/B buttons navigate effects. Touch is reserved for
+ // creative interaction and editor/remote controls; no horizontal swipe nav.
  if(remote){remoteSelected=(remoteSelected+Z_COUNT+WLED_COUNT+d)%(Z_COUNT+WLED_COUNT);}
- else {effectID=favoritesOnly&&favoriteBits?nextFavorite(effectID,d):((effectID+VIS_COUNT+d)%VIS_COUNT);persistEffect();}
+ else {
+  if(originalEffect(effectID)==64)StringTheory::dismissUI();
+  if(originalEffect(effectID)==65||originalEffect(effectID)==66)GravityLab::dismissUI();
+  if(originalEffect(effectID)==67)BeatLab::dismissUI();
+  effectID=favoritesOnly&&favoriteBits?nextFavorite(effectID,d):((effectID+VIS_COUNT+d)%VIS_COUNT);
+  persistEffect();
+ }
 }
 static void controlButtons(){
  const uint32_t now=millis();
@@ -1581,6 +1692,19 @@ static void controlButtons(){
   if(!remote){if(radioReady){esp_now_deinit();radioReady=false;}
     WiFi.mode(WIFI_OFF);setCpuFrequencyMhz(profile==2?160:240);}
  }
+ // In harness remote both physical buttons adjust HARNESS brightness, not watch FX.
+ if(remote && overlay==NONE){
+  if(!keyChord&&M5.BtnA.isPressed()&&!M5.BtnB.isPressed()&&keyADown&&now-keyADown>=390&&now-brightnessRepeatAt>=130){
+    remoteBrightness=(uint8_t)clampi((int)remoteBrightness-4,0,255);radioSend(2,remoteBrightness);brightnessRepeatAt=now;keyAHeld=true;
+  }
+  if(!keyChord&&M5.BtnB.isPressed()&&!M5.BtnA.isPressed()&&keyBDown&&now-keyBDown>=390&&now-brightnessRepeatAt>=130){
+    remoteBrightness=(uint8_t)clampi((int)remoteBrightness+4,0,255);radioSend(2,remoteBrightness);brightnessRepeatAt=now;keyBHeld=true;
+  }
+  if(M5.BtnA.wasReleased()){if(!keyChord&&!keyAHeld){remoteBrightness=(uint8_t)clampi((int)remoteBrightness-13,0,255);radioSend(2,remoteBrightness);}keyADown=0;}
+  if(M5.BtnB.wasReleased()){if(!keyChord&&!keyBHeld){remoteBrightness=(uint8_t)clampi((int)remoteBrightness+13,0,255);radioSend(2,remoteBrightness);}keyBDown=0;}
+  if(keyChord&&!M5.BtnA.isPressed()&&!M5.BtnB.isPressed())keyChord=false;
+  return;
+ }
  if(M5.BtnA.isPressed()&&!keyChord&&!keyAHeld&&keyADown&&now-keyADown>=730&&overlay==NONE){
   overlay=BRIGHTNESS;candidateBrightness=brightness;brightnessEntryHold=true;
   brightnessRepeatAt=now;keyAHeld=true;vibration(195,60);
@@ -1604,6 +1728,9 @@ static void controlTouch(){
    touchStartY=touchLastY=touch.y;
    touchStart=millis();
    touchDown=true;
+   if(overlay==NONE&&!remote&&originalEffect(effectID)==64)StringTheory::touchStart(touch.x,touch.y);
+   if(overlay==NONE&&!remote&&(originalEffect(effectID)==65||originalEffect(effectID)==66))GravityLab::touchStart(touch.x,touch.y,originalEffect(effectID)==65);
+   if(overlay==NONE&&!remote&&originalEffect(effectID)==67)BeatLab::touchStart(touch.x,touch.y);
    nameTouchXSum=touch.x;nameTouchYSum=touch.y;nameTouchSamples=1;
    nameDeleteConsumed=false;
    if(overlay==NAME){
@@ -1621,6 +1748,9 @@ static void controlTouch(){
  }
  if(touch.isPressed()&&touchDown){
    touchLastX=touch.x;touchLastY=touch.y;
+   if(overlay==NONE&&!remote&&originalEffect(effectID)==64)StringTheory::touchMove(touch.x,touch.y);
+   if(overlay==NONE&&!remote&&(originalEffect(effectID)==65||originalEffect(effectID)==66))GravityLab::touchMove(touch.x,touch.y,originalEffect(effectID)==65);
+   if(overlay==NONE&&!remote&&originalEffect(effectID)==67)BeatLab::touchMove(touch.x,touch.y);
    if(overlay==NAME && !nameDeleteConsumed){
      // Compute ONE mean contact center across this entire physical press.
      // Ignore simultaneous / adjacent key edges, not the touch centroid.
@@ -1657,8 +1787,19 @@ static void controlTouch(){
    if(overlay==NAME&&abs(dx)>60){keyboardPopup="";return;}
    if(overlay==BATTERY){overlay=NONE;batteryHudUntil=0;vibration(105,20);return;}
    if(overlay!=NONE){editorTouch(x,y);return;}
-   if(remote){lastRemoteActivity=millis();remoteTouch(x,y);return;}
-   if(abs(dx)>64){selectEffect(dx>0?-1:+1);return;}
+   if(remote){lastRemoteActivity=millis();remoteTouch(x,y,dx,y-touchStartY);return;}
+   if(originalEffect(effectID)==64){
+     if(StringTheory::touchEnd(x,y,held,dx,y-touchStartY))return;
+   }
+   if(originalEffect(effectID)==65||originalEffect(effectID)==66){
+     if(GravityLab::touchEnd(x,y,held,dx,y-touchStartY,originalEffect(effectID)==65))return;
+   }
+   if(originalEffect(effectID)==67){
+     if(BeatLab::touchEnd(x,y,held,dx,y-touchStartY))return;
+   }
+   // No swipe changes effects in V17.19. A and B own effect navigation.
+   // Avoid opening the text editor accidentally after a horizontal gesture.
+   if(abs(dx)>60 && abs(dx)>abs(y-touchStartY)*1.2f)return;
    if(originalEffect(effectID)==22||isTextEffect(effectID)||originalEffect(effectID)==44){showTextEditor();return;}
    // No manual microphone screen: all audio is calibrated automatically.
    if(originalEffect(effectID)==32||originalEffect(effectID)==36||
@@ -1677,6 +1818,10 @@ static uint8_t powerFrameCap(){
  uint8_t rate=profile==0?48:profile==1?35:24;
  if(overlay==NAME)return profile==2?24:32; // smoother, visibly held key popovers
  if(remote||overlay!=NONE)return 15;
+ if(originalEffect(effectID)==64)return profile==2?20:(profile==1?28:34); // improved gesture response
+ if(originalEffect(effectID)==65)return profile==2?18:(profile==1?26:32); // classic FluidBox
+ if(originalEffect(effectID)==66)return profile==2?18:(profile==1?27:33); // deluxe Gravity Lab
+ if(originalEffect(effectID)==67)return profile==2?20:(profile==1?29:35); // Beat Laboratory
  if(originalEffect(effectID)==51||originalEffect(effectID)==53)return profile==2?18:26; // smoother/faster surviving yarn effects
  if(originalEffect(effectID)>=49)return profile==2?14:20; // limit imported Nova for power
  if(!adaptiveRender)return rate;
@@ -1696,7 +1841,7 @@ static void renderFrame(){
  cv.pushSprite(0,0);
 }
 void setup(){
- Serial.begin(115200);auto cfg=M5.config();cfg.internal_mic=true;cfg.internal_spk=false;
+ Serial.begin(115200);auto cfg=M5.config();cfg.internal_mic=true;cfg.internal_imu=true;cfg.internal_spk=false;
  M5.begin(cfg);M5.Speaker.end();M5.Mic.begin();
  M5.Display.setRotation(0);W=M5.Display.width();H=M5.Display.height();CX=W/2;CY=H/2;R=clampi(min(W,H)/2-3,150,260);
  loadSettings();
@@ -1752,6 +1897,9 @@ void loop(){
  if(overlay==BATTERY && (int32_t)(powerNow-batteryHudUntil)>=0)overlay=NONE;
  // Battery state and ETA are read by the 60-second sampler, not per frame.
  controlButtons();controlTouch();radioTick();audioTick();beatTick();
+ if(!remote && overlay==NONE && (originalEffect(effectID)==65||originalEffect(effectID)==66))
+    GravityLab::tick(millis(),originalEffect(effectID)==65);
+ if(!remote && overlay==NONE && originalEffect(effectID)==67)BeatLab::tick(millis());
  uint32_t now=millis();
  // Remote-only auto blank: the radio can still receive ACKs and A+B can wake.
  // No deep sleep during live audio or ESP-NOW; preserve responsiveness.
