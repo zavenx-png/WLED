@@ -46,9 +46,11 @@
 
 <div class ="container">
 	<div id="Colors" class="tabcontent">
-		<div style="display:flex;flex-wrap:wrap;gap:7px;margin:8px 0 13px;justify-content:center;" id="zhPaletteDefaults">
-			<button class="btn btn-s" type="button" style="flex:1 1 160px;min-height:37px;padding:7px;" onclick="zhSetPaletteAsEffectDefault()" title="Make the currently selected palette the new default for this effect">Set as default for effect</button>
-			<button class="btn btn-s" type="button" style="flex:1 1 160px;min-height:37px;padding:7px;" onclick="zhSelectOriginalEffectPalette()" title="Restore the original WLED or Z effect palette and remove its custom default">Select as default palette</button>
+		<div id="zhPaletteDefaults" style="position:sticky;top:0;z-index:8;display:flex;flex-direction:column;gap:6px;padding:8px 5px 10px;margin:0 auto 8px;max-width:360px;background:var(--c-1);border-bottom:1px solid var(--c-5);">
+			<div style="font-size:13px;font-weight:600;letter-spacing:.5px;color:var(--c-e);text-align:center;">HARNESS v5.1 · PALETTE DEFAULTS</div>
+			<button class="btn btn-s" type="button" style="display:block;width:100%;min-height:45px;padding:9px 12px;white-space:normal;line-height:1.3;" onclick="zhSetPaletteAsEffectDefault()" title="Permanently save your currently selected palette as the default for this effect">Set as default for effect</button>
+			<button class="btn btn-s" type="button" style="display:block;width:100%;min-height:45px;padding:9px 12px;white-space:normal;line-height:1.3;" onclick="zhSelectOriginalEffectPalette()" title="Remove your custom default and restore the palette originally supplied with this effect">Select as default palette</button>
+			<div style="font-size:11px;color:var(--c-e);text-align:center;">First select a palette below, then save it as this effect's default.</div>
 		</div>
 		<div id="picker" class="noslide"></div>
 		<div id="hwrap" class="slider">
