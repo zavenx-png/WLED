@@ -247,7 +247,7 @@ static void remoteToggleFavorite(int i){
 }
 static int remoteFavCount(){int n=0;for(int i=0;i<REMOTE_FX_COUNT;i++)if(remoteIsFavorite(i))n++;return n;}
 static int remoteFavIndexAt(int pos){for(int i=0;i<REMOTE_FX_COUNT;i++)if(remoteIsFavorite(i)&&pos--==0)return i;return -1;}
-static String remoteEffectName(int i){return i<Z_COUNT?String(Z_NAMES[i]):String(WLED_NAMES[clampi(i-Z_COUNT,0,WLED_COUNT-1)]);}
+static String remoteEffectName(int i){return i<Z_COUNT?String(Z_NAMES[i]):String(WLED_NAMES[i-Z_COUNT]);}
 
 static void storeLibrary(){prefs.putBytes("fav1717",&favoriteBits,sizeof(favoriteBits));prefs.putBool("favonly",favoritesOnly);}
 static void vibration(uint8_t strength,int ms);
