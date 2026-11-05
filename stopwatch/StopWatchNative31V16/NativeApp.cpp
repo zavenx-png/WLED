@@ -997,7 +997,8 @@ static void textEffects(uint8_t id){
     float y=CY+11*sinf(t*.88f+j*.55f);glyph(word[j],(int)x,(int)y,pink,4);}
   break;}
  case 25:{ // Kaleidoscope: label integrated into wedge pattern.
-  for(int k=0;k<12;k++){float a=k*TAU/12+t*.09f;    spoke(CX,CY,29,223,a,tint(hue(k*.083f),.24f),3);
+  for(int k=0;k<12;k++){float a=k*TAU/12+t*.09f;
+    spoke(CX,CY,29,223,a,tint(hue(k*.083f),.24f),3);
     for(int m=0;m<4;m++){float r=58+m*39+7*sinf(beatClock*.15f+k);
      float x=CX+r*cosf(a+.14f*sinf(m+t*.14f)),y=CY+r*sinf(a+.14f*sinf(m+t*.14f));
      glow(x,y,2+(m%3),hue(k*.075f+m*.05f));}}
