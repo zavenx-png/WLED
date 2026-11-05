@@ -2926,6 +2926,15 @@ static void zh_radio_process(void) {
 
 class UserFxUsermod : public Usermod {
  private:
+  // A preserved preset or playlist can still ask WLED to select Nokia Snake.
+  // Keep every effect ID stable; block that selection until explicitly enabled.
+  uint8_t snakeFxId = 255U;
+  uint8_t meteorFallbackFxId = 255U;
+  uint8_t previousGoodFxId = 255U;
+  bool allowSnake = false;
+  uint32_t snakeRecoveryCount = 0U;
+  uint32_t lastSnakeCheckMs = 0U;
+
  public:
   void setup() override {
     strip.addEffect(255, &mode_diffusionfire, _data_FX_MODE_DIFFUSIONFIRE);
@@ -2935,7 +2944,7 @@ class UserFxUsermod : public Usermod {
     strip.addEffect(255, &mode_ants, _data_FX_MODE_ANTS);
     strip.addEffect(255, &mode_morsecode, _data_FX_MODE_MORSECODE);
     strip.addEffect(255, &mode_dissolveplus, _data_FX_MODE_DISSOLVEPLUS);
-    strip.addEffect(255, &mode_nokia_snake, _data_FX_MODE_NOKIA_SNAKE);
+    snakeFxId = strip.addEffect(255, &mode_nokia_snake, _data_FX_MODE_NOKIA_SNAKE);
 
     ////////////////////////////////////////
     //  add your effect function(s) here  //
@@ -2981,11 +2990,39 @@ strip.addEffect(255, &mode_z_prism_cascade, _data_FX_MODE_Z_PRISM_CASCADE);
     strip.addEffect(255, &mode_z_infinite_corridor, _data_FX_MODE_Z_INFINITE_CORRIDOR);
 
     // Five new smooth meteor effects on the 20-section harness virtual path.
-    strip.addEffect(255, &mode_z_meteor_circuit, _data_FX_MODE_Z_METEOR_CIRCUIT);
+    meteorFallbackFxId = strip.addEffect(255, &mode_z_meteor_circuit, _data_FX_MODE_Z_METEOR_CIRCUIT);
     strip.addEffect(255, &mode_z_meteor_twin_sync, _data_FX_MODE_Z_METEOR_TWIN_SYNC);
     strip.addEffect(255, &mode_z_meteor_ricochet, _data_FX_MODE_Z_METEOR_RICOCHET);
     strip.addEffect(255, &mode_z_meteor_crossover, _data_FX_MODE_Z_METEOR_CROSSOVER);
     strip.addEffect(255, &mode_z_meteor_echo_rain, _data_FX_MODE_Z_METEOR_ECHO_RAIN);
+  }
+
+  // Optional escape hatch: in Config > Usermods you can permit intentionally
+  // selecting Nokia Snake. Protection is enabled by default on first install.
+  void addToConfig(JsonObject& root) override {
+    JsonObject opt = root.createNestedObject("Harness FX Safety");
+    opt["Allow Nokia Snake"] = allowSnake;
+  }
+  bool readFromConfig(JsonObject& root) override {
+    JsonObject opt = root["Harness FX Safety"];
+    allowSnake = opt["Allow Nokia Snake"] | false;
+    return true;
+  }
+
+  void addToJsonInfo(JsonObject& info) override {
+    JsonObject status = info.createNestedObject("harnessFX");
+    status["build"] = "20-section-5meteors-espnow-snakefix";
+    status["snakeRecoveryCount"] = snakeRecoveryCount;
+    status["snakeAllowed"] = allowSnake;
+  }
+
+  // Keep a non-Snake effect available as a fallback if a preset reselects
+  // Snake after the user has switched to a different effect.
+  void onStateChange(uint8_t callMode) override {
+    if (strip.getSegmentsNum() == 0U || snakeFxId == 255U) return;
+    const uint8_t fx = strip.getMainSegment().mode;
+    if (fx != snakeFxId && fx < strip.getModeCount())
+      previousGoodFxId = fx;
   }
 
 
@@ -3022,6 +3059,50 @@ strip.addEffect(255, &mode_z_prism_cascade, _data_FX_MODE_Z_PRISM_CASCADE);
 #if defined(ARDUINO_ARCH_ESP32) && !defined(WLED_DISABLE_ESPNOW)
     zh_radio_process();
 #endif
+    if (allowSnake || snakeFxId == 255U || strip.getSegmentsNum() == 0U)
+      return;
+
+    // Detect a Snake restore even when a playlist/sync event bypasses the
+    // usermod's onStateChange hook. Never touch an effect while it is rendering.
+    const uint32_t now = millis();
+    if ((uint32_t)(now - lastSnakeCheckMs) < 100U) return;
+    lastSnakeCheckMs = now;
+
+    bool snakeActive = false;
+    for (uint8_t i=0; i<strip.getSegmentsNum(); ++i) {
+      const Segment& sg = strip.getSegment(i);
+      if (sg.isActive() && sg.mode == snakeFxId) snakeActive = true;
+    }
+    if (!snakeActive) {
+      uint8_t fx = strip.getMainSegment().mode;
+      if (fx != snakeFxId && fx < strip.getModeCount()) previousGoodFxId = fx;
+      return;
+    }
+
+    uint8_t target = previousGoodFxId;
+    if (target == 255U || target == snakeFxId || target >= strip.getModeCount()
+        || target == FX_MODE_STATIC)
+      target = meteorFallbackFxId;
+    if (target == 255U || target == snakeFxId || target >= strip.getModeCount())
+      target = FX_MODE_STATIC;
+
+    // WLED uses strip.suspend() around remote state updates as well.
+    strip.suspend();
+    strip.waitForIt();
+    bool changed=false;
+    for (uint8_t i=0; i<strip.getSegmentsNum(); ++i) {
+      Segment& sg = strip.getSegment(i);
+      if (sg.isActive() && sg.mode == snakeFxId) {
+        sg.setMode(target);
+        changed=true;
+      }
+    }
+    strip.resume();
+    if (changed) {
+      snakeRecoveryCount++;
+      DEBUG_PRINTLN(F("Harness: auto-selected Snake redirected to last good FX"));
+      stateUpdated(CALL_MODE_DIRECT_CHANGE);
+    }
   }
   uint16_t getId() override { return USERMOD_ID_USER_FX; }
 };
