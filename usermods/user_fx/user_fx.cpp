@@ -1772,7 +1772,7 @@ static void mode_chunchun_harness(void)
 }
 
 static const char _data_FX_MODE_CHUNCHUN_HARNESS[] PROGMEM =
-  "Z - Chunchun Harness@!,Gap size;!,!;!";
+  "Z - Chunchun Harness@!,Gap size;!,!;!;1;pal=11";
 
 
 // ============================================================================
@@ -1860,7 +1860,7 @@ static void mode_z_neural_pulse(void)
 }
 
 static const char _data_FX_MODE_Z_NEURAL_PULSE[] PROGMEM =
-  "Z - Neural Pulse@Speed,Energy,Width,Chaos;!,!;!;01";
+  "Z - Neural Pulse@Speed,Energy,Width,Chaos;!,!;!;01;pal=40";
 
 // ---------------------------------------------------------------------------
 // Z - Plasma Veins
@@ -1891,7 +1891,7 @@ static void mode_z_plasma_veins(void)
 }
 
 static const char _data_FX_MODE_Z_PLASMA_VEINS[] PROGMEM =
-  "Z - Plasma Veins@Speed,Plasma,Glow,Drift;!,!;!;01";
+  "Z - Plasma Veins@Speed,Plasma,Glow,Drift;!,!;!;01;pal=38";
 
 // ---------------------------------------------------------------------------
 // Z - Electric Organism
@@ -1943,7 +1943,7 @@ static void mode_z_electric_organism(void)
 }
 
 static const char _data_FX_MODE_Z_ELECTRIC_ORGANISM[] PROGMEM =
-  "Z - Electric Organism@Speed,Voltage,Arc width,Chaos;!,!;!;01";
+  "Z - Electric Organism@Speed,Voltage,Arc width,Chaos;!,!;!;01;pal=63";
 
 // ---------------------------------------------------------------------------
 // Z - Gravity Well
@@ -1994,7 +1994,7 @@ static void mode_z_gravity_well(void)
 }
 
 static const char _data_FX_MODE_Z_GRAVITY_WELL[] PROGMEM =
-  "Z - Gravity Well@Speed,Mass,Shock width,Color;!,!;!;01";
+  "Z - Gravity Well@Speed,Mass,Shock width,Color;!,!;!;01;pal=45";
 
 // ---------------------------------------------------------------------------
 // Z - Wormhole
@@ -2027,7 +2027,7 @@ static void mode_z_wormhole(void)
 }
 
 static const char _data_FX_MODE_Z_WORMHOLE[] PROGMEM =
-  "Z - Wormhole@Speed,Energy,Tunnel width,Color;!,!;!;01";
+  "Z - Wormhole@Speed,Energy,Tunnel width,Color;!,!;!;01;pal=40";
 
 // ---------------------------------------------------------------------------
 // Z - Rainbow Fracture
@@ -2056,7 +2056,7 @@ static void mode_z_rainbow_fracture(void)
 }
 
 static const char _data_FX_MODE_Z_RAINBOW_FRACTURE[] PROGMEM =
-  "Z - Rainbow Fracture@Speed,Fracture,Saturation,Glow;!,!;!;01";
+  "Z - Rainbow Fracture@Speed,Fracture,Saturation,Glow;!,!;!;01;pal=11";
 
 // ---------------------------------------------------------------------------
 // Z - Starlight Nervous System
@@ -2104,7 +2104,7 @@ static void mode_z_starlight(void)
 }
 
 static const char _data_FX_MODE_Z_STARLIGHT[] PROGMEM =
-  "Z - Starlight Nervous System@Speed,Stars,Flash,Drift;!,!;!;01";
+  "Z - Starlight Nervous System@Speed,Stars,Flash,Drift;!,!;!;01;pal=46";
 
 
 // ============================================================================
@@ -2157,7 +2157,7 @@ static void mode_z_phoenix_flight(void)
 }
 
 static const char _data_FX_MODE_Z_PHOENIX_FLIGHT[] PROGMEM =
-  "Z - Phoenix Flight@Speed,Blaze,Tail width,Embers;!,!;!;01";
+  "Z - Phoenix Flight@Speed,Blaze,Tail width,Embers;!,!;!;01;pal=35";
 
 // ---------------------------------------------------------------------------
 // Z - Comet Storm
@@ -2207,7 +2207,7 @@ static void mode_z_comet_storm(void)
 }
 
 static const char _data_FX_MODE_Z_COMET_STORM[] PROGMEM =
-  "Z - Comet Storm@Speed,Comets,,;!,!;!;01";
+  "Z - Comet Storm@Speed,Comets,,;!,!;!;01;pal=27";
 
 // ---------------------------------------------------------------------------
 // Z - Deep Current
@@ -2235,7 +2235,7 @@ static void mode_z_deep_current(void)
 }
 
 static const char _data_FX_MODE_Z_DEEP_CURRENT[] PROGMEM =
-  "Z - Deep Current@Speed,Waves,Shimmer,;!,!;!;01";
+  "Z - Deep Current@Speed,Waves,Shimmer,;!,!;!;01;pal=51";
 
 // ============================================================================
 // Z - Harness Visual Suite III
@@ -2302,7 +2302,7 @@ static void mode_z_tidal_interference(void)
 }
 
 static const char _data_FX_MODE_Z_TIDAL_INTERFERENCE[] PROGMEM =
-  "Z - Tidal Interference@Speed,Wavelength,,;!,!;!;01";
+  "Z - Tidal Interference@Speed,Wavelength,,;!,!;!;01;pal=15";
 
 // ---------------------------------------------------------------------------
 // Z - Ember Drift
@@ -2337,7 +2337,7 @@ static void mode_z_ember_drift(void)
 }
 
 static const char _data_FX_MODE_Z_EMBER_DRIFT[] PROGMEM =
-  "Z - Ember Drift@Speed,Grain,Floor,;!,!;!;01";
+  "Z - Ember Drift@Speed,Grain,Floor,;!,!;!;01;pal=39";
 
 // ---------------------------------------------------------------------------
 // Z - Orbital Waltz
@@ -2385,7 +2385,7 @@ static void mode_z_orbital_waltz(void)
 }
 
 static const char _data_FX_MODE_Z_ORBITAL_WALTZ[] PROGMEM =
-  "Z - Orbital Waltz@Speed,Eccentricity,Width,;!,!;!;01";
+  "Z - Orbital Waltz@Speed,Eccentricity,Width,;!,!;!;01;pal=38";
 
 
 
@@ -2424,7 +2424,7 @@ static void mode_z_silk_ribbon(void)
   }
 }
 static const char _data_FX_MODE_Z_SILK_RIBBON[] PROGMEM =
-  "Z - Silk Ribbon@Speed,Width,Persistence,;!,!;!;01";
+  "Z - Silk Ribbon@Speed,Width,Persistence,;!,!;!;01;pal=49";
 
 // ---------------------------------------------------------------------------
 // Z - Twin Moons
@@ -2456,7 +2456,7 @@ static void mode_z_twin_moons(void)
   }
 }
 static const char _data_FX_MODE_Z_TWIN_MOONS[] PROGMEM =
-  "Z - Twin Moons@Speed,Size,,;!,!;!;01";
+  "Z - Twin Moons@Speed,Size,,;!,!;!;01;pal=46";
 
 // ---------------------------------------------------------------------------
 // Z - Liquid Mercury
@@ -2484,7 +2484,7 @@ static void mode_z_liquid_mercury(void)
   }
 }
 static const char _data_FX_MODE_Z_LIQUID_MERCURY[] PROGMEM =
-  "Z - Liquid Mercury@Speed,Beading,Floor,;!,!;!;01";
+  "Z - Liquid Mercury@Speed,Beading,Floor,;!,!;!;01;pal=60";
 
 // ---------------------------------------------------------------------------
 // Z - Echo Chamber
@@ -2518,7 +2518,7 @@ static void mode_z_echo_chamber(void)
   }
 }
 static const char _data_FX_MODE_Z_ECHO_CHAMBER[] PROGMEM =
-  "Z - Echo Chamber@Speed,Width,Persistence,;!,!;!;01";
+  "Z - Echo Chamber@Speed,Width,Persistence,;!,!;!;01;pal=28";
 
 // ---------------------------------------------------------------------------
 // Z - Prism Cascade
@@ -2543,7 +2543,7 @@ static void mode_z_prism_cascade(void)
   }
 }
 static const char _data_FX_MODE_Z_PRISM_CASCADE[] PROGMEM =
-  "Z - Prism Cascade@Speed,Complexity,Floor,;!,!;!;01";
+  "Z - Prism Cascade@Speed,Complexity,Floor,;!,!;!;01;pal=37";
 
 // ---------------------------------------------------------------------------
 // Z - Gravity Lens
@@ -2573,7 +2573,7 @@ static void mode_z_gravity_lens(void)
   }
 }
 static const char _data_FX_MODE_Z_GRAVITY_LENS[] PROGMEM =
-  "Z - Gravity Lens@Speed,Influence,Floor,;!,!;!;01";
+  "Z - Gravity Lens@Speed,Influence,Floor,;!,!;!;01;pal=45";
 
 // ---------------------------------------------------------------------------
 // Z - Quiet Storm
@@ -2599,7 +2599,7 @@ static void mode_z_quiet_storm(void)
   }
 }
 static const char _data_FX_MODE_Z_QUIET_STORM[] PROGMEM =
-  "Z - Quiet Storm@Speed,Grain,Floor,;!,!;!;01";
+  "Z - Quiet Storm@Speed,Grain,Floor,;!,!;!;01;pal=41";
 
 // ---------------------------------------------------------------------------
 // Z - Infinite Corridor
@@ -2624,7 +2624,7 @@ static void mode_z_infinite_corridor(void)
   }
 }
 static const char _data_FX_MODE_Z_INFINITE_CORRIDOR[] PROGMEM =
-  "Z - Infinite Corridor@Speed,Spacing,Floor,;!,!;!;01";
+  "Z - Infinite Corridor@Speed,Spacing,Floor,;!,!;!;01;pal=40";
 
 
 // ============================================================================
@@ -2645,7 +2645,9 @@ static inline uint8_t zm_mix8(uint8_t a, uint8_t b, uint8_t f) {
   return (uint8_t)((((uint16_t)a * (255U-f)) + ((uint16_t)b * f) + 127U) / 255U);
 }
 static inline uint32_t zm_color(uint8_t scheme, uint8_t hue, uint8_t power) {
-  if (SEGMENT.check1)
+  // Palette 0 = the effect's handcrafted meteor colors. Any palette chosen
+  // afterward overrides those colors immediately, without a hidden toggle.
+  if (SEGMENT.palette != 0)
     return color_fade(SEGMENT.color_from_palette(hue, true, true, 0), power);
   uint16_t u = (uint16_t)hue * 4U;
   uint8_t k = (uint8_t)(u >> 8);
@@ -2725,7 +2727,7 @@ static void mode_z_meteor_circuit(void) {
   }
 }
 static const char _data_FX_MODE_Z_METEOR_CIRCUIT[] PROGMEM =
-  "Z - Meteor Circuit@Speed,Trains,,,,Use palette;!,!;!;1;sx=143,ix=175,o1=0";
+  "Z - Meteor Circuit@Speed,Trains;!,!;!;1;sx=143,ix=175,o1=0,pal=0";
 
 // 2. Two matched meteors reverse together from opposite ends of the virtual
 //    path. Repeated P0/P2/P3 LEDs form synchronized physical echoes.
@@ -2742,7 +2744,7 @@ static void mode_z_meteor_twin_sync(void) {
   zm_tail(end*(1.0f-p),-forward,0,(uint8_t)(102U+strip.now/420U),power,7U,false);
 }
 static const char _data_FX_MODE_Z_METEOR_TWIN_SYNC[] PROGMEM =
-  "Z - Meteor Twin Sync@Speed,Glow,,,,Use palette;!,!;!;1;sx=136,ix=165,o1=0";
+  "Z - Meteor Twin Sync@Speed,Glow;!,!;!;1;sx=136,ix=165,o1=0,pal=0";
 
 // 3. Staggered heads bounce smoothly at the ends, inspired by Hat VIII's
 //    rear ricochet; no physical hat rear midpoint is assumed.
@@ -2761,7 +2763,7 @@ static void mode_z_meteor_ricochet(void) {
   }
 }
 static const char _data_FX_MODE_Z_METEOR_RICOCHET[] PROGMEM =
-  "Z - Meteor Ricochet@Speed,Heads,,,,Use palette;!,!;!;1;sx=126,ix=175,o1=0";
+  "Z - Meteor Ricochet@Speed,Heads;!,!;!;1;sx=126,ix=175,o1=0,pal=0";
 
 // 4. Opposing comet trains glide past each other at offset phases. Overlapping
 //    virtual passes are blended by MAX on the same logical physical LEDs.
@@ -2781,7 +2783,7 @@ static void mode_z_meteor_crossover(void) {
   }
 }
 static const char _data_FX_MODE_Z_METEOR_CROSSOVER[] PROGMEM =
-  "Z - Meteor Crossover@Speed,Weave,,,,Use palette;!,!;!;1;sx=136,ix=184,o1=0";
+  "Z - Meteor Crossover@Speed,Weave;!,!;!;1;sx=136,ix=184,o1=0,pal=0";
 
 // 5. Traveling bursts with soft spawn/despawn envelopes, no jumps or flashes.
 //    Different epochs get deterministic warm colors and forward/backward runs.
@@ -2806,7 +2808,7 @@ static void mode_z_meteor_echo_rain(void) {
   }
 }
 static const char _data_FX_MODE_Z_METEOR_ECHO_RAIN[] PROGMEM =
-  "Z - Meteor Echo Rain@Speed,Density,,,,Use palette;!,!;!;1;sx=147,ix=175,o1=0";
+  "Z - Meteor Echo Rain@Speed,Density;!,!;!;1;sx=147,ix=175,o1=0,pal=0";
 
 // ============================================================================
 // STOPWATCH ESP-NOW REMOTE PROTOCOL V1
