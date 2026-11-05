@@ -1,0 +1,66 @@
+name: Build V17.23 Remote-Only Visualizer Restored
+on:
+  push:
+    branches:
+      - stopwatch-v17-23-remote-only-visualizer-restored
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout exact source
+        uses: actions/checkout@v4
+      - name: Verify all preserved effect renderers and assets
+        run: |
+          python3 - <<'PY'
+          import json,hashlib,re,pathlib,sys
+          sketch=pathlib.Path('stopwatch/StopWatchNative31V16')
+          audit=json.loads(pathlib.Path('stopwatch/V17_23_EFFECT_PRESERVATION_AUDIT.json').read_text())['sha256']
+          src=(sketch/'NativeApp.cpp').read_text()
+          def function(name):
+              m=re.search(r'\b(?:static\s+)?(?:void|int|bool|float|uint8_t)\s+'+re.escape(name)+r'\s*\([^)]*\)\s*\{',src)
+              if not m:raise ValueError('Missing '+name)
+              i=m.end()-1; start=m.start(); depth=0
+              while i<len(src):
+                  if src[i]=='{':depth+=1
+                  elif src[i]=='}':
+                      depth-=1
+                      if depth==0:return src[start:i+1]
+                  i+=1
+              raise ValueError('Unbalanced '+name)
+          for key,sha in audit.items():
+              if key.startswith('file:'):
+                  blob=(sketch/key[5:]).read_bytes()
+              else:
+                  blob=function(key).encode()
+              actual=hashlib.sha256(blob).hexdigest()
+              if actual!=sha:raise ValueError(f'Visualizer changed: {key} expected {sha} got {actual}')
+          print(f'PASS: {len(audit)} original effect functions/assets exactly match V17.21.1.')
+          PY
+      - name: Setup Arduino CLI
+        uses: arduino/setup-arduino-cli@v2
+      - name: Install official M5Stack core and libraries
+        run: |
+          arduino-cli config init
+          arduino-cli config add board_manager.additional_urls https://static-cdn.m5stack.com/resource/arduino/package_m5stack_index.json
+          arduino-cli core update-index
+          arduino-cli core install m5stack:esp32@3.3.10
+          arduino-cli lib install M5Unified@0.2.29
+          arduino-cli lib install M5GFX@0.2.36
+      - name: Compile V17.23 StopWatch ESP32-S3
+        run: |
+          arduino-cli compile --fqbn m5stack:esp32:m5stack_stopwatch --output-dir "$GITHUB_WORKSPACE/compiled" "$GITHUB_WORKSPACE/stopwatch/StopWatchNative31V16"
+          ls -lh compiled/*.bin
+      - name: Record firmware hashes
+        run: cd compiled && sha256sum *.bin > SHA256SUMS.txt
+      - name: Upload V17.23 ready-to-flash binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: StopWatch_V17_23_RemoteOnly_31_Effects_Flash
+          path: |
+            compiled/*.bin
+            compiled/SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 30
