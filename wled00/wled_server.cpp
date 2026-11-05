@@ -624,7 +624,14 @@ void initServer()
   server.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
     if (captivePortal(request)) return;
     if (!showWelcomePage || request->hasArg(F("sliders"))) {
-      handleStaticContent(request, F("/index.htm"), 200, FPSTR(CONTENT_TYPE_HTML), PAGE_index, PAGE_index_length);
+      // Harness v5.1: Always serve the latest built-in UI on the main page.
+      // A stale /index.htm file in LittleFS can otherwise silently hide the
+      // new palette controls even when the firmware binary contains them.
+      // No-store prevents older browser caches from obscuring revisions.
+      AsyncWebServerResponse *harnessUi = request->beginResponse_P(200, FPSTR(CONTENT_TYPE_HTML), PAGE_index, PAGE_index_length);
+      harnessUi->addHeader(FPSTR(s_content_enc), F("gzip"));
+      harnessUi->addHeader(FPSTR(s_cache_control), FPSTR(s_no_store));
+      request->send(harnessUi);
     } else {
       serveSettings(request);
     }
