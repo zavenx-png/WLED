@@ -2087,6 +2087,12 @@ static void mode_z_starlight(void)
     uint8_t r = (uint8_t)(42U + (((uint32_t)sin16_t(theta)+32768U)*110U >> 16));
     uint8_t g = (uint8_t)(42U + (((uint32_t)sin16_t(theta+21845U)+32768U)*105U >> 16));
     uint8_t b = (uint8_t)(58U + (((uint32_t)sin16_t(theta+43690U)+32768U)*135U >> 16));
+    // Honor the chosen WLED palette while keeping a colored non-black
+    // floor wherever that palette has dark stops.
+    uint32_t palColor = zh_palette(theta, 185U);
+    r = max(r, R(palColor));
+    g = max(g, G(palColor));
+    b = max(b, B(palColor));
     uint8_t link = zh_soft(zh_cyclic_distance(p,constellation),30U);
     r=qadd8(r,scale8(link,45U));
     g=qadd8(g,scale8(link,58U));
