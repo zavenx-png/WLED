@@ -2448,7 +2448,11 @@ function setFX(ind = null)
 		gId("fx").lastElementChild.close();
 	}
 
-	var obj = {"seg": {"fx": parseInt(ind), "fxdef": cfg.comp.fxdef}}; // fxdef sets effect parameters to default values
+	// An effect-list click always restores this effect's assigned palette,
+	// including clicking the currently active effect a second time.
+	// Separate palette-picker requests do not carry fxrp, so manual changes
+	// remain in place until the next effect click. Presets/boot are untouched.
+	var obj = {"seg": {"fx": parseInt(ind), "fxdef": cfg.comp.fxdef, "fxrp": true}};
 	requestJson(obj);
 }
 
