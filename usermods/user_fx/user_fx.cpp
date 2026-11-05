@@ -2926,6 +2926,98 @@ static void zh_radio_process(void) {
 //  UserMod Class  //
 /////////////////////
 
+
+// ============================================================================
+// PER-EFFECT MEMORY (ESP32 NVS)
+// * only saves speed, intensity, 3 custom sliders and 3 effect checkboxes;
+// * palette default stored independently, never implicitly on slider changes;
+// * one small NVS key per effect, durable across power-offs and OTA updates;
+// * boot presets and presets are unchanged (only explicit Effects UI calls
+//   carry the "hfx" operation needed to load or save user profiles).
+// ============================================================================
+#ifdef ARDUINO_ARCH_ESP32
+#include <Preferences.h>
+#endif
+static const uint8_t HFX_PROFILE_MAGIC=0xB7U;
+static const uint8_t HFX_HAS_SETTINGS=0x01U;
+static const uint8_t HFX_HAS_PALETTE=0x02U;
+static const uint8_t HFX_O1=0x04U, HFX_O2=0x08U, HFX_O3=0x10U;
+struct HfxProfile {
+  uint8_t magic;
+  uint8_t bits;
+  uint8_t sx, ix, c1, c2, c3;
+  uint8_t pal;
+};
+static_assert(sizeof(HfxProfile)==8, "HfxProfile layout changed");
+
+static void hfxKey(uint8_t fx, char key[6]) {
+  snprintf(key, 6, "e%03u", (unsigned)fx);
+}
+static bool hfxLoad(uint8_t fx, HfxProfile& profile) {
+  memset(&profile,0,sizeof(profile));
+#ifdef ARDUINO_ARCH_ESP32
+  Preferences nvs;
+  if (!nvs.begin("zhfxmem", true)) return false;
+  char key[6]; hfxKey(fx,key);
+  const size_t size=nvs.getBytesLength(key);
+  if (size == sizeof(profile)) nvs.getBytes(key,&profile,sizeof(profile));
+  nvs.end();
+  return size==sizeof(profile) && profile.magic==HFX_PROFILE_MAGIC;
+#else
+  return false;
+#endif
+}
+static bool hfxSave(uint8_t fx, HfxProfile& profile) {
+#ifdef ARDUINO_ARCH_ESP32
+  profile.magic=HFX_PROFILE_MAGIC;
+  Preferences nvs;
+  if (!nvs.begin("zhfxmem", false)) return false;
+  char key[6]; hfxKey(fx,key);
+  size_t written=nvs.putBytes(key,&profile,sizeof(profile));
+  nvs.end();
+  return written==sizeof(profile);
+#else
+  return false;
+#endif
+}
+static void hfxCopySettings(HfxProfile& p, const Segment& seg) {
+  p.bits=(p.bits & (uint8_t)~(HFX_O1|HFX_O2|HFX_O3))
+        | HFX_HAS_SETTINGS | (seg.check1?HFX_O1:0U)
+        | (seg.check2?HFX_O2:0U) | (seg.check3?HFX_O3:0U);
+  p.sx=seg.speed; p.ix=seg.intensity;
+  p.c1=seg.custom1; p.c2=seg.custom2; p.c3=seg.custom3;
+}
+static void hfxApplySettings(Segment& seg, const HfxProfile& p) {
+  seg.speed=p.sx; seg.intensity=p.ix;
+  seg.custom1=p.c1; seg.custom2=p.c2; seg.custom3=p.c3 & 31U;
+  seg.check1=(p.bits&HFX_O1)!=0U;
+  seg.check2=(p.bits&HFX_O2)!=0U;
+  seg.check3=(p.bits&HFX_O3)!=0U;
+  seg.markForReset();
+}
+static inline uint8_t hfxScalarDefault(uint8_t effect, const char* variable,
+                                       uint8_t fallback) {
+  const int16_t opt=extractModeDefaults(effect, variable);
+  return (opt>=0)?(uint8_t)opt:fallback;
+}
+static void hfxApplyFactorySettings(Segment& seg) {
+  const uint8_t fx=seg.mode;
+  seg.speed=hfxScalarDefault(fx,"sx",DEFAULT_SPEED);
+  seg.intensity=hfxScalarDefault(fx,"ix",DEFAULT_INTENSITY);
+  seg.custom1=hfxScalarDefault(fx,"c1",DEFAULT_C1);
+  seg.custom2=hfxScalarDefault(fx,"c2",DEFAULT_C2);
+  seg.custom3=hfxScalarDefault(fx,"c3",DEFAULT_C3) & 31U;
+  seg.check1=hfxScalarDefault(fx,"o1",0U)!=0U;
+  seg.check2=hfxScalarDefault(fx,"o2",0U)!=0U;
+  seg.check3=hfxScalarDefault(fx,"o3",0U)!=0U;
+  seg.markForReset();
+}
+static uint8_t hfxNativePalette(uint8_t fx) {
+  const int16_t p=extractModeDefaults(fx,"pal");
+  return (p>=0)?(uint8_t)p:0U;
+}
+static uint16_t hfxWriteFailures=0U;
+
 class UserFxUsermod : public Usermod {
  private:
   // A preserved preset or playlist can still ask WLED to select Nokia Snake.
@@ -3016,6 +3108,9 @@ strip.addEffect(255, &mode_z_prism_cascade, _data_FX_MODE_Z_PRISM_CASCADE);
     status["build"] = "20-section-5meteors-espnow-snakefix";
     status["snakeRecoveryCount"] = snakeRecoveryCount;
     status["snakeAllowed"] = allowSnake;
+    status["perEffectMemory"] = true;
+    status["perEffectStorage"] = "ESP32 NVS";
+    status["fxMemoryWriteFailures"] = hfxWriteFailures;
   }
 
   // Keep a non-Snake effect available as a fallback if a preset reselects
@@ -3027,6 +3122,87 @@ strip.addEffect(255, &mode_z_prism_cascade, _data_FX_MODE_Z_PRISM_CASCADE);
       previousGoodFxId = fx;
   }
 
+
+  // The web interface passes "hfx" only for explicit effect clicks/controls.
+  // A startup preset, playlist, ESP-NOW recall or preset load does not carry
+  // this object, so those actions retain their saved effect parameters/colors.
+  void readFromJsonState(JsonObject& root) override {
+    JsonObject command=root["hfx"];
+    if (command.isNull() || strip.getSegmentsNum()==0U) return;
+    const char* op=command["op"] | "";
+    if (!op || !*op) return;
+
+    uint8_t first=(uint8_t)strip.getFirstSelectedSegId();
+    if (first >= strip.getSegmentsNum()) first=strip.getMainSegmentId();
+    if (first >= strip.getSegmentsNum()) return;
+    const Segment& primary=strip.getSegment(first);
+    const uint8_t fx=command["fx"] | primary.mode;
+    if (fx >= strip.getModeCount()) return;
+
+    if (strcmp(op,"select")==0) {
+      // This command is paired with a real Effects-tab click. If all selected
+      // segments have the selected FX, restore their settings and default pal.
+      HfxProfile p={};
+      if (!hfxLoad(fx,p)) return;
+      strip.suspend(); strip.waitForIt();
+      for (uint8_t i=0U;i<strip.getSegmentsNum();i++) {
+        Segment& sg=strip.getSegment(i);
+        if (!sg.isActive() || !sg.isSelected() || sg.mode!=fx) continue;
+        if (p.bits&HFX_HAS_SETTINGS) hfxApplySettings(sg,p);
+        if (p.bits&HFX_HAS_PALETTE) sg.setPalette(p.pal);
+      }
+      strip.resume();
+      stateChanged=true;
+      return;
+    }
+
+    if (primary.mode!=fx) return;
+    HfxProfile p={}; hfxLoad(fx,p);
+    if (strcmp(op,"saveSettings")==0) {
+      // Save only on UI onchange (slider released / checkbox clicked).
+      // No palette data is touched by an effect-settings change.
+      hfxCopySettings(p,primary);
+      if (!hfxSave(fx,p)) hfxWriteFailures++;
+      return;
+    }
+    if (strcmp(op,"defaultSettings")==0) {
+      // Reset and save factory slider/checkbox values without altering palette.
+      strip.suspend(); strip.waitForIt();
+      for(uint8_t i=0U;i<strip.getSegmentsNum();i++) {
+        Segment& sg=strip.getSegment(i);
+        if(sg.isActive() && sg.isSelected() && sg.mode==fx)
+          hfxApplyFactorySettings(sg);
+      }
+      hfxCopySettings(p,strip.getSegment(first));
+      strip.resume();
+      if (!hfxSave(fx,p)) hfxWriteFailures++;
+      stateChanged=true;
+      return;
+    }
+    if (strcmp(op,"savePaletteDefault")==0) {
+      // A separately persisted *default* palette, not the temporary palette
+      // selection. Later manual selections do not overwrite this record.
+      p.bits|=HFX_HAS_PALETTE;
+      p.pal=primary.palette;
+      if (!hfxSave(fx,p)) hfxWriteFailures++;
+      return;
+    }
+    if (strcmp(op,"nativePaletteDefault")==0) {
+      // Remove the saved override and apply the underlying WLED/Z default.
+      p.bits&=(uint8_t)~HFX_HAS_PALETTE;
+      p.pal=0U;
+      strip.suspend(); strip.waitForIt();
+      const uint8_t pal=hfxNativePalette(fx);
+      for(uint8_t i=0U;i<strip.getSegmentsNum();i++) {
+        Segment& sg=strip.getSegment(i);
+        if(sg.isActive() && sg.isSelected() && sg.mode==fx)
+          sg.setPalette(pal);
+      }
+      strip.resume();
+      if (!hfxSave(fx,p)) hfxWriteFailures++;
+      stateChanged=true;
+    }
+  }
 
   ///////////////////////////////////////////////////////////////////////////////////////////////
   //  If you want configuration options in the usermod settings page, implement these methods  //
