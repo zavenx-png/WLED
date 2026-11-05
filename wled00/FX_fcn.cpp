@@ -631,7 +631,11 @@ Segment &Segment::setMode(uint8_t fx, bool loadDefaults) {
       sOpt = extractModeDefaults(fx, "mY");  if (sOpt >= 0) mirror_y  = (bool)sOpt; // NOTE: setting this option is a risky business
     }
     sOpt = extractModeDefaults(fx, "pal"); // always extract 'pal' to set _default_palette
-    if (sOpt >= 0 && loadDefaults) setPalette(sOpt);
+    // On an explicit effect selection with "fxdef", restore the named effect's
+    // palette or WLED's actual Default selection (0) when no pal= is defined.
+    // Do NOT reset on boot/preset restore: those call setMode() without fxdef.
+    // Manual palette changes later still use setPalette() normally.
+    if (loadDefaults) setPalette((sOpt >= 0) ? (uint8_t)sOpt : (uint8_t)0);
     if (sOpt <= 0) sOpt = 6; // partycolors if zero or not set
     _default_palette = sOpt; // _default_palette is loaded into pal0 in loadPalette() (if selected)
     markForReset();
