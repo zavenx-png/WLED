@@ -1,0 +1,94 @@
+name: Build StopWatch V17.25 Harness-Only UI
+on:
+  push:
+    branches:
+      - stopwatch-v17-25-harness-page-swipe-touch
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  stopwatch:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout baseline and V17.25 patch
+        uses: actions/checkout@v4
+      - name: Apply verified harness-only patch
+        run: |
+          python3 -m pip install --quiet --user brotli
+          python3 - <<'PY'
+          from pathlib import Path
+          import base64,hashlib,brotli
+          root=Path('stopwatch/v17_25_patch')
+          chunks=[(root/f'part{i}.b64').read_text().strip() for i in range(1,5)]
+          encoded=''.join(chunks)
+          assert len(encoded)==7720,f'Incomplete patch transfer: {len(encoded)}'
+          diff=brotli.decompress(base64.b64decode(encoded,validate=True))
+          assert hashlib.sha256(diff).hexdigest()=='0b746fc0e9550cc5e7584bf688aaba0e0b596a554d4a563217b2aee3ef72c919','Patch integrity mismatch'
+          Path('/tmp/v17_25.patch').write_bytes(diff)
+          print('Verified V17.25 remote-only patch',len(diff),'bytes')
+          PY
+          git apply --check /tmp/v17_25.patch
+          git apply /tmp/v17_25.patch
+      - name: Verify exact editable source and preserve 31 effects
+        run: |
+          python3 - <<'PY'
+          import re,json,hashlib
+          from pathlib import Path
+          sketch=Path('stopwatch/StopWatchNative31V16')
+          raw=(sketch/'NativeApp.cpp').read_bytes()
+          expected='4dd243fae7fd9e4307d156cbd717c5d5625a5fa2a13131d4c8f3af1075ebef06'
+          assert hashlib.sha256(raw).hexdigest()==expected,'Built source must exactly match published editable V17.25 source'
+          src=raw.decode()
+          audit=json.loads(Path('stopwatch/V17_24_EFFECT_PRESERVATION_AUDIT.json').read_text())['sha256']
+          def function(name):
+            m=re.search(r'\b(?:static\s+)?(?:void|int|bool|float|uint8_t)\s+'+re.escape(name)+r'\s*\([^)]*\)\s*\{',src)
+            if not m:raise AssertionError('Missing '+name)
+            level=0
+            for i in range(m.end()-1,len(src)):
+              if src[i]=='{':level+=1
+              elif src[i]=='}':
+                level-=1
+                if not level:return src[m.start():i+1]
+            raise AssertionError('Unclosed '+name)
+          for key,sha in audit.items():
+            blob=(sketch/key[5:]).read_bytes() if key.startswith('file:') else function(key).encode()
+            assert hashlib.sha256(blob).hexdigest()==sha,'Visualizer changed: '+key
+          assert 'remoteChangePage(dx<0?1:-1);return;' in src
+          assert 'remoteSettingsBarY(row,total)' in src
+          assert 'RNAV_Y=388,RNAV_W=98,RNAV_H=40' in src
+          assert 'remoteLabel("BRIGHTNESS",151,y,233,rgb(235,249,255),.75f)' in src
+          assert 'if(remote || !buzzEnabled)return;' in src
+          assert 'M5.Display.setBrightness(0)' not in src
+          print('PASS: 31 effect functions/assets identical; exact V17.25 remote UI source; gestures and layout checks')
+          PY
+      - name: Setup Arduino CLI
+        uses: arduino/setup-arduino-cli@v2
+      - name: Install official M5Stack core and libraries
+        run: |
+          arduino-cli config init
+          arduino-cli config add board_manager.additional_urls https://static-cdn.m5stack.com/resource/arduino/package_m5stack_index.json
+          arduino-cli core update-index
+          arduino-cli core install m5stack:esp32@3.3.10
+          arduino-cli lib install M5Unified@0.2.29
+          arduino-cli lib install M5GFX@0.2.36
+      - name: Compile complete 31-effect StopWatch V17.25
+        run: |
+          arduino-cli compile --fqbn m5stack:esp32:m5stack_stopwatch --output-dir "$GITHUB_WORKSPACE/compiled" "$GITHUB_WORKSPACE/stopwatch/StopWatchNative31V16"
+          ls -lh compiled/*.bin
+      - name: Package binaries and exact editable source
+        run: |
+          cd compiled
+          sha256sum *.bin > SHA256SUMS.txt
+          mkdir -p Editable_Source
+          cp -a "$GITHUB_WORKSPACE/stopwatch/StopWatchNative31V16" Editable_Source/
+          sha256sum Editable_Source/StopWatchNative31V16/NativeApp.cpp > SOURCE_SHA256.txt
+      - name: Publish ready-to-flash firmware and editable source
+        uses: actions/upload-artifact@v4
+        with:
+          name: StopWatch_V17_25_HarnessOnly_31_Effects_Flash
+          path: |
+            compiled/*.bin
+            compiled/*.txt
+            compiled/Editable_Source/
+          if-no-files-found: error
+          retention-days: 30
