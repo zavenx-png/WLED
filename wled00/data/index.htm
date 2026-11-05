@@ -46,6 +46,10 @@
 
 <div class ="container">
 	<div id="Colors" class="tabcontent">
+		<div style="display:flex;flex-wrap:wrap;gap:7px;margin:8px 0 13px;justify-content:center;" id="zhPaletteDefaults">
+			<button class="btn btn-s" type="button" style="flex:1 1 160px;min-height:37px;padding:7px;" onclick="zhSetPaletteAsEffectDefault()" title="Make the currently selected palette the new default for this effect">Set as default for effect</button>
+			<button class="btn btn-s" type="button" style="flex:1 1 160px;min-height:37px;padding:7px;" onclick="zhSelectOriginalEffectPalette()" title="Restore the original WLED or Z effect palette and remove its custom default">Select as default palette</button>
+		</div>
 		<div id="picker" class="noslide"></div>
 		<div id="hwrap" class="slider">
 			<div title="Hue" class="sliderwrap il">
@@ -270,6 +274,9 @@
 					<input id="checkO3" type="checkbox" onchange="setOption(3, this.checked)">
 					<span class="checkmark"></span>
 				</label>
+			</div>
+			<div style="display:flex;justify-content:center;align-items:center;gap:8px;margin:8px 10px 12px;">
+				<button class="btn btn-s" type="button" style="padding:9px 16px;min-height:37px;" onclick="zhFactoryEffectSettings()" title="Reset sliders and checkboxes to this effect's factory values, save them permanently, and keep the selected palette">Default settings</button>
 			</div>
 		</div>
 	</div>
