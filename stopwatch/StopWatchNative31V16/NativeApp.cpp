@@ -204,6 +204,7 @@ enum Overlay : uint8_t {NONE,NAME,BRIGHTNESS,RHYTHM,BATTERY};
 Overlay overlay=NONE;
 String inputName="";uint8_t robotField=0;
 bool nameRobotBlueEdited=false,nameRobotPinkEdited=false,nameDeleteConsumed=false;
+int remoteTouchXSum=0,remoteTouchYSum=0,remoteTouchSamples=0;
 String keyboardPopup="";int keyboardPopupX=0,keyboardPopupY=0;
 uint32_t keyboardPopupUntil=0,keyboardPopupStarted=0,brightnessRepeatAt=0;
 bool brightnessEntryHold=false,batteryEntryHold=false;
@@ -272,7 +273,7 @@ static void loadScene(uint8_t slot){
  blueRobot=String(v.blue);pinkRobot=String(v.pink);
  selectedPalette=clampi(v.palette,0,PAL_COUNT-1);remoteBrightness=v.harnessBrightness;remoteSpeed=v.speed;
  remoteIntensity=v.intensity;remoteSelected=clampi(v.remoteFx,0,Z_COUNT+WLED_COUNT-1);
- adaptiveRender=v.adaptive!=0;remoteIdleSecs=v.remoteIdle==0?0:clampi(v.remoteIdle,10,120);favoritesOnly=false;
+ adaptiveRender=v.adaptive!=0;remoteIdleSecs=0;favoritesOnly=false;
  prefs.putUChar("eff1717",effectID);prefs.putUChar("bright",brightness);prefs.putUChar("profile",profile);
  prefs.putBool("adaptive",adaptiveRender);prefs.putUChar("idle",remoteIdleSecs);prefs.putBytes("gain1717",gainPct,sizeof(gainPct));
  storeLibrary();saveNames();M5.Display.setBrightness((uint8_t)(brightness*255/100));
@@ -333,7 +334,7 @@ static inline uint8_t originalEffect(uint8_t i){return ORIGINAL_EFFECT_ID[i%VIS_
 static inline bool isTextEffect(uint8_t i){uint8_t id=originalEffect(i);return id>=23&&id<=31;}
 static inline const String& artName(uint8_t i){(void)i;return sharedName.length()?sharedName:DEFAULT_WORD;}
 static inline void glyph(char ch,int x,int y,uint16_t c,int size=4){char b[2]={ch,0};cv.setTextDatum(middle_center);cv.setTextColor(c);cv.drawString(b,x,y,size);}
-static inline void vibration(uint8_t strength=145,int ms=38){if(!buzzEnabled)return;M5.Power.setVibration(strength);buzzUntil=millis()+ms;}
+static inline void vibration(uint8_t strength=145,int ms=38){if(remote || !buzzEnabled)return;M5.Power.setVibration(strength);buzzUntil=millis()+ms;}
 static void vibrationTick(){if(buzzUntil&&(int32_t)(millis()-buzzUntil)>=0){M5.Power.setVibration(0);buzzUntil=0;}}
 
 static void fft512(){
@@ -586,7 +587,7 @@ static void loadSettings(){
  micManualMask=0;
 
  adaptiveRender=prefs.getBool("adaptive",true);
- remoteIdleSecs=prefs.getUChar("idle",20);
+ remoteIdleSecs=0; // Retain Preferences schema, but disable automatic screen off.
  if(prefs.getBytesLength("rfav1722")==sizeof(remoteFavBits))prefs.getBytes("rfav1722",remoteFavBits,sizeof(remoteFavBits));
  for(uint8_t j=0;j<4;j++){
   SceneData v;
@@ -665,7 +666,7 @@ static void radioCallback(const uint8_t *mac,const uint8_t *data,int n)
  portENTER_CRITICAL(&ackMux);rxAck=a;newAck=true;portEXIT_CRITICAL(&ackMux);
 }
 static void radioTick(){if(newAck){Ack a;portENTER_CRITICAL(&ackMux);a=rxAck;newAck=false;portEXIT_CRITICAL(&ackMux);
- if(a.ready&&a.seq==remoteSeq){radioPending=false;radioSuccess=a.status==0;remoteAwaitingApply=false;vibration(radioSuccess?135:90,radioSuccess?45:100);}}
+ if(a.ready&&a.seq==remoteSeq){radioPending=false;radioSuccess=a.status==0;remoteAwaitingApply=false; // No haptics on remote acknowledgements.}}
  if(radioPending&&millis()-remoteLast>1500)radioPending=false;}
 static void startRadio(){
  WiFi.mode(WIFI_STA);WiFi.disconnect(false,false);WiFi.setSleep(false);
@@ -681,8 +682,10 @@ static void setRemote(bool on){if(remote==on)return;remote=on;overlay=NONE;remot
  // are intentionally unchanged from V17.21.1.
  if(!remote){cv.setFont(&lgfx::fonts::Font0);cv.setTextSize(1.0f);cv.setTextDatum(top_left);frameStamp=0;}
  M5.Display.setBrightness((uint8_t)(brightness*255/100));radioSuccess=false;radioPending=false;
- if(remote)M5.Mic.end();else{M5.Mic.begin();pendingMic=false;}
- vibration(190,82);}
+ if(remote){M5.Mic.end();M5.Power.setVibration(0);buzzUntil=0;}
+ else{M5.Mic.begin();pendingMic=false;}
+ // No vibration when entering or leaving harness mode.
+}
 
 // ------------------ Low-overhead native render primitives ------------------
 static void spoke(float cx,float cy,float r0,float r1,float a,uint16_t c,int w=1){line(cx+cosf(a)*r0,cy+sinf(a)*r0,cx+cosf(a)*r1,cy+sinf(a)*r1,c,w);}
@@ -1414,18 +1417,43 @@ static void applyRemoteSelection(){
   // Don't imply success on older WLED firmware: no ACK -> user sees UNAVAILABLE.
   radioSend(12,remoteSelected-Z_COUNT);
  }
- vibration(137,25);
+ // Harness remote is silent: no haptic confirmation.
 }
-// Visual geometry is kept inside the 466px round OLED: 392px nav fits at x=110..356.
+// V17.24 round-safe nav: bounds and touch targets are identical.
+static constexpr int RNAV_LX=119,RNAV_RX=255,RNAV_Y=397,RNAV_W=92,RNAV_H=31;
+static constexpr int RPREV_X=82,RAPPLY_X=169,RNEXT_X=300;
+static constexpr int RROW_Y=281,RROW_H=46,RPREV_W=83,RAPPLY_W=128;
+static constexpr int RFAV_X=127,RFAV_Y=338,RFAV_W=212,RFAV_H=46;
+static bool remotePointIn(int x,int y,int bx,int by,int bw,int bh){
+ return x>=bx&&x<bx+bw&&y>=by&&y<by+bh;
+}
 static void remoteNav(){
- uiButton(112,384,96,38,"< PAGE");uiButton(258,384,96,38,"PAGE >");
- textC(String(remotePage+1)+"/5",CX,371,rgb(145,199,213),2);
+ uiButton(RNAV_LX,RNAV_Y,RNAV_W,RNAV_H,"< PAGE");
+ uiButton(RNAV_RX,RNAV_Y,RNAV_W,RNAV_H,"PAGE >");
+ textC(String(remotePage+1)+"/5",CX,RNAV_Y+15,rgb(145,199,213),2);
+}
+// Fixed native-font tiers only in harness mode; unlike scaled sprites these
+// cannot alter the 31 effect renderers' text rasterization or frame rate.
+static void remoteLabel(const String &value,int x,int y,int maxWidth,uint16_t color,bool large=true){
+ if(value.isEmpty())return;
+ cv.setFont(large?&lgfx::fonts::FreeSansBold18pt7b:&lgfx::fonts::FreeSansBold12pt7b);
+ cv.setTextSize(1.f);
+ String label=value;
+ if(cv.textWidth(label)>maxWidth){
+  cv.setFont(&lgfx::fonts::FreeSansBold12pt7b);
+  while(label.length()>2 && cv.textWidth(label)>maxWidth)label.remove(label.length()-1);
+  if(label.length()<value.length() && label.length()>2){
+   label.remove(label.length()-1);label+="~";
+  }
+ }
+ cv.setTextDatum(middle_center);cv.setTextColor(color);cv.drawString(label,x,y);
+ cv.setFont(&lgfx::fonts::Font0);cv.setTextSize(1.f);
 }
 static void remoteBrightnessControl(int y){
- uint16_t cyan=rgb(91,239,232);
- textC("BRIGHTNESS",157,y,rgb(235,249,255),3);
- textC(String((remoteBrightness*100+127)/255)+"%",334,y,cyan,3);
- uiBar(y+22,99,367,remoteBrightness/255.f,cyan);
+ const uint16_t cyan=rgb(91,239,232);
+ remoteLabel("BRIGHTNESS",153,y,238,rgb(235,249,255));
+ remoteLabel(String((remoteBrightness*100+127)/255)+"%",346,y,75,cyan);
+ uiBar(y+23,99,367,remoteBrightness/255.f,cyan);
 }
 static uint16_t remotePaletteColor(int pal,int slot){
  // Representative WLED palette colors; actual LED colors still come from harness palette.
@@ -1461,63 +1489,65 @@ static void renderRemote(){
  const char *heads[]={"HARNESS FX","FAVORITES","FX SETTINGS","PALETTES","RADIO"};
  panelBg(heads[remotePage]);
  if(remotePage==0){
-  remoteBrightnessControl(124);
+  remoteBrightnessControl(126);
   bool custom=remoteSelected<Z_COUNT;
-  textC(custom?"CUSTOM Z":"BUILT-IN WLED",CX,204,dim,3);
-  textC(String(remoteSelected+1)+" / "+String(REMOTE_FX_COUNT),CX,235,cyan,3);
-  String name=remoteEffectName(remoteSelected);if(name.length()>21)name=name.substring(0,20)+"~";
-  textC(name,CX,273,white,name.length()>17?2:3);
-  uiButton(83,291,83,49,"<");uiButton(169,291,128,49,"APPLY",true);uiButton(300,291,83,49,">");
-  uiButton(134,346,198,37,remoteIsFavorite(remoteSelected)?"REMOVE STAR":"ADD FAVORITE",remoteIsFavorite(remoteSelected));
+  remoteLabel(custom?"CUSTOM Z":"BUILT-IN WLED",CX,190,315,dim);
+  remoteLabel(String(remoteSelected+1)+" / "+String(REMOTE_FX_COUNT),CX,224,315,cyan);
+  remoteLabel(remoteEffectName(remoteSelected),CX,259,315,white);
+  uiButton(RPREV_X,RROW_Y,RPREV_W,RROW_H,"<");
+  uiButton(RAPPLY_X,RROW_Y,RAPPLY_W,RROW_H,"APPLY",true);
+  uiButton(RNEXT_X,RROW_Y,RPREV_W,RROW_H,">");
+  uiButton(RFAV_X,RFAV_Y,RFAV_W,RFAV_H,
+   remoteIsFavorite(remoteSelected)?"REMOVE STAR":"ADD FAVORITE",remoteIsFavorite(remoteSelected));
  }else if(remotePage==1){
-  textC(String(remoteFavCount())+" SAVED EFFECTS",CX,130,dim,3);
-  int total=remoteFavCount();if(remoteFavScroll> (uint16_t)(total>4?total-4:0))remoteFavScroll=(uint16_t)(total>4?total-4:0);
-  if(total==0)textC("STAR FX ON PAGE 1",CX,240,dim,3);
+  remoteLabel(String(remoteFavCount())+" SAVED EFFECTS",CX,132,316,dim);
+  int total=remoteFavCount();
+  if(remoteFavScroll>(uint16_t)(total>4?total-4:0))remoteFavScroll=(uint16_t)(total>4?total-4:0);
+  if(total==0)remoteLabel("STAR FX ON PAGE 1",CX,240,320,dim);
   for(int row=0;row<4&&row+remoteFavScroll<total;row++){
-    int id=remoteFavIndexAt(row+remoteFavScroll),y=150+row*54;
-    if(id<0)continue;
-    cv.fillRoundRect(75,y,316,46,10,id==remoteSelected?rgb(24,112,133):rgb(18,46,69));
-    cv.drawRoundRect(75,y,316,46,10,id==remoteSelected?cyan:rgb(66,118,145));
-    String name=remoteEffectName(id);if(name.length()>18)name=name.substring(0,17)+"~";
-    textC(name,216,y+23,white,name.length()>14?2:3);
-    textC("*",370,y+22,rgb(255,209,108),3);
+   int id=remoteFavIndexAt(row+remoteFavScroll),y=149+row*54;
+   if(id<0)continue;
+   cv.fillRoundRect(75,y,316,46,10,id==remoteSelected?rgb(24,112,133):rgb(18,46,69));
+   cv.drawRoundRect(75,y,316,46,10,id==remoteSelected?cyan:rgb(66,118,145));
+   String name=remoteEffectName(id);if(name.length()>18)name=name.substring(0,17)+"~";
+   textC(name,216,y+23,white,name.length()>14?2:3); // row buttons unchanged
+   textC("*",370,y+22,rgb(255,209,108),3);
   }
-  if(total>4){textC("SWIPE LIST",CX,366,dim,2);}
+  if(total>4)remoteLabel("SWIPE LIST",CX,376,220,dim,false);
  }else if(remotePage==2){
-  // Brightness is an ordinary FX settings row, aligned with all others.
-  remoteBrightnessControl(139);
+  remoteBrightnessControl(138);
   RemoteFxParam params[5];int n=remoteFxParams(params);
   for(int row=0;row<3&&row+remoteSettingsScroll<n;row++){
    RemoteFxParam &p=params[row+remoteSettingsScroll];int y=206+row*61;
-   textC(String(p.name),163,y,white,3);textC(String((int)p.value),326,y,cyan,3);
-   uiBar(y+17,99,367,p.value/255.f,rgb(180,116,236));
+   remoteLabel(String(p.name),164,y,184,white);
+   remoteLabel(String((int)p.value),333,y,102,cyan);
+   uiBar(y+19,99,367,p.value/255.f,rgb(180,116,236));
   }
-  if(n==0)textC("NO EFFECT SLIDERS",CX,270,dim,3);
+  if(n==0)remoteLabel("NO EFFECT SLIDERS",CX,272,316,dim,false);
  }else if(remotePage==3){
-  textC("TAP TO APPLY",CX,127,dim,3);
+  remoteLabel("TAP TO APPLY",CX,130,260,dim,false);
   for(int row=0;row<4;row++){
    int p=remotePaletteScroll+row;if(p>=PAL_COUNT)break;
    int y=151+row*54;
    cv.fillRoundRect(78,y,310,47,10,p==selectedPalette?rgb(20,104,118):rgb(17,43,66));
    cv.drawRoundRect(78,y,310,47,10,p==selectedPalette?cyan:rgb(65,109,134));
-   String name=PAL_NAMES[p];if(name.length()>13)name=name.substring(0,12)+"~";
-   textC(name,171,y+23,white,name.length()>11?2:3);
+   remoteLabel(String(PAL_NAMES[p]),171,y+23,180,white);
    for(int j=0;j<3;j++){
     int px=291+j*31;cv.fillCircle(px,y+23,11,remotePaletteColor(p,j));
     cv.drawCircle(px,y+23,11,rgb(182,199,213));
    }
   }
  }else{
-  textC("ESP-NOW CHANNEL",CX,143,dim,3);
-  textC(String(rxChannel),CX,203,cyan,5);
+  remoteLabel("ESP-NOW CHANNEL",CX,144,318,dim);
+  drawLargeNativeLabel(String(rxChannel),CX,201,190,1.10f,cyan);
   uiButton(117,224,107,50,"CH -");uiButton(242,224,107,50,"CH +");
   String mac=WiFi.macAddress();
-  textC(mac.substring(0,14),CX,310,white,2);
-  textC(mac.substring(14),CX,334,white,2);
-  textC("PAIR IN WLED REMOTES",CX,346,dim,2);
+  remoteLabel(mac.substring(0,9),CX,311,333,white);
+  remoteLabel(mac.substring(9),CX,339,333,white);
+  remoteLabel("PAIR IN WLED REMOTES",CX,368,343,dim,false);
  }
- if(radioPending)textC("SENDING",CX,110,rgb(255,188,96),2);
- else if(radioSuccess)textC("APPLIED",CX,110,rgb(107,255,181),2);
+ if(radioPending)textC("SENDING",CX,109,rgb(255,188,96),2);
+ else if(radioSuccess)textC("APPLIED",CX,109,rgb(107,255,181),2);
  remoteNav();
 }
 static void showTextEditor(){
@@ -1539,37 +1569,67 @@ static void saveNameOverlay(){
  saveNames();overlay=NONE;vibration(180,65);
 }
 static void remoteTouch(int x,int y,int dx,int dy){
- if(y>=384){remotePage=(remotePage+(x<CX?REMOTE_PAGES-1:1))%REMOTE_PAGES;vibration(90,16);return;}
+ // Use the touch-centroid and closest button center so a finger straddling
+ // adjacent buttons triggers ONE action, including touches on button edges.
+ if(remotePointIn(x,y,RNAV_LX,RNAV_Y,RNAV_W,RNAV_H)){
+  remotePage=(remotePage+REMOTE_PAGES-1)%REMOTE_PAGES;return;
+ }
+ if(remotePointIn(x,y,RNAV_RX,RNAV_Y,RNAV_W,RNAV_H)){
+  remotePage=(remotePage+1)%REMOTE_PAGES;return;
+ }
  if(remotePage==0){
-  if(y>=145&&y<180){remoteBrightness=(uint8_t)clampi((x-99)*255/268,0,255);radioSend(2,remoteBrightness);}
-  else if(y>=286&&y<341){
-   if(x<168)remoteSelected=(remoteSelected+REMOTE_FX_COUNT-1)%REMOTE_FX_COUNT;
-   else if(x>297)remoteSelected=(remoteSelected+1)%REMOTE_FX_COUNT;
-   else applyRemoteSelection();
-  }else if(y>=343&&y<389)remoteToggleFavorite(remoteSelected);
+  if(y>=145&&y<183 && x>=88&&x<=378){
+   remoteBrightness=(uint8_t)clampi((x-99)*255/268,0,255);radioSend(2,remoteBrightness);
+  }else{
+   struct RemoteButtonHit {int x,y,w,h,command;};
+   const RemoteButtonHit hit[]={
+    {RPREV_X,RROW_Y,RPREV_W,RROW_H,1},
+    {RAPPLY_X,RROW_Y,RAPPLY_W,RROW_H,2},
+    {RNEXT_X,RROW_Y,RPREV_W,RROW_H,3},
+    {RFAV_X,RFAV_Y,RFAV_W,RFAV_H,4}
+   };
+   int target=-1;long best=2147483647L;
+   for(const auto &h:hit){
+    if(!remotePointIn(x,y,h.x,h.y,h.w,h.h))continue;
+    const long ox=x-(h.x+h.w/2),oy=y-(h.y+h.h/2);
+    const long dist=ox*ox+oy*oy;
+    if(dist<best){best=dist;target=h.command;}
+   }
+   if(target==1)remoteSelected=(remoteSelected+REMOTE_FX_COUNT-1)%REMOTE_FX_COUNT;
+   else if(target==2)applyRemoteSelection();
+   else if(target==3)remoteSelected=(remoteSelected+1)%REMOTE_FX_COUNT;
+   else if(target==4)remoteToggleFavorite(remoteSelected);
+  }
  }else if(remotePage==1){
   if(abs(dy)>24){int count=remoteFavCount();remoteFavScroll=clampi((int)remoteFavScroll+(dy<0?1:-1),0,count>4?count-4:0);}
-  else if(y>=145&&y<366){int idx=remoteFavIndexAt(remoteFavScroll+(y-150)/54);
-   if(idx>=0){remoteSelected=idx;applyRemoteSelection();}}
+  else if(x>=75&&x<391&&y>=149&&y<357){int row=(y-149)/54;
+   if(row<4 && (y-149)%54<46){int idx=remoteFavIndexAt(remoteFavScroll+row);
+    if(idx>=0){remoteSelected=idx;applyRemoteSelection();}}
+  }
  }else if(remotePage==2){
   RemoteFxParam params[5];int n=remoteFxParams(params);
   if(abs(dy)>26){remoteSettingsScroll=clampi((int)remoteSettingsScroll+(dy<0?1:-1),0,n>3?n-3:0);}
-  else if(y>=151&&y<180){remoteBrightness=(uint8_t)clampi((x-99)*255/268,0,255);radioSend(2,remoteBrightness);}
-  else if(y>=213&&y<377){int row=(y-207)/61;
-    int index=row+remoteSettingsScroll;
-    if(row>=0&&row<3&&index<n){uint8_t v=(uint8_t)clampi((x-99)*255/268,0,255);
-      if(params[index].cmd==10)remoteSpeed=v;else if(params[index].cmd==11)remoteIntensity=v;
-      else if(params[index].cmd>=14&&params[index].cmd<=16)remoteCustom[params[index].cmd-14]=v;
-      radioSend(params[index].cmd,v);
-    }
+  else if(y>=151&&y<183&&x>=88&&x<=378){remoteBrightness=(uint8_t)clampi((x-99)*255/268,0,255);radioSend(2,remoteBrightness);}
+  else if(y>=207&&y<378&&x>=88&&x<=378){int row=(y-207)/61;
+   int index=row+remoteSettingsScroll;
+   if(row>=0&&row<3&&index<n){uint8_t v=(uint8_t)clampi((x-99)*255/268,0,255);
+    if(params[index].cmd==10)remoteSpeed=v;else if(params[index].cmd==11)remoteIntensity=v;
+    else if(params[index].cmd>=14&&params[index].cmd<=16)remoteCustom[params[index].cmd-14]=v;
+    radioSend(params[index].cmd,v);
+   }
   }
  }else if(remotePage==3){
   if(abs(dy)>25){remotePaletteScroll=clampi((int)remotePaletteScroll+(dy<0?2:-2),0,PAL_COUNT>4?PAL_COUNT-4:0);}
-  else if(y>=149&&y<368){int id=remotePaletteScroll+(y-151)/54;
-   if(id>=0&&id<PAL_COUNT){selectedPalette=id;radioSend(13,selectedPalette);}}
+  else if(x>=78&&x<388&&y>=151&&y<360){int row=(y-151)/54;
+   if(row>=0&&row<4 && (y-151)%54<47){int id=remotePaletteScroll+row;
+    if(id>=0&&id<PAL_COUNT){selectedPalette=id;radioSend(13,selectedPalette);}}
+  }
  }else if(remotePage==4){
-  if(y>=224&&y<281){rxChannel=clampi(rxChannel+(x<CX?-1:1),1,11);prefs.putUChar("radio",rxChannel);
+  if(y>=224&&y<274){
+   int step=remotePointIn(x,y,117,224,107,50)?-1:(remotePointIn(x,y,242,224,107,50)?1:0);
+   if(step){rxChannel=clampi(rxChannel+step,1,11);prefs.putUChar("radio",rxChannel);
     if(radioReady){esp_now_deinit();radioReady=false;}WiFi.mode(WIFI_OFF);startRadio();}
+  }
  }
 }
 static void editorTouch(int x,int y){
@@ -1631,14 +1691,6 @@ static void selectEffect(int d){
 }
 static void controlButtons(){
  const uint32_t now=millis();
- if((M5.BtnA.wasPressed()||M5.BtnB.wasPressed())&&displayBlank){
-  displayBlank=false;lastRemoteActivity=now;
-  M5.Display.setBrightness((uint8_t)(brightness*255/100));wakeKeyConsumed=true;
- }
- if(wakeKeyConsumed){
-  if(!M5.BtnA.isPressed()&&!M5.BtnB.isPressed())wakeKeyConsumed=false;
-  return;
- }
  if(remote&&(M5.BtnA.isPressed()||M5.BtnB.isPressed()))lastRemoteActivity=now;
  if(M5.BtnA.wasPressed()){keyADown=now;keyAHeld=false;brightnessRepeatAt=now;}
  if(M5.BtnB.wasPressed()){keyBDown=now;keyBHeld=false;brightnessRepeatAt=now;}
@@ -1737,6 +1789,7 @@ static void controlTouch(){
    if(overlay==NONE&&!remote&&(originalEffect(effectID)==65||originalEffect(effectID)==66))GravityLab::touchStart(touch.x,touch.y,originalEffect(effectID)==65);
    if(overlay==NONE&&!remote&&originalEffect(effectID)==67)BeatLab::touchStart(touch.x,touch.y);
    nameTouchXSum=touch.x;nameTouchYSum=touch.y;nameTouchSamples=1;
+   remoteTouchXSum=touch.x;remoteTouchYSum=touch.y;remoteTouchSamples=1;
    nameDeleteConsumed=false;
    if(overlay==NAME){
      // V17.4: DELETE is an immediate ON-PRESS action. Do not wait for the
@@ -1753,6 +1806,15 @@ static void controlTouch(){
  }
  if(touch.isPressed()&&touchDown){
    touchLastX=touch.x;touchLastY=touch.y;
+   if(remote&&overlay==NONE&&remoteTouchSamples<40){
+     const int count=clampi((int)M5.Touch.getCount(),1,5);
+     int midX=0,midY=0,active=0;
+     for(int i=0;i<count;i++){
+       const auto &contact=M5.Touch.getDetail(i);
+       if(contact.isPressed()) {midX+=contact.x;midY+=contact.y;active++;}
+     }
+     if(active){remoteTouchXSum+=midX/active;remoteTouchYSum+=midY/active;remoteTouchSamples++;}
+   }
    if(overlay==NONE&&!remote&&originalEffect(effectID)==64)StringTheory::touchMove(touch.x,touch.y);
    if(overlay==NONE&&!remote&&(originalEffect(effectID)==65||originalEffect(effectID)==66))GravityLab::touchMove(touch.x,touch.y,originalEffect(effectID)==65);
    if(overlay==NONE&&!remote&&originalEffect(effectID)==67)BeatLab::touchMove(touch.x,touch.y);
@@ -1784,11 +1846,13 @@ static void controlTouch(){
      y=nameTouchYSum/nameTouchSamples;
    }
    int dx=x-touchStartX;
-   touchDown=false;nameTouchSamples=0;
-   if(displayBlank){
-     displayBlank=false;M5.Display.setBrightness((uint8_t)(brightness*255/100));
-     lastRemoteActivity=millis();return;
+   const int dy=y-touchStartY;
+   if(remote&&overlay==NONE&&remoteTouchSamples>0&&abs(dx)<26&&abs(dy)<26){
+     // Tap centroid wins when a broad press overlaps adjacent remote buttons.
+     x=remoteTouchXSum/remoteTouchSamples;
+     y=remoteTouchYSum/remoteTouchSamples;
    }
+   touchDown=false;nameTouchSamples=0;remoteTouchSamples=0;
    if(overlay==NAME&&abs(dx)>60){keyboardPopup="";return;}
    if(overlay==BATTERY){overlay=NONE;batteryHudUntil=0;vibration(105,20);return;}
    if(overlay!=NONE){editorTouch(x,y);return;}
@@ -1906,12 +1970,8 @@ void loop(){
     GravityLab::tick(millis(),originalEffect(effectID)==65);
  if(!remote && overlay==NONE && originalEffect(effectID)==67)BeatLab::tick(millis());
  uint32_t now=millis();
- // Remote-only auto blank: the radio can still receive ACKs and A+B can wake.
- // No deep sleep during live audio or ESP-NOW; preserve responsiveness.
- if(remote && overlay==NONE && remoteIdleSecs>0 && !displayBlank && (now-lastRemoteActivity)>remoteIdleSecs*1000UL){
-   displayBlank=true;M5.Display.setBrightness(0);
- }
- if(displayBlank){delay(12);return;}
+ // V17.24: always-on display in both visualizer and harness modes.
+ // Removed the remote idle blanker entirely; no automatic brightness-to-zero.
  const int fps=powerFrameCap();
  if((uint32_t)(now-frameStamp)<(uint32_t)(1000/fps)){delay(1);return;}
  frameStamp=now;renderStamp=now;renderFrame();saveFrameStats();
