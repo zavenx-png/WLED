@@ -676,6 +676,10 @@ static void startRadio(){
  if(radioReady){esp_now_register_recv_cb(radioCallback);esp_now_peer_info_t peer={};memcpy(peer.peer_addr,BROADCAST,6);peer.channel=rxChannel;peer.encrypt=false;esp_now_add_peer(&peer);}
 }
 static void setRemote(bool on){if(remote==on)return;remote=on;overlay=NONE;remotePage=0;remoteSettingsScroll=0;displayBlank=false;lastRemoteActivity=millis();
+ // Remote-only safeguard: restore the original visualizer's default native text
+ // state before its next frame. The 31 effect renderers and their frame pacing
+ // are intentionally unchanged from V17.21.1.
+ if(!remote){cv.setFont(&lgfx::fonts::Font0);cv.setTextSize(1.0f);cv.setTextDatum(top_left);frameStamp=0;}
  M5.Display.setBrightness((uint8_t)(brightness*255/100));radioSuccess=false;radioPending=false;
  if(remote)M5.Mic.end();else{M5.Mic.begin();pendingMic=false;}
  vibration(190,82);}
@@ -993,11 +997,11 @@ static void textEffects(uint8_t id){
     float y=CY+11*sinf(t*.88f+j*.55f);glyph(word[j],(int)x,(int)y,pink,4);}
   break;}
  case 25:{ // Kaleidoscope: label integrated into wedge pattern.
-  for(int k=0;k<12;k++){float a=k*TAU/12+t*.09f;
-    spoke(CX,CY,29,223,a,tint(hue(k*.083f),.24f),3);
+  for(int k=0;k<12;k++){float a=k*TAU/12+t*.09f;    spoke(CX,CY,29,223,a,tint(hue(k*.083f),.24f),3);
     for(int m=0;m<4;m++){float r=58+m*39+7*sinf(beatClock*.15f+k);
      float x=CX+r*cosf(a+.14f*sinf(m+t*.14f)),y=CY+r*sinf(a+.14f*sinf(m+t*.14f));
-     glow(x,y,2+(m%3),hue(k*.075f+m*.05f));}}  nameGlyphsOnRing(word,141,t*.13f+norm*.04f,cyan);break;}
+     glow(x,y,2+(m%3),hue(k*.075f+m*.05f));}}
+  nameGlyphsOnRing(word,141,t*.13f+norm*.04f,cyan);break;}
  case 26:{ // Round Resonator: letters on rings only, no stationary central text.
   for(int j=0;j<12;j++){float r=26+j*17+8*sinf(q*.25f+j*.4f);
     circ(CX,CY,r,tint(hue(.52f+j*.045f),.25f+.28f*norm),2);}
