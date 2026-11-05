@@ -1926,6 +1926,11 @@ static void mode_z_electric_organism(void)
   uint8_t power = qadd8(base, scale8(max(a,max(b,c)), 125U));
   uint16_t hue = x + (uint16_t)(t*2U) + (uint16_t)(field*65U);
   uint32_t col=zh_palette(hue,power);
+  // Aqua Flash has dark palette stops: a teal glow keeps every physical
+  // LED visibly active while the brighter electrical branches travel.
+  uint8_t teal=(uint8_t)(45U+scale8(field,42U));
+  col=RGBW32(max(R(col),(uint8_t)(teal/6U)),
+             max(G(col),teal),max(B(col),(uint8_t)qadd8(teal,18U)),0);
   if (a>245U || b>250U || c>250U) col=color_fade(0xFFDDEEFF, power);
   SEGMENT.setPixelColor(zh_path_led(p),col);
   }
@@ -2322,7 +2327,11 @@ static void mode_z_ember_drift(void)
     br = qadd8(br, SEGMENT.custom1 >> 3);
     if (br < 5) continue;
     uint16_t hue = 3500U + (uint16_t)(n2 * 90U);
-    SEGMENT.setPixelColor(zh_path_led(p), zh_palette(hue, br));
+    uint32_t col=zh_palette(hue,br);
+    // Autumn palette can go dark: keep a warm ember glow underneath.
+    col=RGBW32(max(R(col),(uint8_t)(35U+(br>>2))),
+               max(G(col),(uint8_t)(10U+(br>>4))),B(col),0);
+    SEGMENT.setPixelColor(zh_path_led(p),col);
   }
 }
 
@@ -2562,7 +2571,11 @@ static void mode_z_gravity_lens(void)
   uint8_t br=qadd8(30U,scale8(max(ring1,ring2),215U));
   br=qadd8(br,SEGMENT.custom1>>4);
   uint16_t hue=32000U+(uint16_t)(p*70U)+(uint16_t)(t*2U);
-  SEGMENT.setPixelColor(zh_path_led(p),zh_palette(hue,br));
+  uint32_t col=zh_palette(hue,br);
+  uint8_t cyan=(uint8_t)(16U+scale8(max(ring1,ring2),105U));
+  col=RGBW32(max(R(col),(uint8_t)(cyan/4U)),
+             max(G(col),cyan),max(B(col),(uint8_t)qadd8(cyan,15U)),0);
+  SEGMENT.setPixelColor(zh_path_led(p),col);
   }
 }
 static const char _data_FX_MODE_Z_GRAVITY_LENS[] PROGMEM =
@@ -2590,7 +2603,10 @@ static void mode_z_quiet_storm(void)
   br=qadd8(br,scale8(n,50U));
   br=qadd8(br,SEGMENT.custom1>>5);
   uint16_t hue=38000U+(uint16_t)(n*105U)+(uint16_t)(t*2U);
-  SEGMENT.setPixelColor(zh_path_led(p),zh_palette(hue,br));
+  uint32_t col=zh_palette(hue,br);
+  uint8_t blue=(uint8_t)(20U+scale8(front,45U));
+  col=RGBW32(R(col),max(G(col),(uint8_t)(blue/2U)),max(B(col),blue),0);
+  SEGMENT.setPixelColor(zh_path_led(p),col);
   }
 }
 static const char _data_FX_MODE_Z_QUIET_STORM[] PROGMEM =
