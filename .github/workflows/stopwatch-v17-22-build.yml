@@ -1,0 +1,41 @@
+name: Build StopWatch V17.22 Harness Remote
+on:
+  push:
+    branches:
+      - stopwatch-v17-22-harness-remote
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Arduino CLI
+        uses: arduino/setup-arduino-cli@v2
+      - name: Install M5Stack board core and libraries
+        run: |
+          arduino-cli config init
+          arduino-cli config add board_manager.additional_urls https://static-cdn.m5stack.com/resource/arduino/package_m5stack_index.json
+          arduino-cli core update-index
+          arduino-cli core install m5stack:esp32@3.3.10
+          arduino-cli lib install M5Unified@0.2.29
+          arduino-cli lib install M5GFX@0.2.36
+      - name: Compile all 31 effects
+        run: |
+          arduino-cli compile --fqbn m5stack:esp32:m5stack_stopwatch --output-dir "$GITHUB_WORKSPACE/compiled" "$GITHUB_WORKSPACE/stopwatch/StopWatchNative31V16"
+          ls -lh "$GITHUB_WORKSPACE/compiled"
+      - name: SHA-256 manifest
+        run: |
+          cd compiled
+          sha256sum *.bin > SHA256SUMS.txt
+      - name: Upload ready-to-flash images
+        uses: actions/upload-artifact@v4
+        with:
+          name: StopWatch_V17_22_HarnessRemote_31_Effects_Flash
+          path: |
+            compiled/*.bin
+            compiled/SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 30
