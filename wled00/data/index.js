@@ -932,17 +932,20 @@ function populateEffects()
 	var effects = eJson;
 	var html = "";
 
-	effects.shift(); // temporary remove solid
+	// Convert only raw API pairs; preserve objects when called again later.
+	// Reorder the *UI list*, never the firmware effect IDs (presets stay valid).
 	for (let i = 0; i < effects.length; i++) {
-		effects[i] = {
-			id: effects[i][0],
-			name:effects[i][1]
-		};
+		if (Array.isArray(effects[i])) {
+			effects[i] = {id: effects[i][0], name: effects[i][1]};
+		}
 	}
-	effects.sort((a,b) => (a.name).localeCompare(b.name));
-	effects.unshift({
-		"id": 0,
-		"name": "Solid"
+	if (!effects.some(e => Number(e.id) === 0))
+		effects.push({id: 0, name: "Solid"});
+	effects.sort((a,b) => {
+		const za = a.name.startsWith("Z - ");
+		const zb = b.name.startsWith("Z - ");
+		if (za !== zb) return za ? -1 : 1;
+		return a.name.localeCompare(b.name);
 	});
 
 	for (let ef of effects) {
@@ -1083,7 +1086,7 @@ function genPalPrevCss(id)
 
 function generateListItemHtml(listName, id, name, clickAction, extraHtml = '', effectPar = '')
 {
-	return `<div class="lstI${id==0?' sticky':''}" data-id="${id}" ${effectPar===''?'':'data-opt="'+effectPar+'" '}onClick="${clickAction}(${id})">`+
+	return `<div class="lstI${id==0 && listName==='palette'?' sticky':''}" data-id="${id}" ${effectPar===''?'':'data-opt="'+effectPar+'" '}onClick="${clickAction}(${id})">`+
 		`<label title="(${id})" class="radio schkl" onclick="event.preventDefault()">`+ // (#1984)
 			`<input type="radio" value="${id}" name="${listName}">`+
 			`<span class="radiomark"></span>`+
@@ -2452,7 +2455,8 @@ function setFX(ind = null)
 	// including clicking the currently active effect a second time.
 	// Separate palette-picker requests do not carry fxrp, so manual changes
 	// remain in place until the next effect click. Presets/boot are untouched.
-	var obj = {"seg": {"fx": parseInt(ind), "fxdef": cfg.comp.fxdef, "fxrp": true}};
+	var obj = {"seg": {"fx": parseInt(ind), "fxdef": cfg.comp.fxdef, "fxrp": true},
+	           "hfx": {"op": "select", "fx": parseInt(ind)}};
 	requestJson(obj);
 }
 
@@ -2473,6 +2477,23 @@ function setPalette(paletteId = null)
 	requestJson(obj);
 }
 
+// Harness FX memory controls: changes are persisted on the ESP32 via NVS.
+// Palette overrides are explicit, and never saved by slider/checkbox changes.
+function zhFactoryEffectSettings() {
+	requestJson({"hfx":{"op":"defaultSettings","fx":selectedFx}});
+	showToast("Restoring and saving original effect settings");
+}
+function zhSetPaletteAsEffectDefault() {
+	if (typeof selectedFx !== "number" || selectedFx < 0) return;
+	requestJson({"hfx":{"op":"savePaletteDefault","fx":selectedFx}});
+	showToast("Saving current palette as this effect's default");
+}
+function zhSelectOriginalEffectPalette() {
+	if (typeof selectedFx !== "number" || selectedFx < 0) return;
+	requestJson({"hfx":{"op":"nativePaletteDefault","fx":selectedFx}});
+	showToast("Restoring the effect's original default palette");
+}
+
 function setBri()
 {
 	var obj = {"bri": parseInt(gId('sliderBri').value)};
@@ -2481,20 +2502,20 @@ function setBri()
 
 function setSpeed()
 {
-	var obj = {"seg": {"sx": parseInt(gId('sliderSpeed').value)}};
+	var obj = {"seg": {"sx": parseInt(gId('sliderSpeed').value)}, "hfx":{"op":"saveSettings", "fx":selectedFx}};
 	requestJson(obj);
 }
 
 function setIntensity()
 {
-	var obj = {"seg": {"ix": parseInt(gId('sliderIntensity').value)}};
+	var obj = {"seg": {"ix": parseInt(gId('sliderIntensity').value)}, "hfx":{"op":"saveSettings", "fx":selectedFx}};
 	requestJson(obj);
 }
 
 function setCustom(i=1)
 {
 	if (i<1 || i>3) return;
-	var obj = {"seg": {}};
+	var obj = {"seg": {}, "hfx":{"op":"saveSettings", "fx":selectedFx}};
 	var val = parseInt(gId(`sliderC${i}`).value);
 	if      (i===3) obj.seg.c3 = val;
 	else if (i===2) obj.seg.c2 = val;
@@ -2505,7 +2526,7 @@ function setCustom(i=1)
 function setOption(i=1, v=false)
 {
 	if (i<1 || i>3) return;
-	var obj = {"seg": {}};
+	var obj = {"seg": {}, "hfx":{"op":"saveSettings", "fx":selectedFx}};
 	if      (i===3) obj.seg.o3 = !(!v); //make sure it is bool
 	else if (i===2) obj.seg.o2 = !(!v); //make sure it is bool
 	else            obj.seg.o1 = !(!v); //make sure it is bool
