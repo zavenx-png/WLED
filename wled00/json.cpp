@@ -296,7 +296,17 @@ static bool deserializeSegment(JsonObject elem, byte it, byte presetId = 0)
 
   uint8_t pal = seg.palette;
   if (seg.getLightCapabilities() & 1) {  // ignore palette for White and On/Off segments
-    if (getVal(elem["pal"], pal, 0, getPaletteCount())) seg.setPalette(pal);
+    if (getVal(elem["pal"], pal, 0, getPaletteCount())) {
+      // Explicit palette changes, including the palette picker, always work.
+      seg.setPalette(pal);
+    } else if (!presetId && (elem["fxrp"] | false) && !elem["fx"].isNull()) {
+      // The WLED Effects list sends fxrp on *every click*, including selecting
+      // the already-active effect. Do not apply during preset/boot restore:
+      // saved presets must retain their exact palette, e.g. a red boot preset.
+      // Existing built-in pal= metadata wins, otherwise palette 0 (Default).
+      const int16_t effectPalette = extractModeDefaults(seg.mode, "pal");
+      seg.setPalette((effectPalette >= 0) ? (uint8_t)effectPalette : (uint8_t)0);
+    }
   }
 
   getVal(elem["c1"], seg.custom1);
