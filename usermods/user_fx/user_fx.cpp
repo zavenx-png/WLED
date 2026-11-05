@@ -1580,15 +1580,15 @@ static const char _data_FX_MODE_NOKIA_SNAKE[] PROGMEM =
 //
 // The ONLY functional change is the coordinate system:
 //   - normal WLED effects use the configured logical segment + ledmap
-//   - this effect uses a 595-position virtual path
-//   - each virtual position maps to a logical LED index in 0..290
+//   - this effect uses a 592-position virtual path
+//   - each virtual position maps to a logical LED index in 0..289
 //
-// Therefore the existing ledmap.json is left untouched.
+// The separately uploaded /ledmap.json also changes (P0 loses its final LED).
 // ============================================================================
 
-#define CHUNCHUN_HARNESS_PATH_LEN 595
+#define CHUNCHUN_HARNESS_PATH_LEN 592
 
-// 595 virtual positions across 20 virtual sections following the harness path:
+// 592 virtual positions across 20 virtual sections following the harness path:
 //
 //   Section 0 forward
 //   Section 1 forward
@@ -1618,93 +1618,95 @@ static const char _data_FX_MODE_NOKIA_SNAKE[] PROGMEM =
 // physical sections in REVERSE order, the virtual path uses their logical
 // indices in FORWARD order. The ledmap supplies the physical reversal.
 static const uint16_t chunchunHarnessPath[CHUNCHUN_HARNESS_PATH_LEN] PROGMEM = {
-  // V01: P0, 35 LEDs, logical 0..34, forward
+  // V01: P0, 34 LEDs, logical 0..33, forward
     0,   1,   2,   3,   4,   5,   6,   7,   8,   9,  10,  11,  12,  13,  14,  15,
    16,  17,  18,  19,  20,  21,  22,  23,  24,  25,  26,  27,  28,  29,  30,  31,
-   32,  33,  34,
+   32,  33,
 
-  // V02: P1, 18 LEDs, logical 35..52, forward
-   35,  36,  37,  38,  39,  40,  41,  42,  43,  44,  45,  46,  47,  48,  49,  50,
-   51,  52,
+  // V02: P1, 18 LEDs, logical 34..51, forward
+   34,  35,  36,  37,  38,  39,  40,  41,  42,  43,  44,  45,  46,  47,  48,  49,
+   50,  51,
 
-  // V03: P2, 40 LEDs, logical 53..92, forward
-   53,  54,  55,  56,  57,  58,  59,  60,  61,  62,  63,  64,  65,  66,  67,  68,
-   69,  70,  71,  72,  73,  74,  75,  76,  77,  78,  79,  80,  81,  82,  83,  84,
-   85,  86,  87,  88,  89,  90,  91,  92,
+  // V03: P2, 40 LEDs, logical 52..91, forward
+   52,  53,  54,  55,  56,  57,  58,  59,  60,  61,  62,  63,  64,  65,  66,  67,
+   68,  69,  70,  71,  72,  73,  74,  75,  76,  77,  78,  79,  80,  81,  82,  83,
+   84,  85,  86,  87,  88,  89,  90,  91,
 
-  // V04: P3, 26 LEDs, logical 93..118, forward
-   93,  94,  95,  96,  97,  98,  99, 100, 101, 102, 103, 104, 105, 106, 107, 108,
-  109, 110, 111, 112, 113, 114, 115, 116, 117, 118,
+  // V04: P3, 26 LEDs, logical 92..117, forward
+   92,  93,  94,  95,  96,  97,  98,  99, 100, 101, 102, 103, 104, 105, 106, 107,
+  108, 109, 110, 111, 112, 113, 114, 115, 116, 117,
 
-  // V05: P0 (repeat), 35 LEDs, logical 0..34, forward
+  // V05: P0 (repeat), 34 LEDs, logical 0..33, forward
     0,   1,   2,   3,   4,   5,   6,   7,   8,   9,  10,  11,  12,  13,  14,  15,
    16,  17,  18,  19,  20,  21,  22,  23,  24,  25,  26,  27,  28,  29,  30,  31,
-   32,  33,  34,
+   32,  33,
 
-  // V06: P4, 32 LEDs, logical 119..150, forward
-  119, 120, 121, 122, 123, 124, 125, 126, 127, 128, 129, 130, 131, 132, 133, 134,
-  135, 136, 137, 138, 139, 140, 141, 142, 143, 144, 145, 146, 147, 148, 149, 150,
+  // V06: P4, 32 LEDs, logical 118..149, forward
+  118, 119, 120, 121, 122, 123, 124, 125, 126, 127, 128, 129, 130, 131, 132, 133,
+  134, 135, 136, 137, 138, 139, 140, 141, 142, 143, 144, 145, 146, 147, 148, 149,
 
-  // V07: P5, 30 LEDs, logical 151..180, forward
-  151, 152, 153, 154, 155, 156, 157, 158, 159, 160, 161, 162, 163, 164, 165, 166,
-  167, 168, 169, 170, 171, 172, 173, 174, 175, 176, 177, 178, 179, 180,
+  // V07: P5, 30 LEDs, logical 150..179, forward
+  150, 151, 152, 153, 154, 155, 156, 157, 158, 159, 160, 161, 162, 163, 164, 165,
+  166, 167, 168, 169, 170, 171, 172, 173, 174, 175, 176, 177, 178, 179,
 
-  // V08: P6, 23 LEDs, logical 181..203, forward
-  181, 182, 183, 184, 185, 186, 187, 188, 189, 190, 191, 192, 193, 194, 195, 196,
-  197, 198, 199, 200, 201, 202, 203,
+  // V08: P6, 23 LEDs, logical 180..202, forward
+  180, 181, 182, 183, 184, 185, 186, 187, 188, 189, 190, 191, 192, 193, 194, 195,
+  196, 197, 198, 199, 200, 201, 202,
 
-  // V09: P7, 31 LEDs, logical 204..234, reverse via ledmap
-  204, 205, 206, 207, 208, 209, 210, 211, 212, 213, 214, 215, 216, 217, 218, 219,
-  220, 221, 222, 223, 224, 225, 226, 227, 228, 229, 230, 231, 232, 233, 234,
+  // V09: P7, 31 LEDs, logical 203..233, reverse via ledmap
+  203, 204, 205, 206, 207, 208, 209, 210, 211, 212, 213, 214, 215, 216, 217, 218,
+  219, 220, 221, 222, 223, 224, 225, 226, 227, 228, 229, 230, 231, 232, 233,
 
-  // V10: P8, 22 LEDs, logical 235..256, reverse via ledmap
-  235, 236, 237, 238, 239, 240, 241, 242, 243, 244, 245, 246, 247, 248, 249, 250,
-  251, 252, 253, 254, 255, 256,
+  // V10: P8, 22 LEDs, logical 234..255, reverse via ledmap
+  234, 235, 236, 237, 238, 239, 240, 241, 242, 243, 244, 245, 246, 247, 248, 249,
+  250, 251, 252, 253, 254, 255,
 
-  // V11: P5 (repeat), 30 LEDs, logical 151..180, forward
-  151, 152, 153, 154, 155, 156, 157, 158, 159, 160, 161, 162, 163, 164, 165, 166,
-  167, 168, 169, 170, 171, 172, 173, 174, 175, 176, 177, 178, 179, 180,
+  // V11: P5 (repeat), 30 LEDs, logical 150..179, forward
+  150, 151, 152, 153, 154, 155, 156, 157, 158, 159, 160, 161, 162, 163, 164, 165,
+  166, 167, 168, 169, 170, 171, 172, 173, 174, 175, 176, 177, 178, 179,
 
-  // V12: P6 (repeat), 23 LEDs, logical 181..203, forward
-  181, 182, 183, 184, 185, 186, 187, 188, 189, 190, 191, 192, 193, 194, 195, 196,
-  197, 198, 199, 200, 201, 202, 203,
+  // V12: P6 (repeat), 23 LEDs, logical 180..202, forward
+  180, 181, 182, 183, 184, 185, 186, 187, 188, 189, 190, 191, 192, 193, 194, 195,
+  196, 197, 198, 199, 200, 201, 202,
 
-  // V13: P7 (repeat), 31 LEDs, logical 204..234, reverse via ledmap
-  204, 205, 206, 207, 208, 209, 210, 211, 212, 213, 214, 215, 216, 217, 218, 219,
-  220, 221, 222, 223, 224, 225, 226, 227, 228, 229, 230, 231, 232, 233, 234,
+  // V13: P7 (repeat), 31 LEDs, logical 203..233, reverse via ledmap
+  203, 204, 205, 206, 207, 208, 209, 210, 211, 212, 213, 214, 215, 216, 217, 218,
+  219, 220, 221, 222, 223, 224, 225, 226, 227, 228, 229, 230, 231, 232, 233,
 
-  // V14: P9, 34 LEDs, logical 257..290, reverse via ledmap
-  257, 258, 259, 260, 261, 262, 263, 264, 265, 266, 267, 268, 269, 270, 271, 272,
-  273, 274, 275, 276, 277, 278, 279, 280, 281, 282, 283, 284, 285, 286, 287, 288,
-  289, 290,
+  // V14: P9, 34 LEDs, logical 256..289, reverse via ledmap
+  256, 257, 258, 259, 260, 261, 262, 263, 264, 265, 266, 267, 268, 269, 270, 271,
+  272, 273, 274, 275, 276, 277, 278, 279, 280, 281, 282, 283, 284, 285, 286, 287,
+  288, 289,
 
-  // V15: P2 (repeat), 40 LEDs, logical 53..92, forward
-   53,  54,  55,  56,  57,  58,  59,  60,  61,  62,  63,  64,  65,  66,  67,  68,
-   69,  70,  71,  72,  73,  74,  75,  76,  77,  78,  79,  80,  81,  82,  83,  84,
-   85,  86,  87,  88,  89,  90,  91,  92,
+  // V15: P2 (repeat), 40 LEDs, logical 52..91, forward
+   52,  53,  54,  55,  56,  57,  58,  59,  60,  61,  62,  63,  64,  65,  66,  67,
+   68,  69,  70,  71,  72,  73,  74,  75,  76,  77,  78,  79,  80,  81,  82,  83,
+   84,  85,  86,  87,  88,  89,  90,  91,
 
-  // V16: P3 (repeat), 26 LEDs, logical 93..118, forward
-   93,  94,  95,  96,  97,  98,  99, 100, 101, 102, 103, 104, 105, 106, 107, 108,
-  109, 110, 111, 112, 113, 114, 115, 116, 117, 118,
+  // V16: P3 (repeat), 26 LEDs, logical 92..117, forward
+   92,  93,  94,  95,  96,  97,  98,  99, 100, 101, 102, 103, 104, 105, 106, 107,
+  108, 109, 110, 111, 112, 113, 114, 115, 116, 117,
 
-  // V17: P0 (repeat), 35 LEDs, logical 0..34, forward
+  // V17: P0 (repeat), 34 LEDs, logical 0..33, forward
     0,   1,   2,   3,   4,   5,   6,   7,   8,   9,  10,  11,  12,  13,  14,  15,
    16,  17,  18,  19,  20,  21,  22,  23,  24,  25,  26,  27,  28,  29,  30,  31,
-   32,  33,  34,
+   32,  33,
 
-  // V18: P1 (repeat), 18 LEDs, logical 35..52, forward
-   35,  36,  37,  38,  39,  40,  41,  42,  43,  44,  45,  46,  47,  48,  49,  50,
-   51,  52,
+  // V18: P1 (repeat), 18 LEDs, logical 34..51, forward
+   34,  35,  36,  37,  38,  39,  40,  41,  42,  43,  44,  45,  46,  47,  48,  49,
+   50,  51,
 
-  // V19: P2 (repeat), 40 LEDs, logical 53..92, forward
-   53,  54,  55,  56,  57,  58,  59,  60,  61,  62,  63,  64,  65,  66,  67,  68,
-   69,  70,  71,  72,  73,  74,  75,  76,  77,  78,  79,  80,  81,  82,  83,  84,
-   85,  86,  87,  88,  89,  90,  91,  92,
+  // V19: P2 (repeat), 40 LEDs, logical 52..91, forward
+   52,  53,  54,  55,  56,  57,  58,  59,  60,  61,  62,  63,  64,  65,  66,  67,
+   68,  69,  70,  71,  72,  73,  74,  75,  76,  77,  78,  79,  80,  81,  82,  83,
+   84,  85,  86,  87,  88,  89,  90,  91,
 
-  // V20: P3 (repeat), 26 LEDs, logical 93..118, forward
-   93,  94,  95,  96,  97,  98,  99, 100, 101, 102, 103, 104, 105, 106, 107, 108,
-  109, 110, 111, 112, 113, 114, 115, 116, 117, 118
+  // V20: P3 (repeat), 26 LEDs, logical 92..117, forward
+   92,  93,  94,  95,  96,  97,  98,  99, 100, 101, 102, 103, 104, 105, 106, 107,
+  108, 109, 110, 111, 112, 113, 114, 115, 116, 117
 };
+static_assert(sizeof(chunchunHarnessPath)/sizeof(chunchunHarnessPath[0]) == CHUNCHUN_HARNESS_PATH_LEN,
+              "Harness virtual path length does not match its LEDs");
 
 
 // This is WLED's original Chunchun effect with the virtual-path coordinate
@@ -1721,7 +1723,7 @@ static const uint16_t chunchunHarnessPath[CHUNCHUN_HARNESS_PATH_LEN] PROGMEM = {
 //   color_from_palette(...);
 //   setPixelColor(...);
 //
-// The original 292-LED SEGLEN is replaced by the 595-position virtual
+// The normal 290-logical-LED path is replaced by the 592-position virtual
 // harness path only where it defines the animation coordinate system.
 static void mode_chunchun_harness(void)
 {
@@ -1733,7 +1735,7 @@ static void mode_chunchun_harness(void)
   // Original WLED Chunchun line -- unchanged.
   unsigned counter = strip.now * (6 + (SEGMENT.speed >> 4));
 
-  // Original formula, but applied to the 595-position virtual path.
+  // Original formula, but applied to the 592-position virtual path.
   unsigned numBirds = 2 + (CHUNCHUN_HARNESS_PATH_LEN >> 3);
 
   // Original WLED Chunchun line -- unchanged.
@@ -1778,7 +1780,7 @@ static const char _data_FX_MODE_CHUNCHUN_HARNESS[] PROGMEM =
 // ============================================================================
 // Z - Harness Visual Suite
 //
-// All effects below use the same 595-position virtual harness path as the
+// All effects below use the same 592-position virtual harness path as the
 // custom Chunchun effect above. The path is expressed in the normal logical
 // LED coordinate space so the existing physical-wiring ledmap.json remains intact.
 // In particular, Sections 7, 8 and 9 are supplied in logical FORWARD order;
@@ -2110,7 +2112,7 @@ static const char _data_FX_MODE_Z_STARLIGHT[] PROGMEM =
 // ============================================================================
 // Z - Harness Visual Suite II
 //
-// 15 additional effects, all built on the same 595-position virtual harness
+// 15 additional effects, all built on the same 592-position virtual harness
 // path (CHUNCHUN_HARNESS_PATH_LEN / chunchunHarnessPath / zh_* helpers
 // defined above). Nothing above this block is modified - these are pure
 // additions. None of these are games; they are all ambient / dancing /
@@ -2245,7 +2247,7 @@ static const char _data_FX_MODE_Z_DEEP_CURRENT[] PROGMEM =
 // formula, because that's what makes the emergent complexity trustworthy -
 // each is "hard to have come up with" precisely because it wasn't invented,
 // it was borrowed from how pendulums, waves, orbits and coherent noise
-// actually behave, then translated onto the 595-position harness path.
+// actually behave, then translated onto the 592-position harness path.
 //
 // Design constraints followed throughout, based on photosensitive-epilepsy
 // guidance (WCAG 2.3.1 / Ofcom / Epilepsy Foundation, which put the danger
@@ -2392,7 +2394,7 @@ static const char _data_FX_MODE_Z_ORBITAL_WALTZ[] PROGMEM =
 
 // ============================================================================
 // Z - Harness Visual Suite IV
-// Fifteen slow, high-quality effects designed for the 595-position virtual
+// Fifteen slow, high-quality effects designed for the 592-position virtual
 // harness path. All motion is deliberately multi-second, smooth, and free of
 // hard flashes. They reuse the existing zh_* helpers and chunchunHarnessPath
 // so the topology (including repeated / reversed sections) is fully expressed.
@@ -2629,7 +2631,7 @@ static const char _data_FX_MODE_Z_INFINITE_CORRIDOR[] PROGMEM =
 
 // ============================================================================
 // HARNESS METEOR BALLET — inspired by Hat VIII's smooth, feathered meteors.
-// All movement is on the 595-position 20-section virtual path. No hat midpoint,
+// All movement is on the 592-position 20-section virtual path. No hat midpoint,
 // 144-LED length, rear crossover, or hat-specific physical coordinates are used.
 // Revisited physical sections are combined by per-channel MAX, not added.
 // ============================================================================
@@ -2711,10 +2713,10 @@ static void zm_tail(float pos, int8_t direction, uint8_t scheme,
   }
 }
 
-// 1. Continuous wrap-around meteors. The full 595 virtual positions are used,
+// 1. Continuous wrap-around meteors. The full 592 virtual positions are used,
 //    including the final six repeated sections and all original overlaps.
 static void mode_z_meteor_circuit(void) {
-  if (SEGLEN < 291) FX_FALLBACK_STATIC;
+  if (SEGLEN < 290) FX_FALLBACK_STATIC;
   SEGMENT.fill(BLACK);
   const uint16_t L=CHUNCHUN_HARNESS_PATH_LEN;
   const uint32_t cycle=13500U-(uint32_t)SEGMENT.speed*29U;
@@ -2732,7 +2734,7 @@ static const char _data_FX_MODE_Z_METEOR_CIRCUIT[] PROGMEM =
 // 2. Two matched meteors reverse together from opposite ends of the virtual
 //    path. Repeated P0/P2/P3 LEDs form synchronized physical echoes.
 static void mode_z_meteor_twin_sync(void) {
-  if (SEGLEN < 291) FX_FALLBACK_STATIC;
+  if (SEGLEN < 290) FX_FALLBACK_STATIC;
   SEGMENT.fill(BLACK);
   const uint32_t cycle=6900U-(uint32_t)SEGMENT.speed*15U;
   float theta=6.283185307f*(float)(strip.now%cycle)/(float)cycle;
@@ -2749,7 +2751,7 @@ static const char _data_FX_MODE_Z_METEOR_TWIN_SYNC[] PROGMEM =
 // 3. Staggered heads bounce smoothly at the ends, inspired by Hat VIII's
 //    rear ricochet; no physical hat rear midpoint is assumed.
 static void mode_z_meteor_ricochet(void) {
-  if (SEGLEN < 291) FX_FALLBACK_STATIC;
+  if (SEGLEN < 290) FX_FALLBACK_STATIC;
   SEGMENT.fill(BLACK);
   const float end=(float)(CHUNCHUN_HARNESS_PATH_LEN-1U);
   const uint32_t cycle=9850U-(uint32_t)SEGMENT.speed*22U;
@@ -2768,7 +2770,7 @@ static const char _data_FX_MODE_Z_METEOR_RICOCHET[] PROGMEM =
 // 4. Opposing comet trains glide past each other at offset phases. Overlapping
 //    virtual passes are blended by MAX on the same logical physical LEDs.
 static void mode_z_meteor_crossover(void) {
-  if (SEGLEN < 291) FX_FALLBACK_STATIC;
+  if (SEGLEN < 290) FX_FALLBACK_STATIC;
   SEGMENT.fill(BLACK);
   const float L=(float)CHUNCHUN_HARNESS_PATH_LEN;
   const uint32_t cycle=11300U-(uint32_t)SEGMENT.speed*24U;
@@ -2788,7 +2790,7 @@ static const char _data_FX_MODE_Z_METEOR_CROSSOVER[] PROGMEM =
 // 5. Traveling bursts with soft spawn/despawn envelopes, no jumps or flashes.
 //    Different epochs get deterministic warm colors and forward/backward runs.
 static void mode_z_meteor_echo_rain(void) {
-  if (SEGLEN < 291) FX_FALLBACK_STATIC;
+  if (SEGLEN < 290) FX_FALLBACK_STATIC;
   SEGMENT.fill(BLACK);
   const float L=(float)CHUNCHUN_HARNESS_PATH_LEN;
   const uint32_t cycle=9200U-(uint32_t)SEGMENT.speed*18U;
@@ -3050,7 +3052,7 @@ class UserFxUsermod : public Usermod {
     // strip.addEffect(255, &mode_your_effect2, _data_FX_MODE_YOUR_EFFECT2);
     // strip.addEffect(255, &mode_your_effect3, _data_FX_MODE_YOUR_EFFECT3);
 
-    // Custom Chunchun: uses the 595-position virtual harness path while
+    // Custom Chunchun: uses the 592-position virtual harness path while
     // preserving the existing ledmap for all other effects.
     strip.addEffect(255, &mode_chunchun_harness, _data_FX_MODE_CHUNCHUN_HARNESS);
 
