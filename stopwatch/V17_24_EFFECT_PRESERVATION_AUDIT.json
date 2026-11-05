@@ -1,0 +1,37 @@
+{
+  "baseline": "V17.21.1 + approved remote V17.23",
+  "excluded": [
+    "loop: intentionally disabled remote idle auto blank"
+  ],
+  "sha256": {
+    "renderEffect": "a57d80ae95f625bed61ad5316950a0616c40165ff5bd11ef787d4aa5a0ea9622",
+    "powerFrameCap": "c45861577e63d90df4e4103146d7fa70d38e589b2fa4089ab850c920a1828d92",
+    "renderFrame": "3552201965ab691913901e1678f38e752b8bf11bb7f495fdad05ac79f1b6f1f3",
+    "setup": "dddc362ed4b78228ddc4ac0b0b6cd5a99be28bf0d571bd653a144a4dea085509",
+    "audioTick": "319ad3359f5dd662d27960050f22423c88089a77663b79a883fb92b60bf829e1",
+    "beatTick": "5eedf71c4a05fb12baa9c3621535286fcd3163107c5e60cbfd2f1673d1a39451",
+    "selectEffect": "aa2bb2f4f49814a3e07c25de829db907519bf63133caa1938305507b8a409d93",
+    "drawLargeNativeLabel": "521ca0dac10fe73bdeeb1bf9cbc8a56029640f710682a7ecc36f5b97a24345d4",
+    "crispBrightnessText": "9d5bc27dfe711e72ecce8ee4b0d44284e20ab11ceabd137716db07e6b4b41605",
+    "drawEye": "b41946037db1d83c77cd9a17a09465504caf77037fb3a39c68b8367962d8b356",
+    "drawGeometry": "309df904e61fd8e990b439509e8a4e105031e618bb006be4e38a5fd29c25259c",
+    "drawCinematic": "059896f26c572e3f66aadca9cdf0b469cb6108db599aebff340c69650f743cb5",
+    "textEffects": "24b11399575ed3d0e4446cac95a7110cecf1cbdf5429508cbe1d96863319745d",
+    "file:StopWatchNative31V16.ino": "5d6f7587aa808632d28f8e6e4888005c49fcf0f8bf0153a43584dd75ff1e0254",
+    "file:assets/BrowserFiveRenderer.h": "23c2d924c0ec12bc322eb4be7144959359c5a08f172632bc73cfca84c254df25",
+    "file:assets/FontTrial.h": "d7b59f4807053279af45c7af9c661f0ec9078c629b43892e719db1a55565aa9e",
+    "file:assets/StringTheoryV1719.h": "a26c6a67c73dd9e45ee74b14428e5158241e3cbd732cc3ef4d31dffa0934e326",
+    "file:assets/NativeTextures.h": "c53c1f491e51038e8c9bb9fe030e614e4aa8272c4e84165967008e605a170355",
+    "file:assets/GravityLabV1720.h": "7f4a67516ee2c6fe7c4cb9f61b180559c00a11a0c23255c3d2b184b48a8ddc45",
+    "file:assets/StringFestivalV1714.h": "04e96a2ea180e5f794807114bf098290aedf0167b6812944e952d8fd6b3902da",
+    "file:assets/FidelityClassic167.h": "5badf0b4548c86bbeaba9816ed39f23df0e64eaead34805f1fb118fb930edce9",
+    "file:assets/BeatLabV1721.h": "e4407582842ad0725a49859530e1e2e2a6627d820a99f0923f648f50735641c6",
+    "file:assets/StringFestivalV1715.h": "d7dc9c8148f91ad69c6018d5a46c75d0902d0878259b90c773aad04db5ed488c",
+    "file:assets/Browser5Assets.h": "9c18430085879ad7b06d2d9d2694c97441f973f985a2397de223b88423ab7c73",
+    "file:assets/GravityLabPhysics.h": "20d68e8721ae14654a76269edc91bd7f9dda4cf4463e7f800b0113acc81c5383",
+    "file:assets/BeatLabDSP.h": "c0a45c8c304e79c28a8a0b0083d7f6e67ae14f60d5415df509b9c4edd75b2738",
+    "file:assets/TrueTypeAtlas.h": "90564afe5a7d5917697122ed69c3a2b4c87193bf1a6fd151f24852c25e2f1f70",
+    "file:assets/FidelityText167.h": "c6a942798249f941a55775035cad6ac4f53914ead5457e7dda6711dce4c61759",
+    "file:assets/ImportedAudioFXV1716.h": "3240aac3eebeea133a3ce8f068285e88a9ee9948d010e04e7fd7a2bfd889de1d"
+  }
+}
