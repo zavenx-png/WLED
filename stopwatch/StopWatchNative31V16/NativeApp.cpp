@@ -666,7 +666,7 @@ static void radioCallback(const uint8_t *mac,const uint8_t *data,int n)
  portENTER_CRITICAL(&ackMux);rxAck=a;newAck=true;portEXIT_CRITICAL(&ackMux);
 }
 static void radioTick(){if(newAck){Ack a;portENTER_CRITICAL(&ackMux);a=rxAck;newAck=false;portEXIT_CRITICAL(&ackMux);
- if(a.ready&&a.seq==remoteSeq){radioPending=false;radioSuccess=a.status==0;remoteAwaitingApply=false; // No haptics on remote acknowledgements.}}
+ if(a.ready&&a.seq==remoteSeq){radioPending=false;radioSuccess=a.status==0;remoteAwaitingApply=false; /* No harness haptics on ACK. */}}
  if(radioPending&&millis()-remoteLast>1500)radioPending=false;}
 static void startRadio(){
  WiFi.mode(WIFI_STA);WiFi.disconnect(false,false);WiFi.setSleep(false);
