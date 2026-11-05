@@ -1950,7 +1950,6 @@ static void mode_z_electric_organism(void)
     SEGMENT.setPixelColor(logical,color);
   }
 }
-}
 
 static const char _data_FX_MODE_Z_ELECTRIC_ORGANISM[] PROGMEM =
   "Z - Electric Organism@Speed,Voltage,Arc width,Chaos;!,!;!;01;pal=63";
@@ -2107,7 +2106,6 @@ static void mode_z_starlight(void)
     }
     SEGMENT.setPixelColor(zh_path_led(p), RGBW32(r,g,b,0));
   }
-}
 }
 
 static const char _data_FX_MODE_Z_STARLIGHT[] PROGMEM =
