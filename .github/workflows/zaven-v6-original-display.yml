@@ -1,0 +1,70 @@
+name: Zaven V6 Original Display + ESP-NOW V2
+on:
+  push:
+    branches:
+      - zaven-v6-original-display-radio-only
+    paths:
+      - 'cardputer/v6_original_display_radioonly.patch.zlib.b64'
+      - '.github/workflows/zaven-v6-original-display.yml'
+  workflow_dispatch:
+jobs:
+  build-cardputer:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: arduino/setup-arduino-cli@v2
+      - name: Install official Cardputer board/toolchain
+        run: |
+          arduino-cli core update-index --additional-urls https://static-cdn.m5stack.com/resource/arduino/package_m5stack_index.json
+          arduino-cli core install m5stack:esp32@3.3.10 --additional-urls https://static-cdn.m5stack.com/resource/arduino/package_m5stack_index.json
+          arduino-cli lib install M5Cardputer
+      - name: Apply radio-only changes and verify untouched display baseline
+        run: |
+          mkdir -p cardputer/verified
+          unzip -q cardputer/Zaven_Cardputer_V6_Full_Source.zip -d cardputer/verified
+          python3 - <<'PY'
+          import zlib,base64
+          from pathlib import Path
+          b64=Path('cardputer/v6_original_display_radioonly.patch.zlib.b64').read_text().strip()
+          assert len(b64)==3568, len(b64)
+          patch=zlib.decompress(base64.b64decode(b64))
+          Path('/tmp/zaven_v6_radio_only.patch').write_bytes(patch)
+          PY
+          (cd cardputer/verified && patch --fuzz=0 -p1 -i /tmp/zaven_v6_radio_only.patch)
+          echo 'd80348ee94a92bf625517ce06c0ba0ffbbf7d4b9bcb8be3090d957d8f90258dc  cardputer/verified/Zaven_Festival_Kit_V6/V6_UI.h' | sha256sum --check
+          python3 - <<'PY'
+          from pathlib import Path
+          u=Path('cardputer/verified/Zaven_Festival_Kit_V6/V6_UI.h').read_text()
+          assert u.count('M5Cardputer.Display.setRotation(')==1
+          assert 'M5Cardputer.Display.setRotation(1);' in u
+          assert 'canvas.setColorDepth(16);spriteOK=canvas.createSprite(240,135)!=nullptr;' in u
+          assert 'canvas.pushSprite(0,0);' in u
+          assert 'isKeyPressed(KEY_ESCAPE)' not in u
+          n=Path('cardputer/verified/Zaven_Festival_Kit_V6/V6_Network.h').read_text()
+          assert 'syncRequested.exchange(false)' in n
+          assert 'firstBootNoCatalog' not in n
+          print('Verified original M5Cardputer LCD rotation, canvas and draw path; no auto Wi-Fi join.')
+          PY
+      - name: Run native controls/model tests
+        run: |
+          (cd cardputer/verified && bash tests/run_native_tests.sh)
+      - name: Compile actual M5Cardputer firmware
+        run: |
+          FQBN=$(arduino-cli board listall --format json | jq -r '.boards[] | select(.name == "M5Cardputer") | .fqbn' | head -n1)
+          test -n "$FQBN"
+          mkdir -p cardputer/verified-build
+          arduino-cli compile --fqbn "$FQBN:PartitionScheme=huge_app" --output-dir cardputer/verified-build cardputer/verified/Zaven_Festival_Kit_V6
+          test -s cardputer/verified-build/Zaven_Festival_Kit_V6.ino.bin
+      - name: Package exact compiled source
+        run: |
+          cd cardputer/verified
+          zip -q -r ../Zaven_V6_Original_Display_ESPNowV2_Source.zip Zaven_Festival_Kit_V6 tests README_FIRST.md KEYMAP.md TEST_REPORT.md
+          cd ../..
+          sha256sum cardputer/verified-build/Zaven_Festival_Kit_V6.ino.bin cardputer/Zaven_V6_Original_Display_ESPNowV2_Source.zip > cardputer/V6_Original_Display_SHA256.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Zaven-V6-Original-Display-ESPNowV2
+          path: |
+            cardputer/verified-build/Zaven_Festival_Kit_V6.ino.bin
+            cardputer/Zaven_V6_Original_Display_ESPNowV2_Source.zip
+            cardputer/V6_Original_Display_SHA256.txt
