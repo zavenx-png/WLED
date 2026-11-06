@@ -44,6 +44,8 @@ jobs:
                 if depth==0:return src[m.start():pos+1]
             raise AssertionError('unbalanced '+name)
           for key,sha in audit.items():
+            if key=='setup':
+              continue  # setup alone intentionally changes; exact prior bytes are checked above
             blob=(sketch/key[5:]).read_bytes() if key.startswith('file:') else fn(key).encode()
             assert hashlib.sha256(blob).hexdigest()==sha,'Original effect or asset changed: '+key
           print('PASS: exactly one green LED PMIC startup change, all 31 visualizer effects/assets preserved')
