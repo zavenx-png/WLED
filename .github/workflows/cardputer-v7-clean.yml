@@ -1,0 +1,35 @@
+name: Zaven Cardputer V7 clean rebuild
+on:
+  push:
+    branches: [zaven-cardputer-rebuild-v7]
+    paths:
+      - 'cardputer/Zaven_Studios_Cardputer_Rebuild_V7/**'
+      - '.github/workflows/cardputer-v7-clean.yml'
+  workflow_dispatch:
+jobs:
+  compile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: arduino/setup-arduino-cli@v2
+      - name: Install official M5Stack Cardputer packages
+        run: |
+          arduino-cli core update-index --additional-urls https://static-cdn.m5stack.com/resource/arduino/package_m5stack_index.json
+          arduino-cli core install m5stack:esp32@3.3.10 --additional-urls https://static-cdn.m5stack.com/resource/arduino/package_m5stack_index.json
+          arduino-cli lib install M5Cardputer
+      - name: Compile clean Cardputer V7 firmware
+        run: |
+          FQBN=$(arduino-cli board listall --format json | jq -r '.boards[] | select(.name == "M5Cardputer") | .fqbn' | head -n1)
+          test -n "$FQBN"
+          echo "Board: $FQBN"
+          mkdir -p cardputer/V7_build
+          arduino-cli compile --fqbn "$FQBN:PartitionScheme=huge_app" --warnings all --output-dir cardputer/V7_build cardputer/Zaven_Studios_Cardputer_Rebuild_V7
+          ls -l cardputer/V7_build/*.bin
+      - name: Publish application-only firmware
+        uses: actions/upload-artifact@v4
+        with:
+          name: Zaven-Cardputer-V7-Clean-Rebuild
+          path: |
+            cardputer/V7_build/Zaven_Studios_Cardputer_Rebuild_V7.ino.bin
+            cardputer/Zaven_Studios_Cardputer_Rebuild_V7/*.h
+            cardputer/Zaven_Studios_Cardputer_Rebuild_V7/*.ino
