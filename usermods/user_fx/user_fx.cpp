@@ -1915,10 +1915,12 @@ static void mode_z_electric_organism(void)
   const uint16_t sweep = (uint16_t)((t / (54U - (SEGMENT.speed >> 5))) % count);
   const int16_t wobble1 = (int16_t)(sin16_t((uint16_t)(t * 2U)) >> 12);
   const int16_t wobble2 = (int16_t)(sin16_t((uint16_t)(t * 3U + 19456U)) >> 12);
+  // Signed arithmetic is required because wobble may be negative.
+  const int32_t c = (int32_t)count;
   const uint16_t head[3] = {
     sweep,
-    (uint16_t)(((int32_t)sweep + count / 3U + wobble1 + count) % count),
-    (uint16_t)(((int32_t)sweep + (2U * count) / 3U + wobble2 + count) % count)
+    (uint16_t)(((int32_t)sweep + c / 3 + wobble1 + c) % c),
+    (uint16_t)(((int32_t)sweep + (2 * c) / 3 + wobble2 + c) % c)
   };
   const uint16_t width = 31U + (SEGMENT.intensity >> 5);
   for (uint16_t logical = 0; logical < count; ++logical) {
