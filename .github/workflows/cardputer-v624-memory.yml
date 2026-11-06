@@ -72,4 +72,4 @@ jobs:
           name: Zaven-Cardputer-V624-RAM-Fix
           path: |
             /tmp/cardputer-v623/build/Zaven_Festival_Kit_V6.ino.bin
-            /tmp/Zaven_V623_Editable_Source.zip
+            /tmp/Zaven_V624_Editable_Source.zip
