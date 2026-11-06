@@ -1,0 +1,75 @@
+name: Zaven Cardputer V6.2.4 RAM Fix
+on:
+  push:
+    branches: [zaven-v6-2-4-radio-memory]
+    paths:
+      - 'cardputer/apply_v624_catalog_memory.py'
+      - '.github/workflows/cardputer-v624-memory.yml'
+  workflow_dispatch:
+jobs:
+  build-cardputer:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: arduino/setup-arduino-cli@v2
+      - name: Install M5Stack Arduino tools
+        run: |
+          arduino-cli core update-index --additional-urls https://static-cdn.m5stack.com/resource/arduino/package_m5stack_index.json
+          arduino-cli core install m5stack:esp32@3.3.10 --additional-urls https://static-cdn.m5stack.com/resource/arduino/package_m5stack_index.json
+          arduino-cli lib install M5Cardputer
+      - name: Reconstruct exact V6.2.2 source and patch radio startup
+        run: |
+          mkdir -p /tmp/cardputer-v623
+          unzip -q cardputer/Zaven_V621_radio_only_sources.zip -d /tmp/cardputer-v623
+          cd /tmp/cardputer-v623
+          python3 "$GITHUB_WORKSPACE/cardputer/apply_v622_wifi_startup.py"
+          python3 "$GITHUB_WORKSPACE/cardputer/apply_v623_staged_wifi.py"
+          python3 "$GITHUB_WORKSPACE/cardputer/apply_v624_catalog_memory.py"
+          grep -q 'before-WiFi-init' Zaven_Festival_Kit_V6/V6_UI.h
+          grep -q 'No background Wi-Fi init retries' Zaven_Festival_Kit_V6/V6_Network.h
+          grep -q 'static Catalog catalogA;' Zaven_Festival_Kit_V6/V6_Model.h
+          ! grep -q 'catalogA,catalogB' Zaven_Festival_Kit_V6/V6_Model.h
+          echo "Display drawing block unchanged, only begin() startup order adjusted:"
+          grep -n 'createSprite\|initLandscape\|ensureStationReady\|printHeap' Zaven_Festival_Kit_V6/V6_UI.h | tail -12
+          sha256sum Zaven_Festival_Kit_V6/V6_UI.h Zaven_Festival_Kit_V6/V6_Network.h
+      - name: Compile full Cardputer ADV firmware
+        run: |
+          FQBN=$(arduino-cli board listall --format json | jq -r '.boards[] | select(.name == "M5Cardputer") | .fqbn' | head -n 1)
+          test -n "$FQBN"
+          mkdir -p /tmp/cardputer-v623/build
+          arduino-cli compile --fqbn "$FQBN:PartitionScheme=huge_app" --output-dir /tmp/cardputer-v623/build /tmp/cardputer-v623/Zaven_Festival_Kit_V6
+          ls -lh /tmp/cardputer-v623/build/Zaven_Festival_Kit_V6.ino.bin
+      - name: Native parser and control regression tests
+        run: |
+          cd /tmp/cardputer-v623
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path("tests/mock/esp_heap_caps.h")
+          p.write_text("#pragma once\n#include <stddef.h>\n#define MALLOC_CAP_INTERNAL 1\n#define MALLOC_CAP_8BIT 2\ninline size_t heap_caps_get_free_size(int){return 100000;}\ninline size_t heap_caps_get_largest_free_block(int){return 80000;}\ninline size_t heap_caps_get_minimum_free_size(int){return 40000;}\n")
+          p=Path("tests/mock/esp_wifi.h")
+          s=p.read_text()
+          if "WIFI_MODE_STA" not in s:
+            insert=chr(10).join(["#define WIFI_SECOND_CHAN_NONE 0","#define WIFI_MODE_NULL 0","#define WIFI_MODE_STA 1","typedef int wifi_mode_t;","inline int esp_wifi_get_mode(wifi_mode_t* mode){*mode=WIFI_MODE_STA;return 0;}"])
+            s=s.replace("#define WIFI_SECOND_CHAN_NONE 0",insert)
+          p.write_text(s)
+          p=Path("tests/mock/WiFi.h")
+          s=p.read_text().replace("void mode(int){}","bool mode(int){return true;}")
+          p.write_text(s)
+          p=Path("tests/mock/Arduino.h")
+          s=p.read_text()
+          s=s.replace("inline void xTaskCreatePinnedToCore(void (*)(void*),const char*,int,void*,int,void*,int){}","using BaseType_t = int;\n#define pdPASS 1\ninline BaseType_t xTaskCreatePinnedToCore(void (*)(void*),const char*,int,void*,int,void*,int){return pdPASS;}")
+          p.write_text(s)
+          PY
+          cd tests
+          sh ./run_native_tests.sh
+      - name: Package matching source and binary
+        run: |
+          cd /tmp/cardputer-v623
+          zip -q -r /tmp/Zaven_V624_Editable_Source.zip Zaven_Festival_Kit_V6
+          sha256sum /tmp/cardputer-v623/build/Zaven_Festival_Kit_V6.ino.bin /tmp/Zaven_V623_Editable_Source.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Zaven-Cardputer-V624-RAM-Fix
+          path: |
+            /tmp/cardputer-v623/build/Zaven_Festival_Kit_V6.ino.bin
+            /tmp/Zaven_V623_Editable_Source.zip
