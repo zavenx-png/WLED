@@ -1,0 +1,65 @@
+name: Zaven Cardputer V6.2.2 WiFi STA Repair
+on:
+  push:
+    branches: [zaven-v6-2-2-wifi-driver-init]
+    paths:
+      - 'cardputer/apply_v622_wifi_startup.py'
+      - '.github/workflows/cardputer-v622-wifi.yml'
+  workflow_dispatch:
+jobs:
+  build-cardputer:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: arduino/setup-arduino-cli@v2
+      - name: Install M5Stack 3.3.10 board and Cardputer library
+        run: |
+          arduino-cli core update-index --additional-urls https://static-cdn.m5stack.com/resource/arduino/package_m5stack_index.json
+          arduino-cli core install m5stack:esp32@3.3.10 --additional-urls https://static-cdn.m5stack.com/resource/arduino/package_m5stack_index.json
+          arduino-cli lib install M5Cardputer
+      - name: Extract proven V6.2.1 baseline, patch only network source
+        run: |
+          mkdir -p /tmp/cardputer-v622
+          unzip -q cardputer/Zaven_V621_radio_only_sources.zip -d /tmp/cardputer-v622
+          cp cardputer/apply_v622_wifi_startup.py /tmp/cardputer-v622/
+          cd /tmp/cardputer-v622
+          echo "0b7daf8d7bd16282320c0ccfabd29aa81a9efb8bee699a40609e94a21ae34ad5  Zaven_Festival_Kit_V6/V6_UI.h" | sha256sum -c -
+          python3 apply_v622_wifi_startup.py
+          echo "0b7daf8d7bd16282320c0ccfabd29aa81a9efb8bee699a40609e94a21ae34ad5  Zaven_Festival_Kit_V6/V6_UI.h" | sha256sum -c -
+          sha256sum Zaven_Festival_Kit_V6/V6_Network.h
+          grep -q 'WiFi.STA.begin(false)' Zaven_Festival_Kit_V6/V6_Network.h
+      - name: Compile actual Cardputer firmware
+        run: |
+          FQBN=$(arduino-cli board listall --format json | jq -r '.boards[] | select(.name == "M5Cardputer") | .fqbn' | head -n 1)
+          test -n "$FQBN"
+          mkdir -p /tmp/cardputer-v622/build
+          arduino-cli compile --fqbn "$FQBN:PartitionScheme=huge_app" --output-dir /tmp/cardputer-v622/build /tmp/cardputer-v622/Zaven_Festival_Kit_V6
+          ls -l /tmp/cardputer-v622/build/Zaven_Festival_Kit_V6.ino.bin
+      - name: Run source-level native tests
+        run: |
+          cd /tmp/cardputer-v622
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path("tests/mock/WiFi.h")
+          s=p.read_text()
+          assert "struct WiFiType{void mode(int){}" in s
+          s=s.replace("struct WiFiType{void mode(int){}", "struct StationType{bool begin(bool){return true;}};\nstruct WiFiType{StationType STA; bool mode(int){return true;}")
+          p.write_text(s)
+          p=Path("tests/mock/esp_wifi.h")
+          s=p.read_text()
+          s=s.replace("#define WIFI_SECOND_CHAN_NONE 0", "#define WIFI_SECOND_CHAN_NONE 0\n#define WIFI_MODE_NULL 0\n#define WIFI_MODE_STA 1\ntypedef int wifi_mode_t;\ninline int esp_wifi_get_mode(wifi_mode_t* mode){*mode=WIFI_MODE_STA;return 0;}")
+          p.write_text(s)
+          PY
+          cd tests
+          sh run_all.sh
+      - name: Package matched editable source
+        run: |
+          cd /tmp/cardputer-v622
+          zip -q -r /tmp/Zaven_V622_Editable_Source.zip Zaven_Festival_Kit_V6 tests -x '*build*' '*.DS_Store'
+          sha256sum /tmp/cardputer-v622/build/Zaven_Festival_Kit_V6.ino.bin /tmp/Zaven_V622_Editable_Source.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Zaven-Cardputer-V622-WiFi-Station-Fix
+          path: |
+            /tmp/cardputer-v622/build/Zaven_Festival_Kit_V6.ino.bin
+            /tmp/Zaven_V622_Editable_Source.zip
