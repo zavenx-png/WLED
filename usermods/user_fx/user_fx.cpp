@@ -2809,114 +2809,118 @@ static const char _data_FX_MODE_Z_METEOR_ECHO_RAIN[] PROGMEM =
   "Z - Meteor Echo Rain@Speed,Density,,,,Use palette;!,!;!;1;sx=147,ix=175,o1=0";
 
 // ============================================================================
-// STOPWATCH ESP-NOW REMOTE PROTOCOL V1
-// WLED handles Wi-Fi / ESP-NOW lifecycle and forwarding to this usermod.
-// A remote must be paired under WLED > Config > WiFi Setup > Remote List.
-// This receiver is inert until "Enable ESP-NOW" is activated in WiFi Setup.
-//
-// TX command: 12 bytes
-//   [0..3] "ZHR1"; [4] version=1; [5] operation; [6] value; [7] reserved=0;
-//   [8..11] incrementing sequence number, little-endian.
-//   op 1: recall preset 1..250 (a playlist may also be saved as a preset)
-//   op 2: set brightness 0..255
-//   op 3: toggle power
-//   op 4: power on; op 5: power off
-//   op 6: brightness +16; op 7: brightness -16
-//   op 8: ping (does not change lights)
-// ACK: broadcast 13 bytes:
-//   [0..3] "ZHA1"; [4] version=1; [5] echoed operation;
-//   [6] status (0=accepted, 1=invalid command); [7] brightness;
-//   [8] WLED currentPreset; [9..12] echoed sequence, little-endian.
-//
-// Callbacks only queue bytes. Changes to WLED state and ACK transmissions run
-// from the main WLED loop, not from the ESP-NOW receive callback.
+// ZAVEN ESP-NOW V2 / ZHR2 — paired WLED usermod, backward compatible with ZHR1.
+// Frames: request 16 bytes; reply 24 bytes. Main segment only.
+// Commands 1 preset, 2 brightness, 3 toggle, 4 on, 5 off, 6 effect,
+// 7 palette, 8 ping, 9 settings (arg 0 sx, 1 ix, 2 c1, 3 c2,
+// 4 c3, 5 o1, 6 o2, 7 o3). No pin, mapping or segment geometry edits.
+// Callback only enqueues, WLED loop executes all changes and sends acknowledgements.
 // ============================================================================
 #if defined(ARDUINO_ARCH_ESP32) && !defined(WLED_DISABLE_ESPNOW)
 static portMUX_TYPE zh_radio_mux = portMUX_INITIALIZER_UNLOCKED;
-static uint8_t zh_radio_packet[12] = {0};
-static uint8_t zh_radio_sender[6] = {0};
-static bool zh_radio_pending = false;
+static uint8_t zh_radio_packets[12][16] = {{0}};
+static uint8_t zh_radio_lengths[12] = {0};
+static uint8_t zh_radio_senders[12][6] = {{0}};
+static uint8_t zh_radio_head = 0, zh_radio_tail = 0;
 static uint8_t zh_radio_last_sender[6] = {0};
 static uint32_t zh_radio_last_seq = 0;
 static bool zh_radio_have_last = false;
-
 static inline bool zh_radio_is_paired(const uint8_t* sender) {
   char mac[13];
-  snprintf(mac, sizeof(mac), "%02x%02x%02x%02x%02x%02x",
+  snprintf(mac,sizeof(mac),"%02x%02x%02x%02x%02x%02x",
            sender[0],sender[1],sender[2],sender[3],sender[4],sender[5]);
-  for (const auto& known : linked_remotes) {
-    if (strcmp(known.data(), mac) == 0) return true;
-  }
+  for (const auto& known: linked_remotes) if(strcmp(known.data(),mac)==0)return true;
   return false;
 }
-static inline uint32_t zh_radio_seq(const uint8_t* pkt) {
-  return ((uint32_t)pkt[8]) | ((uint32_t)pkt[9]<<8)
-       | ((uint32_t)pkt[10]<<16) | ((uint32_t)pkt[11]<<24);
+static inline uint32_t zh_radio_u32(const uint8_t* p) {
+  return uint32_t(p[0])|(uint32_t(p[1])<<8)|(uint32_t(p[2])<<16)|(uint32_t(p[3])<<24);
 }
 static void zh_radio_process(void) {
-  uint8_t data[12], sender[6];
-  bool available = false;
-  portENTER_CRITICAL(&zh_radio_mux);
-  if (zh_radio_pending) {
-    memcpy(data, zh_radio_packet, sizeof(data));
-    memcpy(sender, zh_radio_sender, sizeof(sender));
-    zh_radio_pending = false;
-    available = true;
-  }
-  portEXIT_CRITICAL(&zh_radio_mux);
-  if (!available || statusESPNow != ESP_NOW_STATE_ON) return;
-  // A queued command could have been unpaired since receipt.
-  if (!zh_radio_is_paired(sender)) return;
-
-  const uint8_t op=data[5], val=data[6];
-  const uint32_t seq=zh_radio_seq(data);
-  uint8_t status=0;
-  const bool duplicate = zh_radio_have_last
-                       && seq==zh_radio_last_seq
-                       && memcmp(sender,zh_radio_last_sender,6)==0;
-  if (!duplicate) {
-    switch (op) {
-      case 1:
-        if (val<1U || val>250U) { status=1; break; }
-        applyPreset(val,CALL_MODE_BUTTON_PRESET);
-        break;
-      case 2:
-        bri=val;
-        stateUpdated(CALL_MODE_BUTTON);
-        break;
-      case 3:
-        toggleOnOff();
-        stateUpdated(CALL_MODE_BUTTON);
-        break;
-      case 4:
-        if (!bri) { toggleOnOff(); stateUpdated(CALL_MODE_BUTTON); }
-        break;
-      case 5:
-        if (bri) { toggleOnOff(); stateUpdated(CALL_MODE_BUTTON); }
-        break;
-      case 6:
-        bri=(bri>=239U)?255U:(uint8_t)(bri+16U);
-        stateUpdated(CALL_MODE_BUTTON);
-        break;
-      case 7:
-        bri=(bri<=16U)?1U:(uint8_t)(bri-16U);
-        stateUpdated(CALL_MODE_BUTTON);
-        break;
-      case 8: // ping / connection test
-        break;
-      default:
-        status=1;
-        break;
+  if(statusESPNow != ESP_NOW_STATE_ON)return;
+  for(uint8_t handled=0;handled<4;handled++){
+    uint8_t data[16]={0},sender[6]={0},len=0;
+    portENTER_CRITICAL(&zh_radio_mux);
+    if(zh_radio_tail!=zh_radio_head){
+      uint8_t slot=zh_radio_tail;
+      memcpy(data,zh_radio_packets[slot],16);
+      memcpy(sender,zh_radio_senders[slot],6);
+      len=zh_radio_lengths[slot];
+      zh_radio_tail=(zh_radio_tail+1U)%12U;
     }
-    memcpy(zh_radio_last_sender,sender,6);
-    zh_radio_last_seq=seq;
-    zh_radio_have_last=true;
+    portEXIT_CRITICAL(&zh_radio_mux);
+    if(!len)return;
+    if(!zh_radio_is_paired(sender))continue;
+    const bool v2=(len==16U && memcmp(data,"ZHR2",4)==0 && data[4]==2U);
+    const bool v1=(len==12U && memcmp(data,"ZHR1",4)==0 && data[4]==1U);
+    if(!v2&&!v1)continue;
+    uint8_t op=data[5], val8=data[6],arg=v2?data[9]:0;
+    uint16_t value=v2?(uint16_t(data[6])|(uint16_t(data[7])<<8)):val8;
+    uint32_t seq=zh_radio_u32(data+(v2?12:8));
+    uint8_t status=0;
+    bool duplicate=zh_radio_have_last&&seq==zh_radio_last_seq
+       &&memcmp(sender,zh_radio_last_sender,6)==0;
+    if(!duplicate){
+      bool changed=false;
+      Segment& segment=strip.getMainSegment();
+      switch(op){
+        case 1:
+          if(value<1U||value>250U){status=1;break;}
+          applyPreset((uint8_t)value,CALL_MODE_BUTTON_PRESET);
+          break;
+        case 2:
+          if(value>255U){status=1;break;}
+          bri=(uint8_t)value;changed=true;break;
+        case 3:toggleOnOff();changed=true;break;
+        case 4:if(!bri){toggleOnOff();changed=true;}break;
+        case 5:if(bri){toggleOnOff();changed=true;}break;
+        case 6:
+          if(!v2){bri=(bri>=239U)?255U:uint8_t(bri+16U);changed=true;break;}
+          if(value>=strip.getModeCount()||value>255U){status=1;break;}
+          if(currentPlaylist>=0)unloadPlaylist();
+          segment.setMode((uint8_t)value,true);changed=true;break;
+        case 7:
+          if(!v2){bri=(bri<=16U)?1U:uint8_t(bri-16U);changed=true;break;}
+          if(value>=getPaletteCount()||value>255U){status=1;break;}
+          if(segment.getLightCapabilities()&1)segment.setPalette((uint8_t)value);
+          changed=true;break;
+        case 8:break;
+        case 9:
+          if(!v2||value>255U){status=1;break;}
+          switch(arg){
+            case 0:segment.speed=(uint8_t)value;break;
+            case 1:segment.intensity=(uint8_t)value;break;
+            case 2:segment.custom1=(uint8_t)value;break;
+            case 3:segment.custom2=(uint8_t)value;break;
+            case 4:segment.custom3=(uint8_t)(value>31U?31U:value);break;
+            case 5:segment.check1=value!=0;break;
+            case 6:segment.check2=value!=0;break;
+            case 7:segment.check3=value!=0;break;
+            default:status=1;break;
+          }
+          if(!status)changed=true;
+          break;
+        default:status=1;break;
+      }
+      if(changed)stateUpdated(CALL_MODE_BUTTON);
+      zh_radio_have_last=true;zh_radio_last_seq=seq;
+      memcpy(zh_radio_last_sender,sender,6);
+    }
+    if(v1){
+      uint8_t ack[13]={'Z','H','A','1',1U,op,status,bri,currentPreset,
+        uint8_t(seq),uint8_t(seq>>8),uint8_t(seq>>16),uint8_t(seq>>24)};
+      wled::espNow.send(ESPNOW_BROADCAST_ADDRESS,ack,sizeof(ack));
+    }else{
+      Segment& current=strip.getMainSegment();
+      uint16_t fx=current.mode;
+      uint8_t flags=(bri>0U)?1U:0U;
+      uint8_t opts=(current.check1?1U:0U)|(current.check2?2U:0U)|(current.check3?4U:0U);
+      uint8_t ack[24]={'Z','H','A','2',2U,op,status,flags,bri,currentPreset,
+        uint8_t(fx),uint8_t(fx>>8),current.palette,current.speed,current.intensity,
+        strip.getMainSegmentId(),uint8_t(seq),uint8_t(seq>>8),
+        uint8_t(seq>>16),uint8_t(seq>>24),current.custom1,current.custom2,current.custom3,opts};
+      wled::espNow.send(ESPNOW_BROADCAST_ADDRESS,ack,sizeof(ack));
+    }
   }
-  // Acknowledgments use WLED's existing broadcast peer, avoiding a second
-  // esp_now_init() and avoiding unicast peer-registration races on V5.
-  uint8_t ack[13]={'Z','H','A','1',1U,op,status,bri,currentPreset,
-                   (uint8_t)seq,(uint8_t)(seq>>8),(uint8_t)(seq>>16),(uint8_t)(seq>>24)};
-  wled::espNow.send(ESPNOW_BROADCAST_ADDRESS,ack,sizeof(ack));
 }
 #endif
 
@@ -3008,14 +3012,20 @@ strip.addEffect(255, &mode_z_prism_cascade, _data_FX_MODE_Z_PRISM_CASCADE);
 
 #if defined(ARDUINO_ARCH_ESP32) && !defined(WLED_DISABLE_ESPNOW)
   bool onEspNowMessage(uint8_t* sender, uint8_t* payload, uint8_t len) override {
-    if (len != 12U || memcmp(payload,"ZHR1",4) != 0) return false;
-    if (payload[4] != 1U || !zh_radio_is_paired(sender)) return true;
+    const bool v1=(len==12U && memcmp(payload,"ZHR1",4)==0 && payload[4]==1U);
+    const bool v2=(len==16U && memcmp(payload,"ZHR2",4)==0 && payload[4]==2U);
+    if(!v1&&!v2)return false;
+    if(!zh_radio_is_paired(sender))return true;
     portENTER_CRITICAL(&zh_radio_mux);
-    memcpy(zh_radio_sender,sender,6);
-    memcpy(zh_radio_packet,payload,12);
-    zh_radio_pending=true;
+    uint8_t next=(zh_radio_head+1U)%12U;
+    if(next!=zh_radio_tail){
+      memcpy(zh_radio_packets[zh_radio_head],payload,len);
+      memcpy(zh_radio_senders[zh_radio_head],sender,6);
+      zh_radio_lengths[zh_radio_head]=len;
+      zh_radio_head=next;
+    }
     portEXIT_CRITICAL(&zh_radio_mux);
-    return true; // This is our command, don't interpret it as WiZmote or sync.
+    return true; // matched packet, not a WiZmote command
   }
 #endif
   void loop() override {
