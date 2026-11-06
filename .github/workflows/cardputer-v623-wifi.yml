@@ -43,6 +43,15 @@ jobs:
           from pathlib import Path
           p=Path("tests/mock/esp_heap_caps.h")
           p.write_text("#pragma once\n#include <stddef.h>\n#define MALLOC_CAP_INTERNAL 1\n#define MALLOC_CAP_8BIT 2\ninline size_t heap_caps_get_free_size(int){return 100000;}\ninline size_t heap_caps_get_largest_free_block(int){return 80000;}\ninline size_t heap_caps_get_minimum_free_size(int){return 40000;}\n")
+          p=Path("tests/mock/esp_wifi.h")
+          s=p.read_text()
+          if "WIFI_MODE_STA" not in s:
+            insert=chr(10).join(["#define WIFI_SECOND_CHAN_NONE 0","#define WIFI_MODE_NULL 0","#define WIFI_MODE_STA 1","typedef int wifi_mode_t;","inline int esp_wifi_get_mode(wifi_mode_t* mode){*mode=WIFI_MODE_STA;return 0;}"])
+            s=s.replace("#define WIFI_SECOND_CHAN_NONE 0",insert)
+          p.write_text(s)
+          p=Path("tests/mock/WiFi.h")
+          s=p.read_text().replace("void mode(int){}","bool mode(int){return true;}")
+          p.write_text(s)
           p=Path("tests/mock/Arduino.h")
           s=p.read_text()
           s=s.replace("inline void xTaskCreatePinnedToCore(void (*)(void*),const char*,int,void*,int,void*,int){}","using BaseType_t = int;\n#define pdPASS 1\ninline BaseType_t xTaskCreatePinnedToCore(void (*)(void*),const char*,int,void*,int,void*,int){return pdPASS;}")
