@@ -1,0 +1,47 @@
+name: Zaven Cardputer V6.2.1 Radio Diagnostics
+on:
+  push:
+    branches:
+      - zaven-v6-2-1-radio-diagnostics
+    paths:
+      - 'cardputer/Zaven_V621_radio_only_sources.zip'
+      - '.github/workflows/cardputer-v621-radio.yml'
+  workflow_dispatch:
+jobs:
+  build-cardputer:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: arduino/setup-arduino-cli@v2
+      - name: Install M5Stack board and M5Cardputer library
+        run: |
+          arduino-cli core update-index --additional-urls https://static-cdn.m5stack.com/resource/arduino/package_m5stack_index.json
+          arduino-cli core install m5stack:esp32@3.3.10 --additional-urls https://static-cdn.m5stack.com/resource/arduino/package_m5stack_index.json
+          arduino-cli lib install M5Cardputer
+      - name: Extract exact V6.2.1 radio-only source
+        run: |
+          mkdir -p /tmp/cardputer-radio
+          unzip -q cardputer/Zaven_V621_radio_only_sources.zip -d /tmp/cardputer-radio
+          cd /tmp/cardputer-radio
+          sha256sum Zaven_Festival_Kit_V6/V6_UI.h
+          echo "0b7daf8d7bd16282320c0ccfabd29aa81a9efb8bee699a40609e94a21ae34ad5  Zaven_Festival_Kit_V6/V6_UI.h" | sha256sum -c -
+          test -f Zaven_Festival_Kit_V6/V6_Network.h
+          grep -q 'RADIO_LOCKED_CHANNEL = 1' Zaven_Festival_Kit_V6/V6_Network.h
+      - name: Compile original V6.2 layout with fixed ESP-NOW radio
+        run: |
+          FQBN=$(arduino-cli board listall --format json | jq -r '.boards[] | select(.name == "M5Cardputer") | .fqbn' | head -n1)
+          test -n "$FQBN"
+          mkdir -p /tmp/cardputer-radio/build
+          arduino-cli compile --fqbn "$FQBN:PartitionScheme=huge_app" --output-dir /tmp/cardputer-radio/build /tmp/cardputer-radio/Zaven_Festival_Kit_V6
+          ls -lh /tmp/cardputer-radio/build/Zaven_Festival_Kit_V6.ino.bin
+      - name: Run native tests
+        run: |
+          cd /tmp/cardputer-radio/tests
+          sh run_all.sh
+      - name: Upload application-only .bin and editable source
+        uses: actions/upload-artifact@v4
+        with:
+          name: Zaven-V621-Radio-Only-CH1
+          path: |
+            /tmp/cardputer-radio/build/Zaven_Festival_Kit_V6.ino.bin
+            cardputer/Zaven_V621_radio_only_sources.zip
