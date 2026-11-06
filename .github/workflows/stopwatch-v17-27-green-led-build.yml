@@ -1,0 +1,81 @@
+name: Build V17.27 Green LED Off
+on:
+  push:
+    branches:
+      - stopwatch-v17-27-green-power-led-off
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  stopwatch:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+      - name: Verify one-feature change and all 31 original effects
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib,json,re
+          sketch=Path('stopwatch/StopWatchNative31V16')
+          raw=(sketch/'NativeApp.cpp').read_bytes()
+          expected='f791a62cd0abe9247caa76bff6d3beb35cb60379f02ef37c4930fbecaa235e47'
+          assert hashlib.sha256(raw).hexdigest()==expected,'Built source differs from exact V17.27 editable source'
+          src=raw.decode('utf-8')
+          begin=' M5.begin(cfg);'
+          end=' M5.Speaker.end();M5.Mic.begin();'
+          assert src.count(begin)==1 and src.count(end)==1
+          i=src.index(begin)
+          j=src.index(end,i)+len(end)
+          led_block=src[i:j]
+          assert led_block.count('M5.In_I2C.bitOff(0x6E,0x06,0x10,100000)')==1
+          assert 'attempt<3' in led_block
+          original=src[:i]+' M5.begin(cfg);M5.Speaker.end();M5.Mic.begin();'+src[j:]
+          assert hashlib.sha256(original.encode()).hexdigest()=='d3e8edd94f740054bd4518dd3bd895f32b4c7d06054c39e11250b4bba50a807f', 'More than one setup block changed'
+          audit=json.loads(Path('stopwatch/V17_24_EFFECT_PRESERVATION_AUDIT.json').read_text())['sha256']
+          def fn(name):
+            m=re.search(r'\b(?:static\s+)?(?:void|int|bool|float|uint8_t)\s+'+re.escape(name)+r'\s*\([^)]*\)\s*\{',src)
+            assert m,'Missing visualizer function '+name
+            depth=0
+            for pos in range(m.end()-1,len(src)):
+              if src[pos]=='{':depth+=1
+              elif src[pos]=='}':
+                depth-=1
+                if depth==0:return src[m.start():pos+1]
+            raise AssertionError('unbalanced '+name)
+          for key,sha in audit.items():
+            blob=(sketch/key[5:]).read_bytes() if key.startswith('file:') else fn(key).encode()
+            assert hashlib.sha256(blob).hexdigest()==sha,'Original effect or asset changed: '+key
+          print('PASS: exactly one green LED PMIC startup change, all 31 visualizer effects/assets preserved')
+          PY
+      - name: Setup Arduino CLI
+        uses: arduino/setup-arduino-cli@v2
+      - name: Install M5Stack toolchain (same as V17.26)
+        run: |
+          arduino-cli config init
+          arduino-cli config add board_manager.additional_urls https://static-cdn.m5stack.com/resource/arduino/package_m5stack_index.json
+          arduino-cli core update-index
+          arduino-cli core install m5stack:esp32@3.3.10
+          arduino-cli lib install M5Unified@0.2.29
+          arduino-cli lib install M5GFX@0.2.36
+      - name: Compile StopWatch V17.27 for ESP32-S3
+        run: |
+          arduino-cli compile --fqbn m5stack:esp32:m5stack_stopwatch --output-dir "$GITHUB_WORKSPACE/compiled" "$GITHUB_WORKSPACE/stopwatch/StopWatchNative31V16"
+          ls -lh "$GITHUB_WORKSPACE/compiled"/*.bin
+      - name: Checksums and editable source
+        run: |
+          cd compiled
+          sha256sum *.bin > SHA256SUMS.txt
+          mkdir -p Editable_Source
+          cp -a "$GITHUB_WORKSPACE/stopwatch/StopWatchNative31V16" Editable_Source/
+          sha256sum Editable_Source/StopWatchNative31V16/NativeApp.cpp > SOURCE_SHA256.txt
+      - name: Upload verified binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: StopWatch_V17_27_Green_LED_Off_31_Effects
+          path: |
+            compiled/*.bin
+            compiled/*.txt
+            compiled/Editable_Source/
+          if-no-files-found: error
+          retention-days: 30
