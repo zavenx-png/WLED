@@ -1,0 +1,79 @@
+name: Build V17.26 Harness-AP Connect
+on:
+  push:
+    branches:
+      - stopwatch-v17-26-harness-ap-connect
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout exact editable source
+        uses: actions/checkout@v4
+      - name: Verify preserved 31 effects and AP connection feature
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re,json,hashlib
+          base=Path('stopwatch/StopWatchNative31V16')
+          raw=(base/'NativeApp.cpp').read_bytes()
+          expected='d3e8edd94f740054bd4518dd3bd895f32b4c7d06054c39e11250b4bba50a807f'
+          assert hashlib.sha256(raw).hexdigest()==expected,'Source differs from editable V17.26 release'
+          s=raw.decode()
+          audit=json.loads(Path('stopwatch/V17_24_EFFECT_PRESERVATION_AUDIT.json').read_text())['sha256']
+          def function(name):
+            m=re.search(r'\b(?:static\s+)?(?:void|int|bool|float|uint8_t)\s+'+re.escape(name)+r'\s*\([^)]*\)\s*\{',s)
+            if not m:raise AssertionError('Missing effect function: '+name)
+            depth=0
+            for i in range(m.end()-1,len(s)):
+              if s[i]=='{':depth+=1
+              elif s[i]=='}':
+                depth-=1
+                if not depth:return s[m.start():i+1]
+            raise AssertionError('Unclosed '+name)
+          for key,sha in audit.items():
+            blob=(base/key[5:]).read_bytes() if key.startswith('file:') else function(key).encode()
+            assert hashlib.sha256(blob).hexdigest()==sha,'Original effects modified: '+key
+          for token in ['REMOTE_PAGES=6','HARNESS_AP_SSID[]="Harness-AP"','WiFi.begin(HARNESS_AP_SSID,apPassword.c_str())','http.GET()==HTTP_CODE_OK','/json/info','apLastRadioAckAt','peer.channel=0;','harnessApPasswordTouch','harnessApTick();audioTick();beatTick();','prefs.putString("hap_pw",apPassword)']:
+            assert token in s,'Missing AP functionality: '+token
+          assert 'M5.Display.setBrightness(0)' not in s
+          assert 'if(remote || !buzzEnabled)return;' in s
+          assert 'if(step!=-999&&!harnessApAssociated())' in s
+          for x,y,w,h in [(92,308,136,54),(239,308,136,54),(120,388,98,40),(248,388,98,40)]:
+            for xx,yy in [(x,y),(x+w,y),(x,y+h),(x+w,y+h)]:
+              assert (xx-233)**2+(yy-233)**2<230**2
+          print('PASS: exact source, 31 preserved effects/assets, 6th AP page, Wi-Fi/ESP-NOW, controls')
+          PY
+      - name: Setup Arduino CLI
+        uses: arduino/setup-arduino-cli@v2
+      - name: Install official M5Stack core and libraries
+        run: |
+          arduino-cli config init
+          arduino-cli config add board_manager.additional_urls https://static-cdn.m5stack.com/resource/arduino/package_m5stack_index.json
+          arduino-cli core update-index
+          arduino-cli core install m5stack:esp32@3.3.10
+          arduino-cli lib install M5Unified@0.2.29
+          arduino-cli lib install M5GFX@0.2.36
+      - name: Compile 31-effect StopWatch with AP page
+        run: |
+          arduino-cli compile --fqbn m5stack:esp32:m5stack_stopwatch --output-dir "$GITHUB_WORKSPACE/compiled" "$GITHUB_WORKSPACE/stopwatch/StopWatchNative31V16"
+          ls -lh compiled/*.bin
+      - name: Package binary and complete editable source
+        run: |
+          cd compiled
+          sha256sum *.bin > SHA256SUMS.txt
+          mkdir -p Editable_Source
+          cp -a "$GITHUB_WORKSPACE/stopwatch/StopWatchNative31V16" Editable_Source/
+          sha256sum Editable_Source/StopWatchNative31V16/NativeApp.cpp > SOURCE_SHA256.txt
+      - name: Publish V17.26 flashable firmware
+        uses: actions/upload-artifact@v4
+        with:
+          name: StopWatch_V17_26_HarnessAP_31_Effects_Flash
+          path: |
+            compiled/*.bin
+            compiled/*.txt
+            compiled/Editable_Source/
+          if-no-files-found: error
+          retention-days: 30
