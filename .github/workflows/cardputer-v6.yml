@@ -1,0 +1,37 @@
+name: Zaven Cardputer V6 firmware
+on:
+  push:
+    branches:
+      - zaven-festival-kit-v6-espnow-first
+    paths:
+      - 'cardputer/Zaven_Cardputer_V6_Full_Source.zip'
+      - '.github/workflows/cardputer-v6.yml'
+  workflow_dispatch:
+jobs:
+  build-cardputer:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: arduino/setup-arduino-cli@v2
+      - name: Install M5Stack Arduino core and Cardputer library
+        run: |
+          arduino-cli core update-index --additional-urls https://static-cdn.m5stack.com/resource/arduino/package_m5stack_index.json
+          arduino-cli core install m5stack:esp32@3.3.10 --additional-urls https://static-cdn.m5stack.com/resource/arduino/package_m5stack_index.json
+          arduino-cli lib install M5Cardputer
+      - name: Extract and compile full V6 sketch
+        run: |
+          unzip -q cardputer/Zaven_Cardputer_V6_Full_Source.zip -d cardputer/sketch
+          arduino-cli board listall | grep -i cardputer
+          FQBN=$(arduino-cli board listall --format json | jq -r '.boards[] | select(.name == "M5Cardputer") | .fqbn' | head -n1)
+          if [ -z "$FQBN" ]; then echo "M5Cardputer board FQBN not installed"; exit 1; fi
+          echo "Selected board: $FQBN"
+          mkdir -p cardputer/build
+          arduino-cli compile --fqbn "$FQBN:PartitionScheme=huge_app" --output-dir cardputer/build cardputer/sketch/Zaven_Festival_Kit_V6
+          ls -lh cardputer/build/*.bin
+      - name: Upload app-only firmware
+        uses: actions/upload-artifact@v4
+        with:
+          name: Zaven-Cardputer-V6-app
+          path: |
+            cardputer/build/Zaven_Festival_Kit_V6.ino.bin
+            cardputer/Zaven_Cardputer_V6_Full_Source.zip
