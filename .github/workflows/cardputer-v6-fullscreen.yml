@@ -1,0 +1,52 @@
+name: Zaven V6 Full-Screen Cardputer ADV
+on:
+  push:
+    branches: [zaven-festival-kit-v6-fullscreen-fix]
+    paths:
+      - 'cardputer/V6_FULL_DISPLAY_REPAIR.patch.zlib.b64'
+      - '.github/workflows/cardputer-v6-fullscreen.yml'
+  workflow_dispatch:
+jobs:
+  build-cardputer-fullscreen:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: arduino/setup-arduino-cli@v2
+      - name: Install official Cardputer board package
+        run: |
+          arduino-cli core update-index --additional-urls https://static-cdn.m5stack.com/resource/arduino/package_m5stack_index.json
+          arduino-cli core install m5stack:esp32@3.3.10 --additional-urls https://static-cdn.m5stack.com/resource/arduino/package_m5stack_index.json
+          arduino-cli lib install M5Cardputer
+      - name: Extract original source and apply exact display repair
+        run: |
+          unzip -q cardputer/Zaven_Cardputer_V6_Full_Source.zip -d cardputer/sketch
+          python3 - <<'PY'
+          import base64,zlib
+          from pathlib import Path
+          b64=Path('cardputer/V6_FULL_DISPLAY_REPAIR.patch.zlib.b64').read_text().strip()
+          assert len(b64)==4800
+          patch=zlib.decompress(base64.b64decode(b64))
+          Path('/tmp/v6_fullscreen_repair.patch').write_bytes(patch)
+          print('Repair patch:',len(patch),'bytes')
+          PY
+          (cd cardputer/sketch && patch --fuzz=0 -p1 -i /tmp/v6_fullscreen_repair.patch)
+          sha256sum cardputer/sketch/Zaven_Festival_Kit_V6/V6_UI.h
+          echo "4fdd515768ec76b875342d2c715d38911ed09769c0b21ce8123b35ba34b3a4f8  cardputer/sketch/Zaven_Festival_Kit_V6/V6_UI.h" | sha256sum -c -
+      - name: Compile Cardputer ADV firmware (actual Arduino toolchain)
+        run: |
+          FQBN=$(arduino-cli board listall --format json | jq -r '.boards[] | select(.name == "M5Cardputer") | .fqbn' | head -n1)
+          test -n "$FQBN"
+          mkdir -p cardputer/build
+          arduino-cli compile --fqbn "$FQBN:PartitionScheme=huge_app" --output-dir cardputer/build cardputer/sketch/Zaven_Festival_Kit_V6
+          ls -l cardputer/build/Zaven_Festival_Kit_V6.ino.bin
+      - name: Package patched editable source
+        run: |
+          cd cardputer/sketch
+          zip -q -r ../Zaven_Cardputer_V6_FullScreenFix_Source.zip Zaven_Festival_Kit_V6
+      - name: Upload flash binary and matching source
+        uses: actions/upload-artifact@v4
+        with:
+          name: Zaven-Cardputer-V6-FullScreen-Fix
+          path: |
+            cardputer/build/Zaven_Festival_Kit_V6.ino.bin
+            cardputer/Zaven_Cardputer_V6_FullScreenFix_Source.zip
