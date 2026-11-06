@@ -1909,12 +1909,18 @@ static void mode_z_electric_organism(void)
   if (count == 0U) FX_FALLBACK_STATIC;
   // Three bright moving branches and genuinely dark gaps. Approximately
   // half the physical LEDs are active, unlike v5.1 or v5.2.
+  // Three sectors keep the ~50% active coverage stable. The sector
+  // centers travel along the entire harness with small organic deviations,
+  // avoiding periods where all nerves accidentally cluster in one spot.
+  const uint16_t sweep = (uint16_t)((t / (54U - (SEGMENT.speed >> 5))) % count);
+  const int16_t wobble1 = (int16_t)(sin16_t((uint16_t)(t * 2U)) >> 12);
+  const int16_t wobble2 = (int16_t)(sin16_t((uint16_t)(t * 3U + 19456U)) >> 12);
   const uint16_t head[3] = {
-    (uint16_t)((t / (54U - (SEGMENT.speed >> 5))) % count),
-    (uint16_t)((count / 3U + t / 83U) % count),
-    (uint16_t)((2U * count / 3U + count - (t / 109U) % count) % count)
+    sweep,
+    (uint16_t)(((int32_t)sweep + count / 3U + wobble1 + count) % count),
+    (uint16_t)(((int32_t)sweep + (2U * count) / 3U + wobble2 + count) % count)
   };
-  const uint16_t width = 36U + (SEGMENT.intensity >> 5);
+  const uint16_t width = 31U + (SEGMENT.intensity >> 5);
   for (uint16_t logical = 0; logical < count; ++logical) {
     uint8_t arc = 0;
     for (uint8_t j = 0; j < 3; ++j) {
