@@ -8,6 +8,9 @@
 #include <Arduino.h>
 #include <M5Unified.h>
 #include <WiFi.h>
+#include <HTTPClient.h>
+#include <ctype.h>
+#include <limits.h>
 #include <esp_wifi.h>
 #include <esp_now.h>
 #include <Preferences.h>
@@ -19,7 +22,7 @@
 #undef sq
 #endif
 
-constexpr uint8_t VIS_COUNT=31, Z_COUNT=28, REMOTE_PAGES=5;
+constexpr uint8_t VIS_COUNT=31, Z_COUNT=28, REMOTE_PAGES=6;
 constexpr int NFFT=512, FS=16000, NBANDS=32;
 constexpr float PI_F=3.14159265358979323846f, TAU=6.28318530717958647692f;
 static const char *const EFFECT_NAMES[VIS_COUNT] = {
@@ -200,7 +203,7 @@ static void setGainManual(uint8_t id,bool manual){
 }
 String userText[VIS_COUNT];String sharedName="",blueRobot="",pinkRobot="";
 static const String DEFAULT_WORD="zaven";
-enum Overlay : uint8_t {NONE,NAME,BRIGHTNESS,RHYTHM,BATTERY};
+enum Overlay : uint8_t {NONE,NAME,BRIGHTNESS,RHYTHM,BATTERY,AP_PASSWORD};
 Overlay overlay=NONE;
 String inputName="";uint8_t robotField=0;
 bool nameRobotBlueEdited=false,nameRobotPinkEdited=false,nameDeleteConsumed=false;
@@ -240,6 +243,19 @@ static uint8_t remoteFavBits[(REMOTE_FX_COUNT+7)/8]={};
 static uint16_t remoteFavScroll=0,remotePaletteScroll=0,remoteSettingsScroll=0;
 static uint8_t remoteCustom[3]={128,128,16};
 static bool remoteAwaitingApply=false;
+// V17.26: Harness-AP station connection is a *separate* link from ESP-NOW.
+// AP association may move the radio channel; ESP-NOW uses channel=0 (current).
+// No AP password is ever sent over ESP-NOW or printed to serial.
+static constexpr char HARNESS_AP_SSID[]="Harness-AP";
+enum ApLinkState : uint8_t {AP_IDLE,AP_CONNECTING,AP_CONNECTED,AP_FAILED};
+static ApLinkState apLink=AP_IDLE;
+static String apPassword="wled1234",apDraft="";
+static bool apAutoConnect=false,apWantConnected=false,apPasswordError=false;
+static uint8_t apKeyboardMode=0; // 0 letters, 1 digits, 2 symbols
+static bool apUpper=false,apWledChecked=false,apWledOnline=false;
+static uint32_t apAttemptAt=0,apHttpAt=0,apLastRadioAckAt=0;
+static uint8_t apFailReason=0;
+
 static bool remoteIsFavorite(int i){return i>=0&&i<REMOTE_FX_COUNT&&(remoteFavBits[i/8]&(1u<<(i%8)));}
 static void remoteToggleFavorite(int i){
  if(i<0||i>=REMOTE_FX_COUNT)return;
@@ -530,6 +546,9 @@ static void saveNames(){
 }
 static void loadSettings(){
  prefs.begin("clubnative31",false);
+ apPassword=prefs.getString("hap_pw","wled1234");
+ apAutoConnect=prefs.getBool("hap_auto",false);
+
  // V17.14 uses separate index-based NVS keys so V17.13 rollback remains safe.
  const bool hasV1717=prefs.getUChar("s1717",0)==22;
  const bool hasV1716=prefs.getUChar("s1716",0)==21;
@@ -666,15 +685,92 @@ static void radioCallback(const uint8_t *mac,const uint8_t *data,int n)
  portENTER_CRITICAL(&ackMux);rxAck=a;newAck=true;portEXIT_CRITICAL(&ackMux);
 }
 static void radioTick(){if(newAck){Ack a;portENTER_CRITICAL(&ackMux);a=rxAck;newAck=false;portEXIT_CRITICAL(&ackMux);
- if(a.ready&&a.seq==remoteSeq){radioPending=false;radioSuccess=a.status==0;remoteAwaitingApply=false; /* No harness haptics on ACK. */}}
+ if(a.ready&&a.seq==remoteSeq){radioPending=false;radioSuccess=a.status==0;remoteAwaitingApply=false;
+  if(a.status==0)apLastRadioAckAt=millis(); /* No harness haptics on ACK. */}}
  if(radioPending&&millis()-remoteLast>1500)radioPending=false;}
+// ESP-NOW and the AP must use the same physical 2.4GHz channel. A broadcast
+// peer with channel 0 follows the Wi-Fi station channel after AP association.
+static void initEspNowOnCurrentChannel(){
+ if(radioReady)return;
+ radioReady=esp_now_init()==ESP_OK;
+ if(radioReady){
+  esp_now_register_recv_cb(radioCallback);
+  esp_now_peer_info_t peer={};memcpy(peer.peer_addr,BROADCAST,6);
+  peer.channel=0;peer.encrypt=false;
+  if(esp_now_add_peer(&peer)!=ESP_OK){esp_now_deinit();radioReady=false;}
+ }
+}
 static void startRadio(){
  WiFi.mode(WIFI_STA);WiFi.disconnect(false,false);WiFi.setSleep(false);
  esp_wifi_set_promiscuous(true);
  esp_err_t channelStatus=esp_wifi_set_channel(rxChannel,WIFI_SECOND_CHAN_NONE);
  esp_wifi_set_promiscuous(false);if(channelStatus!=ESP_OK){radioReady=false;return;}
- radioReady=esp_now_init()==ESP_OK;
- if(radioReady){esp_now_register_recv_cb(radioCallback);esp_now_peer_info_t peer={};memcpy(peer.peer_addr,BROADCAST,6);peer.channel=rxChannel;peer.encrypt=false;esp_now_add_peer(&peer);}
+ initEspNowOnCurrentChannel();
+}
+static bool harnessApAssociated(){
+ return WiFi.status()==WL_CONNECTED&&WiFi.SSID()==HARNESS_AP_SSID;
+}
+static void harnessApStartConnect(){
+ if(!remote)return;
+ apWantConnected=true;apLink=AP_CONNECTING;apFailReason=0;
+ apWledChecked=false;apWledOnline=false;apHttpAt=0;
+ apAttemptAt=millis();
+ WiFi.mode(WIFI_STA);WiFi.setSleep(false);
+ // Nonblocking association: do not interrupt on-watch UI rendering.
+ WiFi.begin(HARNESS_AP_SSID,apPassword.c_str());
+}
+static void harnessApDisconnect(bool rememberPreference){
+ apWantConnected=false;apLink=AP_IDLE;apWledChecked=false;apWledOnline=false;
+ if(rememberPreference){apAutoConnect=false;prefs.putBool("hap_auto",false);}
+ WiFi.disconnect(false,false); // Keep the station interface for ESP-NOW.
+ if(radioReady){esp_now_deinit();radioReady=false;}
+ rxChannel=clampi(prefs.getUChar("radio",1),1,11);
+ if(remote)startRadio();
+}
+static void harnessApTick(){
+ if(!remote)return;
+ const uint32_t now=millis();
+ const bool associated=harnessApAssociated();
+ if(associated){
+  if(!apWantConnected){WiFi.disconnect(false,false);return;}
+  if(apLink!=AP_CONNECTED){
+   apLink=AP_CONNECTED;apWledChecked=false;apWledOnline=false;apHttpAt=0;
+   rxChannel=(uint8_t)clampi(WiFi.channel(),1,13); // AP dictates the real channel.
+   initEspNowOnCurrentChannel();
+  }
+  // Verify WLED itself, rather than assuming an associated AP is a working
+  // controller. Keep probes only on Page 6, spaced out, with short timeouts.
+  if(remotePage==5 && (!apWledChecked||now-apHttpAt>12000UL)){
+   apHttpAt=now;apWledChecked=true;
+   String gateway=WiFi.gatewayIP().toString();
+   if(gateway=="0.0.0.0")gateway="4.3.2.1";
+   WiFiClient client;HTTPClient http;
+   http.setConnectTimeout(350);http.setTimeout(600);
+   bool ok=false;
+   if(http.begin(client,String("http://")+gateway+"/json/info")){
+    ok=http.GET()==HTTP_CODE_OK;
+    http.end();
+   }
+   apWledOnline=ok;
+  }
+  return;
+ }
+ if(apLink==AP_CONNECTED){
+  // A lost AP link should not silently report CONNECTED. Return ESP-NOW
+  // to the manual channel; do not restart Wi-Fi while a connection is active.
+  apLink=AP_FAILED;apFailReason=3;apWledChecked=false;apWledOnline=false;
+  if(radioReady){esp_now_deinit();radioReady=false;}
+  rxChannel=clampi(prefs.getUChar("radio",1),1,11);startRadio();
+ }
+ if(apLink==AP_CONNECTING){
+  const wl_status_t status=WiFi.status();
+  if(status==WL_NO_SSID_AVAIL || status==WL_CONNECT_FAILED || now-apAttemptAt>14000UL){
+   apFailReason=status==WL_NO_SSID_AVAIL?1:status==WL_CONNECT_FAILED?2:3;
+   apLink=AP_FAILED;WiFi.disconnect(false,false);
+   if(radioReady){esp_now_deinit();radioReady=false;}
+   rxChannel=clampi(prefs.getUChar("radio",1),1,11);startRadio();
+  }
+ }
 }
 static void setRemote(bool on){if(remote==on)return;remote=on;overlay=NONE;remotePage=0;remoteSettingsScroll=0;displayBlank=false;lastRemoteActivity=millis();
  // Remote-only safeguard: restore the original visualizer's default native text
@@ -683,7 +779,13 @@ static void setRemote(bool on){if(remote==on)return;remote=on;overlay=NONE;remot
  if(!remote){cv.setFont(&lgfx::fonts::Font0);cv.setTextSize(1.0f);cv.setTextDatum(top_left);frameStamp=0;}
  M5.Display.setBrightness((uint8_t)(brightness*255/100));radioSuccess=false;radioPending=false;
  if(remote){M5.Mic.end();M5.Power.setVibration(0);buzzUntil=0;}
- else{M5.Mic.begin();pendingMic=false;}
+ else{
+  // Returning to the normal effects always shuts down AP Wi-Fi; never keep
+  // a radio association running in visualizer mode.
+  apWantConnected=false;apLink=AP_IDLE;apWledChecked=false;apWledOnline=false;
+  rxChannel=clampi(prefs.getUChar("radio",1),1,11);
+  M5.Mic.begin();pendingMic=false;
+ }
  // No vibration when entering or leaving harness mode.
 }
 
@@ -1210,6 +1312,55 @@ static bool qwertyHit(int x,int y,char &out,int &cx,int &cy){
  if(!candidate||best>2200)return false;
  out=candidate;cx=bx;cy=by;return true;
 }
+// Password editor uses the watch's existing QWERTY geometry, with an
+// uppercase switch and separate digit/symbol rows for WPA2 passwords.
+static char harnessApKey(int row,int key){
+ static const char *const alpha[3]={"qwertyuiop","asdfghjkl","zxcvbnm"};
+ static const char *const digits[3]={"1234567890","@#$%&*-_=","+?./:;!"};
+ static const char *const symbols[3]={"!@#$%^&*()","_-+=[]{}:",".,/\\?;~"};
+ if(row<0||row>=3)return 0;
+ const char *str=(apKeyboardMode==0?alpha:apKeyboardMode==1?digits:symbols)[row];
+ if(key<0||key>=(int)strlen(str))return 0;
+ const char c=str[key];return apKeyboardMode==0&&apUpper?(char)toupper((unsigned char)c):c;
+}
+static bool harnessApKeyHit(int x,int y,char &out){
+ if(x<8||x>458||y<144||y>365)return false;
+ long best=LONG_MAX;char result=0;
+ for(int row=0;row<3;row++){
+  const int yy=QW_TOP[row]+QW_HEIGHT/2;
+  if(abs(y-yy)>38)continue;
+  for(int k=0;harnessApKey(row,k);k++){
+   const int xx=QW_LEFT[row]+k*QW_PITCH+QW_WIDTH/2;
+   const long dx=x-xx,dy=y-yy,d=dx*dx+dy*dy;
+   if(d<best){best=d;result=harnessApKey(row,k);}
+  }
+ }
+ if(!result||best>2400)return false;
+ out=result;return true;
+}
+static void openHarnessApPasswordEditor(){
+ if(!remote)return;
+ apDraft="";apUpper=false;apKeyboardMode=0;apPasswordError=false;
+ keyboardPopup="";overlay=AP_PASSWORD;M5.Power.setVibration(0);
+}
+static void saveHarnessApPassword(){
+ // WPA2 allows 8-63 characters; an empty password can connect to an open AP.
+ if(apDraft.length() && apDraft.length()<8){apPasswordError=true;return;}
+ apPassword=apDraft;prefs.putString("hap_pw",apPassword);
+ overlay=NONE;apPasswordError=false;keyboardPopup="";
+ if(apWantConnected){
+  WiFi.disconnect(false,false);harnessApStartConnect();
+ }
+}
+static void harnessApPasswordTouch(int x,int y){
+ if(y>=376&&y<431){
+  if(x>=107&&x<184){if(apKeyboardMode==0)apUpper=!apUpper;else apKeyboardMode=(apKeyboardMode==1?2:1);return;}
+  if(x>=185&&x<276){apKeyboardMode=(apKeyboardMode+1)%3;return;}
+  if(x>=277&&x<359){if(apDraft.length())apDraft.remove(apDraft.length()-1);apPasswordError=false;return;}
+ }
+ char c=0;
+ if(harnessApKeyHit(x,y,c)&&apDraft.length()<63){apDraft+=c;apPasswordError=false;}
+}
 // Native vector-font drawing, no resampled bitmap scaling. Fits prominent UI
 // labels to the available width while retaining the selected direct-native style.
 static void drawLargeNativeLabel(const String &word,int x,int y,int maxWidth,
@@ -1363,6 +1514,28 @@ static void renderOverlay(){
   textC("NO TAP / MANUAL SYNC",CX,260,GRAY,2);
   uiButton(82,306,300,54,String("PROFILE: ")+(profile==0?"SHOW":profile==1?"BALANCED":"ENDURANCE"),true);
   uiButton(153,379,160,45,"DONE");break;}
+ case AP_PASSWORD:{
+  black();circ(CX,CY,R-3,rgb(42,92,126),2);
+  textC("HARNESS-AP KEY",CX,49,CYAN,3);
+  textC("A CANCEL     B SAVE",CX,89,GRAY,2);
+  textC(apPasswordError?"8+ CHARS OR EMPTY":String("PASSWORD  ")+String(apDraft.length())+" CHARS",CX,122,
+        apPasswordError?rgb(255,130,120):GRAY,2);
+  for(int row=0;row<3;row++)for(int k=0;harnessApKey(row,k);k++){
+   int x=QW_LEFT[row]+k*QW_PITCH,y=QW_TOP[row];
+   cv.fillRoundRect(x,y,QW_WIDTH,QW_HEIGHT,8,rgb(27,55,87));
+   cv.drawRoundRect(x,y,QW_WIDTH,QW_HEIGHT,8,rgb(116,171,211));
+   textC(String(harnessApKey(row,k)),x+QW_WIDTH/2,y+QW_HEIGHT/2,rgb(246,250,255),3);
+  }
+  const int xs[3]={111,191,279},ws[3]={69,80,70};
+  const String names[3]={apKeyboardMode==0?(apUpper?"LOWER":"SHIFT"):(apKeyboardMode==1?"SYM":"123"),
+      apKeyboardMode==0?"123":apKeyboardMode==1?"SYM":"ABC","DEL"};
+  for(int k=0;k<3;k++){
+   cv.fillRoundRect(xs[k],378,ws[k],48,8,rgb(32,97,125));
+   cv.drawRoundRect(xs[k],378,ws[k],48,8,rgb(166,225,246));
+   textC(names[k],xs[k]+ws[k]/2,402,rgb(246,250,255),2);
+  }
+  break;
+ }
  case NAME:{
   black();circ(CX,CY,R-3,rgb(42,92,126),2);
   const bool robotName=originalEffect(effectID)==22;
@@ -1419,41 +1592,86 @@ static void applyRemoteSelection(){
  }
  // Harness remote is silent: no haptic confirmation.
 }
-// V17.24 round-safe nav: bounds and touch targets are identical.
-static constexpr int RNAV_LX=119,RNAV_RX=255,RNAV_Y=397,RNAV_W=92,RNAV_H=31;
-static constexpr int RPREV_X=82,RAPPLY_X=169,RNEXT_X=300;
-static constexpr int RROW_Y=281,RROW_H=46,RPREV_W=83,RAPPLY_W=128;
-static constexpr int RFAV_X=127,RFAV_Y=338,RFAV_W=212,RFAV_H=46;
+// V17.25: all remote layout and touch rectangles share these constants.
+// Every corner of each rectangle is inside the 466px circular panel; the
+// visualizer renderers (31) are not modified.
+static constexpr int RNAV_LX=120,RNAV_RX=248,RNAV_Y=388,RNAV_W=98,RNAV_H=40;
+static constexpr int RPREV_X=78,RAPPLY_X=169,RNEXT_X=299;
+static constexpr int RROW_Y=258,RROW_H=60,RPREV_W=89,RAPPLY_W=128;
+static constexpr int RFAV_X=116,RFAV_Y=327,RFAV_W=234,RFAV_H=52;
+static constexpr int RFROW_X=75,RFROW_Y=144,RFROW_W=316,RFROW_H=52,RFROW_GAP=58;
+static constexpr int RPAL_X=78,RPAL_Y=146,RPAL_W=310,RPAL_H=52,RPAL_GAP=58;
+static constexpr int RRADIO_LEFT=112,RRADIO_RIGHT=241,RRADIO_Y=211,RRADIO_W=113,RRADIO_H=57;
+static constexpr int RSET_TOP=130,RSET_BOTTOM=374;
+static constexpr int RBAR_X0=99,RBAR_X1=367,RTOUCH_PAD=8;
 static bool remotePointIn(int x,int y,int bx,int by,int bw,int bh){
  return x>=bx&&x<bx+bw&&y>=by&&y<by+bh;
 }
-static void remoteNav(){
- uiButton(RNAV_LX,RNAV_Y,RNAV_W,RNAV_H,"< PAGE");
- uiButton(RNAV_RX,RNAV_Y,RNAV_W,RNAV_H,"PAGE >");
- textC(String(remotePage+1)+"/5",CX,RNAV_Y+15,rgb(145,199,213),2);
+struct RemoteHit {int x,y,w,h,id;};
+// One physical gesture is one action. For wide finger contact or two close
+// contacts, choose the hit whose *center* is closest to the touch centroid.
+// Hit padding also accepts drifts off a button's rounded visible corner.
+static int remoteNearestHit(int x,int y,const RemoteHit *items,int count){
+ int selected=-999;int64_t best=INT64_MAX;
+ for(int i=0;i<count;i++){
+  const RemoteHit &h=items[i];
+  if(!remotePointIn(x,y,h.x-RTOUCH_PAD,h.y-RTOUCH_PAD,h.w+2*RTOUCH_PAD,h.h+2*RTOUCH_PAD))continue;
+  const int64_t dx=x-(h.x+h.w/2),dy=y-(h.y+h.h/2);
+  const int64_t dist=dx*dx+dy*dy;
+  if(dist<best){best=dist;selected=h.id;}
+ }
+ return selected;
 }
-// Fixed native-font tiers only in harness mode; unlike scaled sprites these
-// cannot alter the 31 effect renderers' text rasterization or frame rate.
-static void remoteLabel(const String &value,int x,int y,int maxWidth,uint16_t color,bool large=true){
+static void remoteButton(int x,int y,int w,int h,const String &label,bool active=false){
+ // Immediate visual response while pressed; action still commits once on release.
+ const bool pressed=remote&&touchDown&&overlay==NONE&&
+   remotePointIn(touchLastX,touchLastY,x,y,w,h);
+ cv.fillRoundRect(x,y,w,h,12,pressed?rgb(68,166,182):(active?rgb(44,130,151):rgb(17,40,67)));
+ cv.drawRoundRect(x,y,w,h,12,pressed?rgb(255,255,255):active?rgb(183,255,255):rgb(80,134,163));
+ cv.setFont(&lgfx::fonts::FreeSansBold12pt7b);cv.setTextSize(0.94f);
+ cv.setTextDatum(middle_center);cv.setTextColor(active?rgb(255,255,255):rgb(222,244,250));
+ cv.drawString(label,x+w/2,y+h/2);
+ cv.setFont(&lgfx::fonts::Font0);cv.setTextSize(1.f);
+}
+static void remotePanelBg(const String &headline){
+ black();circ(CX,CY,R-3,rgb(42,92,126),2);
+ // Lift the heading 17px, leaving a large gap to the circular outline.
+ textC(headline,CX,71,rgb(123,241,247),4);
+}
+static void remoteNav(){
+ remoteButton(RNAV_LX,RNAV_Y,RNAV_W,RNAV_H,"< PAGE");
+ remoteButton(RNAV_RX,RNAV_Y,RNAV_W,RNAV_H,"PAGE >");
+ textC(String(remotePage+1)+"/"+String(REMOTE_PAGES),CX,RNAV_Y+RNAV_H/2,rgb(145,199,213),2);
+}
+// Font changes are limited to harness pages and RESET font state every call.
+// Sizes relative to V17.24: 75% for brightness/category, 80% for FX name/ID
+// and other primary captions. 12pt native font is used only for width fallback.
+static void remoteLabel(const String &value,int x,int y,int maxWidth,uint16_t color,float scale=.80f){
  if(value.isEmpty())return;
- cv.setFont(large?&lgfx::fonts::FreeSansBold18pt7b:&lgfx::fonts::FreeSansBold12pt7b);
- cv.setTextSize(1.f);
+ cv.setFont(&lgfx::fonts::FreeSansBold18pt7b);cv.setTextSize(scale);
  String label=value;
  if(cv.textWidth(label)>maxWidth){
-  cv.setFont(&lgfx::fonts::FreeSansBold12pt7b);
-  while(label.length()>2 && cv.textWidth(label)>maxWidth)label.remove(label.length()-1);
-  if(label.length()<value.length() && label.length()>2){
-   label.remove(label.length()-1);label+="~";
-  }
+  cv.setFont(&lgfx::fonts::FreeSansBold12pt7b);cv.setTextSize(1.f);
+  while(label.length()>2&&cv.textWidth(label)>maxWidth)label.remove(label.length()-1);
+  if(label.length()<value.length()&&label.length()>2){label.remove(label.length()-1);label+="~";}
  }
  cv.setTextDatum(middle_center);cv.setTextColor(color);cv.drawString(label,x,y);
  cv.setFont(&lgfx::fonts::Font0);cv.setTextSize(1.f);
 }
+static void remoteCaption(const String &value,int x,int y,int maxWidth,uint16_t color){
+ if(value.isEmpty())return;
+ cv.setFont(&lgfx::fonts::FreeSansBold12pt7b);cv.setTextSize(.86f);
+ String label=value;
+ while(label.length()>2&&cv.textWidth(label)>maxWidth)label.remove(label.length()-1);
+ cv.setTextDatum(middle_center);cv.setTextColor(color);cv.drawString(label,x,y);
+ cv.setFont(&lgfx::fonts::Font0);cv.setTextSize(1.f);
+}
+static int remoteBrightnessBarY(){return 145;}
 static void remoteBrightnessControl(int y){
  const uint16_t cyan=rgb(91,239,232);
- remoteLabel("BRIGHTNESS",153,y,238,rgb(235,249,255));
- remoteLabel(String((remoteBrightness*100+127)/255)+"%",346,y,75,cyan);
- uiBar(y+23,99,367,remoteBrightness/255.f,cyan);
+ remoteLabel("BRIGHTNESS",151,y,233,rgb(235,249,255),.75f);
+ remoteLabel(String((remoteBrightness*100+127)/255)+"%",346,y,76,cyan,.75f);
+ uiBar(y+23,RBAR_X0,RBAR_X1,remoteBrightness/255.f,cyan);
 }
 static uint16_t remotePaletteColor(int pal,int slot){
  // Representative WLED palette colors; actual LED colors still come from harness palette.
@@ -1472,82 +1690,131 @@ static uint16_t remotePaletteColor(int pal,int slot){
  return rgb(c[0],c[1],c[2]);
 }
 // This is a local compatibility map, not a substitute for live /json/fxdata.
-// WLED metadata controls are available only when the matching ESP-NOW receiver supports them.
+// Extended metadata commands still require corresponding harness receiver support.
 struct RemoteFxParam { const char *name;uint8_t cmd;uint8_t value; };
 static int remoteFxParams(RemoteFxParam out[5]){
  if(remoteSelected<Z_COUNT){out[0]={"Speed",10,remoteSpeed};out[1]={"Intensity",11,remoteIntensity};return 2;}
  int id=remoteSelected-Z_COUNT;
- if(id==0)return 0; // Solid has no effect sliders.
+ if(id==0)return 0; // Solid has brightness only.
  if(id==1||id==2||id==3||id==9){out[0]={"Speed",10,remoteSpeed};return 1;}
  out[0]={"Speed",10,remoteSpeed};out[1]={"Intensity",11,remoteIntensity};
- // Extended WLED metadata-inspired fields; commands 14-16 require matching receiver.
  if(id==66||id==38||id==97||id==161){out[2]={"Custom 1",14,remoteCustom[0]};return 3;}
  return 2;
 }
+// FX settings evenly fill the available vertical region: 2, 3, and 4
+// controls get increasingly compact cells, while a single control is centered.
+// Rendering and hit testing use exactly the SAME computed row coordinates.
+static int remoteSettingsLabelY(int row,int total){
+ if(total<1)total=1;
+ const int cell=(RSET_BOTTOM-RSET_TOP)/total;
+ return RSET_TOP+row*cell+cell/2-10;
+}
+static int remoteSettingsBarY(int row,int total){
+ const int cell=(RSET_BOTTOM-RSET_TOP)/(total>0?total:1);
+ return remoteSettingsLabelY(row,total)+clampi(cell/3,15,23);
+}
+static bool remoteStartOnSlider(int y){
+ if(remotePage==0)return y>=remoteBrightnessBarY()-12&&y<=remoteBrightnessBarY()+25;
+ if(remotePage!=2)return false;
+ RemoteFxParam p[5];const int n=remoteFxParams(p),total=n+1;
+ for(int row=0;row<total;row++){
+  int bar=remoteSettingsBarY(row,total);
+  if(y>=bar-14&&y<=bar+27)return true;
+ }
+ return false;
+}
+static void remoteChangePage(int step){
+ remotePage=(uint8_t)((remotePage+REMOTE_PAGES+step)%REMOTE_PAGES);
+ // Retain the selected effect and favorites, but do not retain old scroll
+ // offsets that could conceal the start of a newly opened page.
+ if(remotePage==1)remoteFavScroll=0;
+ if(remotePage==3)remotePaletteScroll=0;
+}
 static void renderRemote(){
  const uint16_t white=rgb(238,252,255),dim=rgb(156,196,214),cyan=rgb(90,238,234);
- const char *heads[]={"HARNESS FX","FAVORITES","FX SETTINGS","PALETTES","RADIO"};
- panelBg(heads[remotePage]);
+ const char *heads[]={"HARNESS FX","FAVORITES","FX SETTINGS","PALETTES","RADIO","HARNESS-AP"};
+ remotePanelBg(heads[remotePage]);
  if(remotePage==0){
-  remoteBrightnessControl(126);
-  bool custom=remoteSelected<Z_COUNT;
-  remoteLabel(custom?"CUSTOM Z":"BUILT-IN WLED",CX,190,315,dim);
-  remoteLabel(String(remoteSelected+1)+" / "+String(REMOTE_FX_COUNT),CX,224,315,cyan);
-  remoteLabel(remoteEffectName(remoteSelected),CX,259,315,white);
-  uiButton(RPREV_X,RROW_Y,RPREV_W,RROW_H,"<");
-  uiButton(RAPPLY_X,RROW_Y,RAPPLY_W,RROW_H,"APPLY",true);
-  uiButton(RNEXT_X,RROW_Y,RPREV_W,RROW_H,">");
-  uiButton(RFAV_X,RFAV_Y,RFAV_W,RFAV_H,
+  remoteBrightnessControl(122);
+  const bool custom=remoteSelected<Z_COUNT;
+  remoteLabel(custom?"CUSTOM Z":"BUILT-IN WLED",CX,175,315,dim,.75f);
+  remoteLabel(String(remoteSelected+1)+" / "+String(REMOTE_FX_COUNT),CX,204,315,cyan,.80f);
+  remoteLabel(remoteEffectName(remoteSelected),CX,233,330,white,.80f);
+  remoteButton(RPREV_X,RROW_Y,RPREV_W,RROW_H,"<");
+  remoteButton(RAPPLY_X,RROW_Y,RAPPLY_W,RROW_H,"APPLY",true);
+  remoteButton(RNEXT_X,RROW_Y,RPREV_W,RROW_H,">");
+  remoteButton(RFAV_X,RFAV_Y,RFAV_W,RFAV_H,
    remoteIsFavorite(remoteSelected)?"REMOVE STAR":"ADD FAVORITE",remoteIsFavorite(remoteSelected));
  }else if(remotePage==1){
-  remoteLabel(String(remoteFavCount())+" SAVED EFFECTS",CX,132,316,dim);
-  int total=remoteFavCount();
+  remoteLabel(String(remoteFavCount())+" SAVED EFFECTS",CX,122,319,dim,.80f);
+  const int total=remoteFavCount();
   if(remoteFavScroll>(uint16_t)(total>4?total-4:0))remoteFavScroll=(uint16_t)(total>4?total-4:0);
-  if(total==0)remoteLabel("STAR FX ON PAGE 1",CX,240,320,dim);
+  if(total==0)remoteLabel("STAR FX ON PAGE 1",CX,236,319,dim,.80f);
   for(int row=0;row<4&&row+remoteFavScroll<total;row++){
-   int id=remoteFavIndexAt(row+remoteFavScroll),y=149+row*54;
+   const int id=remoteFavIndexAt(row+remoteFavScroll),y=RFROW_Y+row*RFROW_GAP;
    if(id<0)continue;
-   cv.fillRoundRect(75,y,316,46,10,id==remoteSelected?rgb(24,112,133):rgb(18,46,69));
-   cv.drawRoundRect(75,y,316,46,10,id==remoteSelected?cyan:rgb(66,118,145));
-   String name=remoteEffectName(id);if(name.length()>18)name=name.substring(0,17)+"~";
-   textC(name,216,y+23,white,name.length()>14?2:3); // row buttons unchanged
-   textC("*",370,y+22,rgb(255,209,108),3);
+   const bool pressed=touchDown&&remotePointIn(touchLastX,touchLastY,RFROW_X,y,RFROW_W,RFROW_H);
+   cv.fillRoundRect(RFROW_X,y,RFROW_W,RFROW_H,11,pressed?rgb(49,136,160):id==remoteSelected?rgb(24,112,133):rgb(18,46,69));
+   cv.drawRoundRect(RFROW_X,y,RFROW_W,RFROW_H,11,pressed?white:id==remoteSelected?cyan:rgb(66,118,145));
+   remoteLabel(remoteEffectName(id),217,y+RFROW_H/2,254,white,.79f);
+   textC("*",367,y+RFROW_H/2,rgb(255,209,108),3);
   }
-  if(total>4)remoteLabel("SWIPE LIST",CX,376,220,dim,false);
+  if(total>4)remoteCaption("SWIPE UP FOR MORE",CX,379,220,dim);
  }else if(remotePage==2){
-  remoteBrightnessControl(138);
-  RemoteFxParam params[5];int n=remoteFxParams(params);
-  for(int row=0;row<3&&row+remoteSettingsScroll<n;row++){
-   RemoteFxParam &p=params[row+remoteSettingsScroll];int y=206+row*61;
-   remoteLabel(String(p.name),164,y,184,white);
-   remoteLabel(String((int)p.value),333,y,102,cyan);
-   uiBar(y+19,99,367,p.value/255.f,rgb(180,116,236));
+  RemoteFxParam params[5];const int n=remoteFxParams(params),total=n+1;
+  for(int row=0;row<total;row++){
+   const int ly=remoteSettingsLabelY(row,total),by=remoteSettingsBarY(row,total);
+   const bool bright=row==0;
+   const char *name=bright?"BRIGHTNESS":params[row-1].name;
+   const uint8_t value=bright?remoteBrightness:params[row-1].value;
+   const uint16_t ink=bright?cyan:rgb(180,116,236);
+   remoteLabel(String(name),163,ly,178,white,bright?.75f:.80f);
+   remoteLabel(bright?String((value*100+127)/255)+"%":String((int)value),334,ly,102,cyan,.80f);
+   uiBar(by,RBAR_X0,RBAR_X1,value/255.f,ink);
   }
-  if(n==0)remoteLabel("NO EFFECT SLIDERS",CX,272,316,dim,false);
  }else if(remotePage==3){
-  remoteLabel("TAP TO APPLY",CX,130,260,dim,false);
+  remoteCaption("TAP TO APPLY",CX,120,258,dim);
   for(int row=0;row<4;row++){
-   int p=remotePaletteScroll+row;if(p>=PAL_COUNT)break;
-   int y=151+row*54;
-   cv.fillRoundRect(78,y,310,47,10,p==selectedPalette?rgb(20,104,118):rgb(17,43,66));
-   cv.drawRoundRect(78,y,310,47,10,p==selectedPalette?cyan:rgb(65,109,134));
-   remoteLabel(String(PAL_NAMES[p]),171,y+23,180,white);
+   const int p=remotePaletteScroll+row;if(p>=PAL_COUNT)break;
+   const int y=RPAL_Y+row*RPAL_GAP;
+   const bool pressed=touchDown&&remotePointIn(touchLastX,touchLastY,RPAL_X,y,RPAL_W,RPAL_H);
+   cv.fillRoundRect(RPAL_X,y,RPAL_W,RPAL_H,11,pressed?rgb(49,136,160):p==selectedPalette?rgb(20,104,118):rgb(17,43,66));
+   cv.drawRoundRect(RPAL_X,y,RPAL_W,RPAL_H,11,pressed?white:p==selectedPalette?cyan:rgb(65,109,134));
+   remoteLabel(String(PAL_NAMES[p]),171,y+RPAL_H/2,184,white,.80f);
    for(int j=0;j<3;j++){
-    int px=291+j*31;cv.fillCircle(px,y+23,11,remotePaletteColor(p,j));
-    cv.drawCircle(px,y+23,11,rgb(182,199,213));
+    int px=291+j*31;cv.fillCircle(px,y+RPAL_H/2,11,remotePaletteColor(p,j));
+    cv.drawCircle(px,y+RPAL_H/2,11,rgb(182,199,213));
    }
   }
- }else{
-  remoteLabel("ESP-NOW CHANNEL",CX,144,318,dim);
-  drawLargeNativeLabel(String(rxChannel),CX,201,190,1.10f,cyan);
-  uiButton(117,224,107,50,"CH -");uiButton(242,224,107,50,"CH +");
+ }else if(remotePage==4){
+  remoteLabel("ESP-NOW CHANNEL",CX,129,320,dim,.80f);
+  drawLargeNativeLabel(String(rxChannel),CX,185,188,.90f,cyan);
+  remoteButton(RRADIO_LEFT,RRADIO_Y,RRADIO_W,RRADIO_H,harnessApAssociated()?"AP SET":"CH -");
+  remoteButton(RRADIO_RIGHT,RRADIO_Y,RRADIO_W,RRADIO_H,harnessApAssociated()?"AUTO":"CH +");
   String mac=WiFi.macAddress();
-  remoteLabel(mac.substring(0,9),CX,311,333,white);
-  remoteLabel(mac.substring(9),CX,339,333,white);
-  remoteLabel("PAIR IN WLED REMOTES",CX,368,343,dim,false);
+  remoteLabel(mac.substring(0,9),CX,301,336,white,.80f);
+  remoteLabel(mac.substring(9),CX,330,336,white,.80f);
+  remoteCaption(harnessApAssociated()?"CHANNEL SET BY HARNESS-AP":"PAIR IN WLED REMOTES",CX,365,343,dim);
+ }else if(remotePage==5){
+  remoteLabel("SSID: HARNESS-AP",CX,121,346,white,.79f);
+  const bool connected=harnessApAssociated();
+  String status=connected?"CONNECTED":apLink==AP_CONNECTING?"CONNECTING":apLink==AP_FAILED?"FAILED":"NOT CONNECTED";
+  remoteLabel("WI-FI: "+status,CX,155,346,connected?rgb(111,255,175):apLink==AP_FAILED?rgb(255,154,113):cyan,.79f);
+  String wled=connected?(apWledChecked?(apWledOnline?"WLED: ONLINE":"WLED: NO REPLY"):"WLED: CHECKING"):"WLED: NOT CHECKED";
+  remoteLabel(wled,CX,189,340,apWledOnline?rgb(111,255,175):dim,.75f);
+  remoteCaption(connected?String("IP: ")+WiFi.localIP().toString():
+    apLink==AP_FAILED?(apFailReason==1?"AP NOT FOUND":apFailReason==2?"CHECK PASSWORD":"AP TIMED OUT / LOST"):
+    "Wi-Fi + ESP-NOW are separate links",CX,226,346,dim);
+  if(connected)remoteCaption(String("CH ")+String(WiFi.channel())+"   "+String(WiFi.RSSI())+" dBm",CX,250,338,cyan);
+  else remoteCaption("WLED AP: NO INTERNET NEEDED",CX,250,340,dim);
+  String ack=apLastRadioAckAt?String("ESP-NOW ACK ")+String((millis()-apLastRadioAckAt)/1000)+"s ago":
+    radioReady?"ESP-NOW READY / NO ACK":"ESP-NOW NOT READY";
+  remoteCaption(ack,CX,278,345,dim);
+  remoteButton(92,308,136,54,connected?"DISCONNECT":apLink==AP_CONNECTING?"CANCEL":apLink==AP_FAILED?"RETRY":"CONNECT",connected);
+  remoteButton(239,308,136,54,"PASSWORD");
  }
- if(radioPending)textC("SENDING",CX,109,rgb(255,188,96),2);
- else if(radioSuccess)textC("APPLIED",CX,109,rgb(107,255,181),2);
+ if(radioPending)textC("SENDING",CX,100,rgb(255,188,96),2);
+ else if(radioSuccess)textC("APPLIED",CX,100,rgb(107,255,181),2);
  remoteNav();
 }
 static void showTextEditor(){
@@ -1569,66 +1836,99 @@ static void saveNameOverlay(){
  saveNames();overlay=NONE;vibration(180,65);
 }
 static void remoteTouch(int x,int y,int dx,int dy){
- // Use the touch-centroid and closest button center so a finger straddling
- // adjacent buttons triggers ONE action, including touches on button edges.
- if(remotePointIn(x,y,RNAV_LX,RNAV_Y,RNAV_W,RNAV_H)){
-  remotePage=(remotePage+REMOTE_PAGES-1)%REMOTE_PAGES;return;
+ // On every page, swipe LEFT -> next page; RIGHT -> previous page.
+ // Horizontal slider drags are kept as slider adjustments, not page swipes.
+ // A strong swipe must dominate vertical movement to avoid list scrolling.
+ const bool onSlider=remoteStartOnSlider(touchStartY);
+ if(abs(dx)>=66&&abs(dx)>abs(dy)*1.30f&&(!onSlider||abs(dx)>=145)){
+  remoteChangePage(dx<0?1:-1);return;
  }
- if(remotePointIn(x,y,RNAV_RX,RNAV_Y,RNAV_W,RNAV_H)){
-  remotePage=(remotePage+1)%REMOTE_PAGES;return;
- }
+ const RemoteHit navigation[]={
+  {RNAV_LX,RNAV_Y,RNAV_W,RNAV_H,-1},
+  {RNAV_RX,RNAV_Y,RNAV_W,RNAV_H,1}
+ };
+ const int pageStep=remoteNearestHit(x,y,navigation,2);
+ if(pageStep!=-999){remoteChangePage(pageStep);return;}
  if(remotePage==0){
-  if(y>=145&&y<183 && x>=88&&x<=378){
-   remoteBrightness=(uint8_t)clampi((x-99)*255/268,0,255);radioSend(2,remoteBrightness);
-  }else{
-   struct RemoteButtonHit {int x,y,w,h,command;};
-   const RemoteButtonHit hit[]={
-    {RPREV_X,RROW_Y,RPREV_W,RROW_H,1},
-    {RAPPLY_X,RROW_Y,RAPPLY_W,RROW_H,2},
-    {RNEXT_X,RROW_Y,RPREV_W,RROW_H,3},
-    {RFAV_X,RFAV_Y,RFAV_W,RFAV_H,4}
-   };
-   int target=-1;long best=2147483647L;
-   for(const auto &h:hit){
-    if(!remotePointIn(x,y,h.x,h.y,h.w,h.h))continue;
-    const long ox=x-(h.x+h.w/2),oy=y-(h.y+h.h/2);
-    const long dist=ox*ox+oy*oy;
-    if(dist<best){best=dist;target=h.command;}
-   }
-   if(target==1)remoteSelected=(remoteSelected+REMOTE_FX_COUNT-1)%REMOTE_FX_COUNT;
-   else if(target==2)applyRemoteSelection();
-   else if(target==3)remoteSelected=(remoteSelected+1)%REMOTE_FX_COUNT;
-   else if(target==4)remoteToggleFavorite(remoteSelected);
+  if(y>=remoteBrightnessBarY()-13&&y<remoteBrightnessBarY()+28&&x>=RBAR_X0-12&&x<=RBAR_X1+12){
+   remoteBrightness=(uint8_t)clampi((x-RBAR_X0)*255/(RBAR_X1-RBAR_X0),0,255);radioSend(2,remoteBrightness);
+   return;
+  }
+  const RemoteHit buttons[]={
+   {RPREV_X,RROW_Y,RPREV_W,RROW_H,1},
+   {RAPPLY_X,RROW_Y,RAPPLY_W,RROW_H,2},
+   {RNEXT_X,RROW_Y,RPREV_W,RROW_H,3},
+   {RFAV_X,RFAV_Y,RFAV_W,RFAV_H,4}
+  };
+  switch(remoteNearestHit(x,y,buttons,4)){
+   case 1:remoteSelected=(remoteSelected+REMOTE_FX_COUNT-1)%REMOTE_FX_COUNT;break;
+   case 2:applyRemoteSelection();break;
+   case 3:remoteSelected=(remoteSelected+1)%REMOTE_FX_COUNT;break;
+   case 4:remoteToggleFavorite(remoteSelected);break;
   }
  }else if(remotePage==1){
-  if(abs(dy)>24){int count=remoteFavCount();remoteFavScroll=clampi((int)remoteFavScroll+(dy<0?1:-1),0,count>4?count-4:0);}
-  else if(x>=75&&x<391&&y>=149&&y<357){int row=(y-149)/54;
-   if(row<4 && (y-149)%54<46){int idx=remoteFavIndexAt(remoteFavScroll+row);
-    if(idx>=0){remoteSelected=idx;applyRemoteSelection();}}
+  const int count=remoteFavCount();
+  if(abs(dy)>27 && abs(dy)>abs(dx)){
+   remoteFavScroll=clampi((int)remoteFavScroll+(dy<0?1:-1),0,count>4?count-4:0);return;
   }
+  RemoteHit rows[4];int n=0;
+  for(int row=0;row<4;row++){
+   int id=remoteFavIndexAt(remoteFavScroll+row);if(id<0)break;
+   rows[n++]={RFROW_X,RFROW_Y+row*RFROW_GAP,RFROW_W,RFROW_H,id};
+  }
+  if(n){int id=remoteNearestHit(x,y,rows,n);if(id>=0){remoteSelected=id;applyRemoteSelection();}}
  }else if(remotePage==2){
-  RemoteFxParam params[5];int n=remoteFxParams(params);
-  if(abs(dy)>26){remoteSettingsScroll=clampi((int)remoteSettingsScroll+(dy<0?1:-1),0,n>3?n-3:0);}
-  else if(y>=151&&y<183&&x>=88&&x<=378){remoteBrightness=(uint8_t)clampi((x-99)*255/268,0,255);radioSend(2,remoteBrightness);}
-  else if(y>=207&&y<378&&x>=88&&x<=378){int row=(y-207)/61;
-   int index=row+remoteSettingsScroll;
-   if(row>=0&&row<3&&index<n){uint8_t v=(uint8_t)clampi((x-99)*255/268,0,255);
-    if(params[index].cmd==10)remoteSpeed=v;else if(params[index].cmd==11)remoteIntensity=v;
-    else if(params[index].cmd>=14&&params[index].cmd<=16)remoteCustom[params[index].cmd-14]=v;
-    radioSend(params[index].cmd,v);
+  RemoteFxParam params[5];const int n=remoteFxParams(params),total=n+1;
+  // The full width of each control row, including its label, value and bar,
+  // is selectable. A touch adjusts the corresponding control only once.
+  RemoteHit rows[6];
+  for(int row=0;row<total;row++){
+   const int ly=remoteSettingsLabelY(row,total),by=remoteSettingsBarY(row,total);
+   int upper=ly-18,lower=by+19;
+   rows[row]={RBAR_X0-11,upper,RBAR_X1-RBAR_X0+22,lower-upper,row};
+  }
+  const int row=remoteNearestHit(x,y,rows,total);
+  if(row>=0){
+   const uint8_t value=(uint8_t)clampi((x-RBAR_X0)*255/(RBAR_X1-RBAR_X0),0,255);
+   if(row==0){remoteBrightness=value;radioSend(2,remoteBrightness);}
+   else{
+    const uint8_t command=params[row-1].cmd;
+    if(command==10)remoteSpeed=value;
+    else if(command==11)remoteIntensity=value;
+    else if(command>=14&&command<=16)remoteCustom[command-14]=value;
+    radioSend(command,value);
    }
   }
  }else if(remotePage==3){
-  if(abs(dy)>25){remotePaletteScroll=clampi((int)remotePaletteScroll+(dy<0?2:-2),0,PAL_COUNT>4?PAL_COUNT-4:0);}
-  else if(x>=78&&x<388&&y>=151&&y<360){int row=(y-151)/54;
-   if(row>=0&&row<4 && (y-151)%54<47){int id=remotePaletteScroll+row;
-    if(id>=0&&id<PAL_COUNT){selectedPalette=id;radioSend(13,selectedPalette);}}
+  if(abs(dy)>27&&abs(dy)>abs(dx)){
+   remotePaletteScroll=clampi((int)remotePaletteScroll+(dy<0?2:-2),0,PAL_COUNT>4?PAL_COUNT-4:0);return;
   }
+  RemoteHit rows[4];int n=0;
+  for(int row=0;row<4;row++){
+   int id=remotePaletteScroll+row;if(id>=PAL_COUNT)break;
+   rows[n++]={RPAL_X,RPAL_Y+row*RPAL_GAP,RPAL_W,RPAL_H,id};
+  }
+  if(n){int id=remoteNearestHit(x,y,rows,n);if(id>=0){selectedPalette=(uint8_t)id;radioSend(13,selectedPalette);}}
  }else if(remotePage==4){
-  if(y>=224&&y<274){
-   int step=remotePointIn(x,y,117,224,107,50)?-1:(remotePointIn(x,y,242,224,107,50)?1:0);
-   if(step){rxChannel=clampi(rxChannel+step,1,11);prefs.putUChar("radio",rxChannel);
-    if(radioReady){esp_now_deinit();radioReady=false;}WiFi.mode(WIFI_OFF);startRadio();}
+  const RemoteHit channels[]={
+   {RRADIO_LEFT,RRADIO_Y,RRADIO_W,RRADIO_H,-1},
+   {RRADIO_RIGHT,RRADIO_Y,RRADIO_W,RRADIO_H,1}
+  };
+  const int step=remoteNearestHit(x,y,channels,2);
+  if(step!=-999&&!harnessApAssociated()){
+   rxChannel=clampi(rxChannel+step,1,11);prefs.putUChar("radio",rxChannel);
+   if(radioReady){esp_now_deinit();radioReady=false;}WiFi.mode(WIFI_OFF);startRadio();
+  }
+ }else if(remotePage==5){
+  const RemoteHit controls[]={
+   {92,308,136,54,1},{239,308,136,54,2}
+  };
+  switch(remoteNearestHit(x,y,controls,2)){
+   case 1:
+    if(harnessApAssociated()||apLink==AP_CONNECTING)harnessApDisconnect(true);
+    else{apAutoConnect=true;prefs.putBool("hap_auto",true);harnessApStartConnect();}
+    break;
+   case 2:openHarnessApPasswordEditor();break;
   }
  }
 }
@@ -1646,6 +1946,8 @@ static void editorTouch(int x,int y){
    if(y>=300&&y<369){profile=(profile+1)%3;prefs.putUChar("profile",profile);
       setCpuFrequencyMhz(profile==2?160:240);vibration();}
    else if(y>=372)overlay=NONE;
+ }else if(overlay==AP_PASSWORD){
+   harnessApPasswordTouch(x,y);
  }else if(overlay==NAME){
    if(originalEffect(effectID)==22&&y>=40&&y<87){
      if(x>=112&&x<=353){robotField=x<CX?0:1;keyboardPopup="";vibration(110,24);}
@@ -1712,6 +2014,13 @@ static void controlButtons(){
    }
    return;
  }
+ // AP password editor: physical A cancels, B saves. Never touches
+ // the visualizer's shared names and never vibrates in harness mode.
+ if(overlay==AP_PASSWORD){
+  if(M5.BtnA.wasReleased()){overlay=NONE;apDraft="";apPasswordError=false;keyADown=0;}
+  if(M5.BtnB.wasReleased()){saveHarnessApPassword();keyBDown=0;}
+  return;
+ }
  // Text editor: physical A discards all edits, physical B saves.
  if(overlay==NAME){
   if(M5.BtnA.wasReleased()){overlay=NONE;inputName="";keyboardPopup="";vibration(170,45);}
@@ -1745,7 +2054,7 @@ static void controlButtons(){
  }
  if(M5.BtnA.isPressed()&&M5.BtnB.isPressed()&&!keyChord){
   keyChord=true;keyAHeld=keyBHeld=true;setRemote(!remote);
-  if(remote&&!radioReady)startRadio();
+  if(remote&&!radioReady){startRadio();if(apAutoConnect)harnessApStartConnect();}
   if(!remote){if(radioReady){esp_now_deinit();radioReady=false;}
     WiFi.mode(WIFI_OFF);setCpuFrequencyMhz(profile==2?160:240);}
  }
@@ -1818,7 +2127,7 @@ static void controlTouch(){
    if(overlay==NONE&&!remote&&originalEffect(effectID)==64)StringTheory::touchMove(touch.x,touch.y);
    if(overlay==NONE&&!remote&&(originalEffect(effectID)==65||originalEffect(effectID)==66))GravityLab::touchMove(touch.x,touch.y,originalEffect(effectID)==65);
    if(overlay==NONE&&!remote&&originalEffect(effectID)==67)BeatLab::touchMove(touch.x,touch.y);
-   if(overlay==NAME && !nameDeleteConsumed){
+   if((overlay==NAME||overlay==AP_PASSWORD) && !nameDeleteConsumed){
      // Compute ONE mean contact center across this entire physical press.
      // Ignore simultaneous / adjacent key edges, not the touch centroid.
      if(nameTouchSamples<28){
@@ -1841,7 +2150,7 @@ static void controlTouch(){
    }
    uint32_t held=millis()-touchStart;
    int x=touchLastX,y=touchLastY;
-   if(overlay==NAME&&nameTouchSamples>0){
+   if((overlay==NAME||overlay==AP_PASSWORD)&&nameTouchSamples>0){
      x=nameTouchXSum/nameTouchSamples;
      y=nameTouchYSum/nameTouchSamples;
    }
@@ -1853,7 +2162,7 @@ static void controlTouch(){
      y=remoteTouchYSum/remoteTouchSamples;
    }
    touchDown=false;nameTouchSamples=0;remoteTouchSamples=0;
-   if(overlay==NAME&&abs(dx)>60){keyboardPopup="";return;}
+   if((overlay==NAME||overlay==AP_PASSWORD)&&abs(dx)>60){keyboardPopup="";return;}
    if(overlay==BATTERY){overlay=NONE;batteryHudUntil=0;vibration(105,20);return;}
    if(overlay!=NONE){editorTouch(x,y);return;}
    if(remote){lastRemoteActivity=millis();remoteTouch(x,y,dx,y-touchStartY);return;}
@@ -1965,7 +2274,7 @@ void loop(){
  }
  if(overlay==BATTERY && (int32_t)(powerNow-batteryHudUntil)>=0)overlay=NONE;
  // Battery state and ETA are read by the 60-second sampler, not per frame.
- controlButtons();controlTouch();radioTick();audioTick();beatTick();
+ controlButtons();controlTouch();radioTick();harnessApTick();audioTick();beatTick();
  if(!remote && overlay==NONE && (originalEffect(effectID)==65||originalEffect(effectID)==66))
     GravityLab::tick(millis(),originalEffect(effectID)==65);
  if(!remote && overlay==NONE && originalEffect(effectID)==67)BeatLab::tick(millis());
