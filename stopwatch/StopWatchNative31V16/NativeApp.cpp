@@ -2220,7 +2220,19 @@ static void renderFrame(){
 }
 void setup(){
  Serial.begin(115200);auto cfg=M5.config();cfg.internal_mic=true;cfg.internal_imu=true;cfg.internal_spk=false;
- M5.begin(cfg);M5.Speaker.end();M5.Mic.begin();
+ M5.begin(cfg);
+ // V17.27: Switch OFF the green power LED while the StopWatch is running.
+ // The LED is controlled by M5PM1 (I2C addr 0x6E), not an ESP32 GPIO.
+ // M5PM1 PWR_CFG register 0x06, bit 4 = LED_EN default output level.
+ // Clear ONLY bit 4 (same operation as M5PM1::setLedEnLevel(false)).
+ // Preserve all PMIC power-rail and charging bits and all application behavior.
+ bool greenPowerLedOff=false;
+ for(uint8_t attempt=0;attempt<3 && !greenPowerLedOff;attempt++){
+   greenPowerLedOff=M5.In_I2C.bitOff(0x6E,0x06,0x10,100000);
+   if(!greenPowerLedOff)delay(15);
+ }
+ Serial.printf("Green power indicator: %s\n",greenPowerLedOff?"OFF":"PMIC I2C write failed");
+ M5.Speaker.end();M5.Mic.begin();
  M5.Display.setRotation(0);W=M5.Display.width();H=M5.Display.height();CX=W/2;CY=H/2;R=clampi(min(W,H)/2-3,150,260);
  loadSettings();
  for(int i=0;i<NFFT;i++)fftWindow[i]=.5f-.5f*cosf(TAU*i/(NFFT-1));
