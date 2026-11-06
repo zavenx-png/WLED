@@ -2,7 +2,7 @@ name: Zaven Cardputer V6 firmware
 on:
   push:
     branches:
-      - zaven-festival-kit-v6-espnow-first
+      - zaven-cardputer-v6-portrait-orientation
     paths:
       - 'cardputer/Zaven_Cardputer_V6_Full_Source.zip'
       - '.github/workflows/cardputer-v6.yml'
