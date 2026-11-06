@@ -1841,9 +1841,9 @@ static void mode_z_neural_pulse(void)
   const uint32_t t = strip.now;
   const uint16_t L = CHUNCHUN_HARNESS_PATH_LEN;
   const uint16_t width = 9 + (SEGMENT.intensity >> 5);
-  const uint16_t p0 = zh_wrap(((uint64_t)t * (2U + (SEGMENT.speed >> 5))) / 620U);
-  const uint16_t p1 = zh_wrap(((uint64_t)t * (3U + (SEGMENT.speed >> 6))) / 780U + 137U);
-  const uint16_t p2 = zh_wrap(((uint64_t)t * (1U + (SEGMENT.speed >> 6))) / 550U + 276U);
+  const uint16_t p0 = zh_wrap(((uint64_t)t * (2U + (SEGMENT.speed >> 5))) / 166U);
+  const uint16_t p1 = zh_wrap(((uint64_t)t * (3U + (SEGMENT.speed >> 6))) / 216U + 137U);
+  const uint16_t p2 = zh_wrap(((uint64_t)t * (1U + (SEGMENT.speed >> 6))) / 132U + 276U);
 
   for (uint16_t p = 0; p < L; p++) {
     uint8_t b0 = zh_soft(zh_cyclic_distance(p, p0), width);
@@ -1852,7 +1852,7 @@ static void mode_z_neural_pulse(void)
     uint8_t b = max(b0, max(b1, b2));
     if (b < 3) continue;
 
-    uint16_t h = (uint16_t)(p * 65535UL / L) + (uint16_t)(t / 3U);
+    uint16_t h = (uint16_t)(p * 65535UL / L) + (uint16_t)t;
     if (b1 >= b0 && b1 >= b2) h += 21000;
     else if (b2 > b0 && b2 >= b1) h += 43000;
 
@@ -1904,50 +1904,40 @@ static const char _data_FX_MODE_Z_PLASMA_VEINS[] PROGMEM =
 static void mode_z_electric_organism(void)
 {
   if (SEGLEN <= 1) FX_FALLBACK_STATIC;
-  // v5.2: render a guaranteed illuminated electric tissue across every
-  // physical LED, not just sparse highlights on a repeated virtual path.
-  // The three traveling nerves are drawn with a per-channel MAX blend so
-  // revisiting a physical section cannot erase a brighter previous branch.
   const uint32_t t = strip.now;
-  const uint16_t L = CHUNCHUN_HARNESS_PATH_LEN;
   const uint16_t count = min((uint16_t)SEGLEN, (uint16_t)290U);
   if (count == 0U) FX_FALLBACK_STATIC;
-
-  for (uint16_t logical = 0; logical < count; ++logical) {
-    uint16_t x = (uint32_t)logical * 65535UL / count;
-    uint8_t wave = (uint8_t)(((int32_t)sin16_t(x * 3U + (uint16_t)(t * 2U)) + 32768L) >> 8);
-    uint8_t edge = (uint8_t)(((int32_t)sin16_t(x * 7U - (uint16_t)t) + 32768L) >> 8);
-    uint8_t teal = qadd8(72U, scale8(wave, 65U));
-    uint8_t blue = qadd8(90U, scale8(edge, 70U));
-    SEGMENT.setPixelColor(logical, RGBW32(18U, teal, blue, 0));
-  }
-
-  uint16_t heads[4] = {
-    zh_wrap(t/(64U-(SEGMENT.speed>>5))),
-    zh_wrap(L/4U + t/93U),
-    zh_wrap((L/2U)+L-(t/119U)%L),
-    zh_wrap((3U*L)/4U + t/146U)
+  // Three bright moving branches and genuinely dark gaps. Approximately
+  // half the physical LEDs are active, unlike v5.1 or v5.2.
+  const uint16_t head[3] = {
+    (uint16_t)((t / (54U - (SEGMENT.speed >> 5))) % count),
+    (uint16_t)((count / 3U + t / 83U) % count),
+    (uint16_t)((2U * count / 3U + count - (t / 109U) % count) % count)
   };
-  const uint16_t width = 58U + (SEGMENT.intensity >> 2); // wide branching arcs
-
-  for (uint16_t p = 0; p < L; ++p) {
+  const uint16_t width = 36U + (SEGMENT.intensity >> 5);
+  for (uint16_t logical = 0; logical < count; ++logical) {
     uint8_t arc = 0;
-    for (uint8_t j=0; j<4; ++j) {
-      const uint16_t d = zh_cyclic_distance(p,heads[j]);
-      arc = max(arc, zh_soft(d, width + j * 7U));
+    for (uint8_t j = 0; j < 3; ++j) {
+      uint16_t d = (logical > head[j]) ? logical - head[j] : head[j] - logical;
+      if (d > count / 2U) d = count - d;
+      arc = max(arc, zh_soft(d, width + (uint16_t)j * 2U));
     }
-    if (arc < 8U) continue;
-    uint16_t logical = zh_path_led(p);
-    if (logical >= count) continue;
-    uint32_t prev = SEGMENT.getPixelColor(logical);
-    uint8_t power = qadd8(100U, scale8(arc,150U));
-    uint16_t hue = (uint16_t)(p * 130U + t/20U);
-    uint32_t palCol = zh_palette(hue,power);
-    uint32_t color = RGBW32(
-      max(R(prev), max(R(palCol), (uint8_t)(25U+scale8(arc,90U)))),
-      max(G(prev), max(G(palCol), (uint8_t)(85U+scale8(arc,165U)))),
-      max(B(prev), max(B(palCol), (uint8_t)(100U+scale8(arc,155U)))),0);
-    SEGMENT.setPixelColor(logical,color);
+    if (arc < 25U) {
+      SEGMENT.setPixelColor(logical, BLACK);
+      continue;
+    }
+    uint16_t x = (uint32_t)logical * 65535UL / count;
+    uint8_t wave = (uint8_t)(((int32_t)sin16_t(x * 7U + (uint16_t)(t * 3U)) + 32768L) >> 8);
+    uint8_t power = qadd8(scale8(arc, 190U), scale8(wave, 46U));
+    uint16_t hue = x + (uint16_t)(t * 3U) + (uint16_t)(wave * 70U);
+    uint32_t pal = zh_palette(hue, power);
+    // Only ACTIVE electric branches get a minimum cyan backbone.
+    uint8_t teal = qadd8(25U, scale8(arc, 145U));
+    uint8_t core = (arc > 222U) ? scale8(arc, 90U) : 0U;
+    SEGMENT.setPixelColor(logical, RGBW32(
+      max(R(pal),core),
+      max(G(pal),teal),
+      max(B(pal),qadd8(teal,20U)),0U));
   }
 }
 
@@ -2017,8 +2007,11 @@ static void mode_z_wormhole(void)
   SEGMENT.fade_out(224);
 
   const uint16_t L = CHUNCHUN_HARNESS_PATH_LEN;
-  const uint32_t cycle = 68000U - (uint32_t)SEGMENT.speed * 36U;
-  const uint32_t c = cycle < 55000U ? 55000U : cycle;
+  uint32_t fastCycle = 16000U - (uint32_t)SEGMENT.speed * 20U;
+  if (fastCycle < 10500U) fastCycle = 10500U;
+  uint32_t slowCycle = 68000U - (uint32_t)SEGMENT.speed * 36U;
+  if (slowCycle < 55000U) slowCycle = 55000U;
+  const uint32_t c = (uint32_t)((2ULL * fastCycle * slowCycle) / (fastCycle + slowCycle));
   const uint32_t ph = strip.now % c;
   const uint16_t head = (uint16_t)(((uint64_t)L * ph) / c); // smooth constant slow speed
   const uint16_t width = 18 + (SEGMENT.intensity >> 4);
@@ -2029,7 +2022,7 @@ static void mode_z_wormhole(void)
     if (br < 2) continue;
     uint8_t tail = (d < width / 2U) ? 255 : (uint8_t)(255U - (uint32_t)(d - width / 2U) * 180U / width);
     br = scale8(br, tail);
-    uint16_t hue = (uint16_t)(ph / 3U) + (uint16_t)(d * 390U);
+    uint16_t hue = (uint16_t)(ph * 2U) + (uint16_t)(d * 390U);
     if (d < 4) br = 255;
     SEGMENT.setPixelColor(zh_path_led(p), zh_palette(hue, br));
   }
@@ -2076,7 +2069,7 @@ static const char _data_FX_MODE_Z_RAINBOW_FRACTURE[] PROGMEM =
 static void mode_z_starlight(void)
 {
   if (SEGLEN <= 1) FX_FALLBACK_STATIC;
-  const uint32_t t = strip.now;
+  const uint32_t t = (uint32_t)(((uint64_t)strip.now * 6ULL) / 5ULL); // v5.3: +20% speed
   const uint16_t L = CHUNCHUN_HARNESS_PATH_LEN;
   const uint16_t constellation = zh_wrap((t * (1U + (SEGMENT.speed >> 6))) / 28U);
   // Smooth, fully lit RGB color field instead of stochastic dark dropout.
@@ -2136,8 +2129,12 @@ static void mode_z_phoenix_flight(void)
 
   const uint32_t t = strip.now;
   const uint16_t L = CHUNCHUN_HARNESS_PATH_LEN;
-  uint32_t cycle = 74000U - (uint32_t)SEGMENT.speed * 46U;
-  if (cycle < 60000U) cycle = 60000U; // v5.2: very slow ~60-74 seconds/lap
+  uint32_t fastCycle = 21000U - (uint32_t)SEGMENT.speed * 22U;
+  if (fastCycle < 14500U) fastCycle = 14500U;
+  uint32_t slowCycle = 74000U - (uint32_t)SEGMENT.speed * 46U;
+  if (slowCycle < 60000U) slowCycle = 60000U;
+  // Midpoint in laps per second between the previous versions.
+  const uint32_t cycle = (uint32_t)((2ULL * fastCycle * slowCycle) / (fastCycle + slowCycle));
   const uint16_t head = zh_wrap(((uint64_t)t * L) / cycle);
   const uint16_t width = 12 + (SEGMENT.intensity >> 4);
 
@@ -2194,7 +2191,10 @@ static void mode_z_comet_storm(void)
   SEGMENT.fade_out(222);
   // Real-time motion cadence, rather than moving 1-24 LEDs *per frame*.
   // Keeps speed consistent across different WLED frame rates.
-  const uint32_t tickMs = 240U - (SEGMENT.speed >> 2); // v5.2: ~55-65% slower
+  // Midpoint between the v5.1 and v5.2 LED travel rates.
+  const uint32_t fastTick = 105U - (SEGMENT.speed >> 3);
+  const uint32_t slowTick = 240U - (SEGMENT.speed >> 2);
+  const uint32_t tickMs = (2U * fastTick * slowTick) / (fastTick + slowTick);
   const bool advance = (strip.now - SEGENV.step >= tickMs);
   if (advance) SEGENV.step = strip.now;
   const uint8_t numComets = 2 + (SEGMENT.intensity >> 6); // 2 - 5
@@ -2298,34 +2298,10 @@ static const char _data_FX_MODE_Z_TIDAL_INTERFERENCE[] PROGMEM =
 // the way real embers or bioluminescent plankton drift on a slow current:
 // never flashing, never exactly repeating, never visibly "looping."
 // ---------------------------------------------------------------------------
-static void mode_z_ember_drift(void)
-{
-  if (SEGLEN <= 1) FX_FALLBACK_STATIC;
-
-  const uint32_t t = strip.now;
-  const uint16_t L = CHUNCHUN_HARNESS_PATH_LEN;
-  const uint16_t z = (uint16_t)((t * (2U + (SEGMENT.speed >> 5))) / 40U);
-  const uint16_t xScale = 5U + (SEGMENT.intensity >> 5);
-
-  for (uint16_t p = 0; p < L; p++) {
-    uint16_t nx = p * xScale;
-    uint8_t n = perlin8(nx, z, 0);
-    uint8_t n2 = perlin8(nx + 4000U, z + 1700U, 900U);
-
-    uint8_t br = qadd8(110U, scale8(n, 138U)); // v5.1: clearly visible warm glow
-    br = qadd8(br, SEGMENT.custom1 >> 3);
-    if (br < 5) continue;
-    uint16_t hue = 3500U + (uint16_t)(n2 * 90U);
-    uint32_t col=zh_palette(hue,br);
-    // Autumn palette can go dark: keep a warm ember glow underneath.
-    col=RGBW32(max(R(col),(uint8_t)(90U+(br>>3))),
-               max(G(col),(uint8_t)(26U+(br>>4))),B(col),0);
-    SEGMENT.setPixelColor(zh_path_led(p),col);
-  }
-}
+// v5.3 retired Ember Drift: reserved slot keeps existing effect IDs stable.
 
 static const char _data_FX_MODE_Z_EMBER_DRIFT[] PROGMEM =
-  "Z - Ember Drift@Speed,Grain,Floor,;!,!;!;01;pal=39";
+  "RSVD - Ember Drift";
 
 // ---------------------------------------------------------------------------
 // Z - Orbital Waltz
@@ -2347,8 +2323,12 @@ static void mode_z_orbital_waltz(void)
   const uint32_t t = strip.now;
   const uint16_t L = CHUNCHUN_HARNESS_PATH_LEN;
 
-  uint32_t periodBase = 19000U - (uint32_t)SEGMENT.speed * 23U; // v5.2: slower orbit
-  if (periodBase < 12000U) periodBase = 12000U;
+  // Midpoint in angular velocity between v5.1 and v5.2.
+  uint32_t fastPeriod = 9000U - (uint32_t)SEGMENT.speed * 24U;
+  if (fastPeriod < 2600U) fastPeriod = 2600U;
+  uint32_t slowPeriod = 19000U - (uint32_t)SEGMENT.speed * 23U;
+  if (slowPeriod < 12000U) slowPeriod = 12000U;
+  const uint32_t periodBase = (uint32_t)((2ULL * fastPeriod * slowPeriod) / (fastPeriod + slowPeriod));
   const uint16_t ecc = 1800U + ((uint16_t)SEGMENT.intensity << 3); // eccentricity strength
 
   for (uint8_t body = 0; body < 2; body++) {
@@ -2456,7 +2436,7 @@ static void mode_z_liquid_mercury(void)
   if (SEGLEN <= 1) FX_FALLBACK_STATIC;
   const uint32_t t = strip.now;
   const uint16_t L = CHUNCHUN_HARNESS_PATH_LEN;
-  const uint16_t flow = (uint16_t)(((uint64_t)t * (3U + (SEGMENT.speed >> 5))) / 1100U);
+  const uint16_t flow = (uint16_t)(((uint64_t)t * (3U + (SEGMENT.speed >> 5))) / 287U);
 
   for (uint16_t p = 0; p < L; p++) {
     uint16_t x = p + flow;
@@ -2486,14 +2466,14 @@ static void mode_z_echo_chamber(void)
 
   const uint32_t t = strip.now;
   const uint16_t L = CHUNCHUN_HARNESS_PATH_LEN;
-  uint16_t head = zh_wrap(((uint64_t)t * (5U + (SEGMENT.speed >> 5))) / 1150U);
+  uint16_t head = zh_wrap(((uint64_t)t * (5U + (SEGMENT.speed >> 5))) / 319U);
   uint16_t width = 14U + (SEGMENT.intensity >> 4);
 
   for (int16_t d = -(int16_t)width; d <= (int16_t)width; d++) {
     uint16_t p = zh_wrap((uint32_t)head + d);
     uint8_t br = zh_soft((uint16_t)abs(d), width);
     if (br < 5) continue;
-    SEGMENT.setPixelColor(zh_path_led(p), zh_palette((uint16_t)(t / 120U), br));
+    SEGMENT.setPixelColor(zh_path_led(p), zh_palette((uint16_t)(t / 62U), br));
   }
 
   uint16_t echo = zh_wrap(L - head / 2U);
@@ -2502,7 +2482,7 @@ static void mode_z_echo_chamber(void)
     uint8_t br = zh_soft((uint16_t)abs(d), 11);
     br = scale8(br, 140);
     if (br < 5) continue;
-    SEGMENT.setPixelColor(zh_path_led(p), zh_palette((uint16_t)(t / 120U + 20000U), br));
+    SEGMENT.setPixelColor(zh_path_led(p), zh_palette((uint16_t)(t / 62U + 20000U), br));
   }
 }
 static const char _data_FX_MODE_Z_ECHO_CHAMBER[] PROGMEM =
@@ -2522,7 +2502,7 @@ static const char _data_FX_MODE_Z_PRISM_CASCADE[] PROGMEM =
 // Light appears to bend around two slowly moving masses, creating
 // bright arcs and dark voids that drift across the topology.
 // ---------------------------------------------------------------------------
-// Safe legacy fallback for presets referencing the four removed effects.
+// Safe legacy fallback for presets referencing the five removed effects.
 static void mode_z_retired(void) { SEGMENT.fill(SEGMENT.colors[0]); }
 
 // v5.2 retired Gravity Lens: hidden placeholder preserves historical effect ID.
@@ -2552,11 +2532,11 @@ static void mode_z_infinite_corridor(void)
   const uint16_t spacing = 55U + (SEGMENT.intensity >> 2);
 
   for (uint16_t p = 0; p < L; p++) {
-    uint16_t dist = (p + ((uint64_t)t * speed) / 4100U) % spacing;
+    uint16_t dist = (p + ((uint64_t)t * speed) / 985U) % spacing;
     uint8_t br = zh_soft(dist, spacing / 3U);
     br = qadd8(br, SEGMENT.custom1 >> 5);
     if (br < 8) continue;
-    uint16_t hue = 20000U + (uint16_t)(dist * 80U) + (uint16_t)(t / 500U);
+    uint16_t hue = 20000U + (uint16_t)(dist * 80U) + (uint16_t)(t / 165U);
     SEGMENT.setPixelColor(zh_path_led(p), zh_palette(hue, br));
   }
 }
@@ -3007,7 +2987,7 @@ class UserFxUsermod : public Usermod {
 
     // Z - Harness Visual Suite III (slow, mesmerizing, non-flashing)
 strip.addEffect(255, &mode_z_retired, _data_FX_MODE_Z_TIDAL_INTERFERENCE);
-    strip.addEffect(255, &mode_z_ember_drift, _data_FX_MODE_Z_EMBER_DRIFT);
+    strip.addEffect(255, &mode_z_retired, _data_FX_MODE_Z_EMBER_DRIFT);
     strip.addEffect(255, &mode_z_orbital_waltz, _data_FX_MODE_Z_ORBITAL_WALTZ);
 
     // Z - Harness Visual Suite IV (15 new slow cinematic effects)
@@ -3042,8 +3022,8 @@ strip.addEffect(255, &mode_z_retired, _data_FX_MODE_Z_PRISM_CASCADE);
 
   void addToJsonInfo(JsonObject& info) override {
     JsonObject status = info.createNestedObject("harnessFX");
-    status["build"] = "Harness v5.2";
-    status["harnessVersion"] = "5.2";
+    status["build"] = "Harness v5.3";
+    status["harnessVersion"] = "5.3";
     status["virtualPositions"] = CHUNCHUN_HARNESS_PATH_LEN;
     status["physicalP0LEDs"] = 34;
     status["snakeRecoveryCount"] = snakeRecoveryCount;
