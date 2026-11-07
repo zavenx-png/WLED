@@ -32,7 +32,7 @@ The gateway expects a single 3-second 16kHz 16-bit mono WAV body, authenticated 
 - Power-button startup is required after hard shutdown.
 
 ## Build
-The GitHub Actions workflow `.github/workflows/stopwatch-v17-28-build.yml` pins the official StopWatch board, M5Unified/M5GFX versions and ESP32Drop commit `92bdc1221924ca522f3ccbebbd9353612ce5b2d7`. It uses `PartitionScheme=huge_app,PSRAM=opi`. On a successful workflow run, the `StopWatch_V17_28_Art_Capsule_Ghost_32_Effects` artifact contains the binaries, editable source and gateway files. Do not flash until the workflow has succeeded; an actual device test is still required.
+The GitHub Actions workflow `.github/workflows/stopwatch-v17-28-build.yml` pins the official StopWatch board, M5Unified/M5GFX versions and ESP32Drop commit `92bdc1221924ca522f3ccbebbd9353612ce5b2d7`. It uses `PartitionScheme=huge_app,PSRAM=opi`. On a successful workflow run, the `StopWatch_V17_28_Art_Capsule_Ghost_32_Effects` artifact contains the binaries, editable source and gateway files. The artifact also includes `Mac_Flasher.sh`: run `bash Mac_Flasher.sh /dev/cu.usbmodemXXXX` after installing `python3 -m pip install esptool`. The script programs the bootloader, partition table, and application separately and does **not** write across the usual NVS (0x9000) or LittleFS partitions. As with any repartitioning, back up valuable watch settings first. Do not flash until the workflow has succeeded; an actual device test is still required.
 
 ## Boundaries and QA
 - AirDrop requires exclusive Wi-Fi radio use; stopping the receiver involves reboot. The 3 MiB cap is conservative because the existing sprite and visual engine occupy PSRAM.
