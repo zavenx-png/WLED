@@ -2295,7 +2295,12 @@ void setup(){
  Serial.printf("Framebuffer OK. Free PSRAM=%u bytes\n",(unsigned)ESP.getFreePsram());
  initArtwork();
  ArtCapsule::initialize();GhostCompanion::load();
- if(prefs.getUChar("s1728",0)!=1){prefs.putUChar("s1728",1);prefs.putUChar("eff1728",effectID);}
+ if(prefs.getUChar("s1728",0)!=1){
+   // One-time migration: retain all legacy per-effect sensitivity gains.
+   prefs.putBytes("gain1728",gainPct,sizeof(gainPct));
+   prefs.putUChar("eff1728",effectID);
+   prefs.putUChar("s1728",1);
+ }
  // V17.1: boot directly into the final effect; do not cover it with the battery HUD.
  sampleBatteryDrain(true);
  M5.BtnA.setHoldThresh(730);M5.BtnB.setHoldThresh(850);
