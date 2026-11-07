@@ -159,7 +159,9 @@ static void tap(int x,int y){
 static void tick(){
  const uint32_t now=millis();
  // IMU does not drive the bobbing: the ghost floats even when absolutely still.
- if(M5.Imu.update()){
+ if(M5.Imu.isEnabled()){
+   // Read the shared IMU sample gathered by MotionPower. Do not consume
+   // a second sample here or undermine the physical inactivity watchdog.
    const auto p=M5.Imu.getImuData();
    tiltX=tiltX*.85f+p.accel.x*.15f;
    tiltY=tiltY*.85f+p.accel.y*.15f;
