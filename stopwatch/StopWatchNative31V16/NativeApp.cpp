@@ -2220,17 +2220,21 @@ static uint8_t powerFrameCap(){
 }
 // Physical 90-second motionlessness shutoff, independent of animation.
 namespace MotionPower {
- static uint32_t lastMove=0,lastPoll=0;
+ static uint32_t lastMove=0,lastPoll=0,lastSensorAt=0;
  static float ax=0,ay=0,az=0;
  static bool calibrated=false,off=false;
- static void begin(){lastMove=millis();}
+ static void begin(){lastMove=lastSensorAt=millis();}
  static void tick(){
   uint32_t now=millis();if(now-lastPoll<50)return;lastPoll=now;
   if(M5.BtnA.isPressed()||M5.BtnB.isPressed()||touchDown
      ||(originalEffect(effectID)==68&&ArtCapsule::busy())
      ||(originalEffect(effectID)==69&&GhostCompanion::busy()))lastMove=now;
   if(!M5.Imu.isEnabled()){lastMove=now;return;}
-  if(!M5.Imu.update())return;
+  if(!M5.Imu.update()){
+    if(now-lastSensorAt>1800UL)lastMove=now; // sensor failure: never shut down on stale data
+    return;
+  }
+  lastSensorAt=now;
   auto d=M5.Imu.getImuData();
   float a=d.accel.x,b=d.accel.y,c=d.accel.z;
   if(!isfinite(a)||!isfinite(b)||!isfinite(c)){lastMove=now;return;}
