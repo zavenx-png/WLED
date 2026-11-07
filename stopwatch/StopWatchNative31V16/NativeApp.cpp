@@ -574,11 +574,11 @@ static void loadSettings(){
  const char *effectKey=hasV1717?"eff1717":(hasV1716?"eff1716":(hasV1715?"eff1715":(hasV1714?"eff1714":(hasV1712?"eff1712":(hasV178?"eff178":"effect")))));
  const char *favoriteKey=hasV1717?"fav1717":(hasV1716?"fav1716":(hasV1715?"fav1715":(hasV1714?"fav1714":(hasV1712?"fav1712":(hasV178?"fav178":"favs")))));
  const char *manualKey=hasV1717?"man1717":(hasV1716?"man1716":(hasV1715?"man1715":(hasV1714?"man1714":(hasV1712?"man1712":(hasV178?"man178":"micmodes")))));
- const char *gainKey=hasV1717?"gain1717":(hasV1716?"gain1716":(hasV1715?"gain1715":(hasV1714?"gain1714":(hasV1712?"gain1712":(hasV178?"gain178":"gains")))));
+ const char *gainKey=prefs.getUChar("s1728",0)==1?"gain1728":hasV1717?"gain1717":(hasV1716?"gain1716":(hasV1715?"gain1715":(hasV1714?"gain1714":(hasV1712?"gain1712":(hasV178?"gain178":"gains")))));
  const char *sceneStem=hasV1717?"sc1717":(hasV1716?"sc1716":(hasV1715?"sc1715":(hasV1714?"sc1714":(hasV1712?"sc1712":(hasV178?"sc178":"scn")))));
  const char *textStem=hasV1717?"t1717":(hasV1716?"t1716":(hasV1715?"t1715":(hasV1714?"t1714":(hasV1712?"t1712":(hasV178?"t178":"t")))));
 
- const uint8_t selected=mapSlot(prefs.getUChar(effectKey,0));
+ const uint8_t selected=prefs.getUChar("s1728",0)==1 ? prefs.getUChar("eff1728",0) : mapSlot(prefs.getUChar(effectKey,0));
  effectID=selected<VIS_COUNT?selected:0;
  brightness=clampi(prefs.getUChar("bright",52),8,100);
  profile=prefs.getUChar("profile",1)%3;
@@ -1255,7 +1255,8 @@ static void renderEffect(){
  const uint8_t id=originalEffect(effectID);
  if(id==64){StringTheory::render();return;}
  if(id==65||id==66){GravityLab::render(id==65);return;}
- if(id==67){BeatLab::render();return;}
+ if(id==68){ArtCapsule::render();return;}
+ if(id==69){GhostCompanion::render();return;}
  if(renderStringFestivalV1714(id))return; // original three, completely unchanged
  if(renderStringFestivalV1715(id))return; // five unchanged textile scenes
  if(renderImportedAudioV1716(id))return; // 10 imported/adapted audio faces, IDs 54..63
@@ -1986,9 +1987,12 @@ static void selectEffect(int d){
  else {
   if(originalEffect(effectID)==64)StringTheory::dismissUI();
   if(originalEffect(effectID)==65||originalEffect(effectID)==66)GravityLab::dismissUI();
-  if(originalEffect(effectID)==67)BeatLab::dismissUI();
+  const uint8_t departing=originalEffect(effectID);
+  if(departing==69 && GhostCompanion::busy())return;
   effectID=favoritesOnly&&favoriteBits?nextFavorite(effectID,d):((effectID+VIS_COUNT+d)%VIS_COUNT);
   persistEffect();
+  if(departing==68)ArtCapsule::leaveEffect();
+  if(departing==69)GhostCompanion::deactivate();
  }
 }
 static void controlButtons(){
@@ -2053,6 +2057,8 @@ static void controlButtons(){
   return;
  }
  if(M5.BtnA.isPressed()&&M5.BtnB.isPressed()&&!keyChord){
+  if(!remote && originalEffect(effectID)==68 && ArtCapsule::radioOwned){ESP.restart();return;}
+  if(!remote && originalEffect(effectID)==69){if(GhostCompanion::busy())return;GhostCompanion::deactivate();}
   keyChord=true;keyAHeld=keyBHeld=true;setRemote(!remote);
   if(remote&&!radioReady){startRadio();if(apAutoConnect)harnessApStartConnect();}
   if(!remote){if(radioReady){esp_now_deinit();radioReady=false;}
@@ -2170,9 +2176,8 @@ static void controlTouch(){
    if(originalEffect(effectID)==65||originalEffect(effectID)==66){
      if(GravityLab::touchEnd(x,y,held,dx,y-touchStartY,originalEffect(effectID)==65))return;
    }
-   if(originalEffect(effectID)==67){
-     if(BeatLab::touchEnd(x,y,held,dx,y-touchStartY))return;
-   }
+   if(originalEffect(effectID)==68){if(!ArtCapsule::radioOwned)ArtCapsule::begin();return;}
+   if(originalEffect(effectID)==69){GhostCompanion::tap(x,y);return;}
    // No swipe changes effects in V17.19. A and B own effect navigation.
    // Avoid opening the text editor accidentally after a horizontal gesture.
    if(abs(dx)>60 && abs(dx)>abs(y-touchStartY)*1.2f)return;
@@ -2197,7 +2202,8 @@ static uint8_t powerFrameCap(){
  if(originalEffect(effectID)==64)return profile==2?20:(profile==1?28:34); // improved gesture response
  if(originalEffect(effectID)==65)return profile==2?18:(profile==1?26:32); // classic FluidBox
  if(originalEffect(effectID)==66)return profile==2?18:(profile==1?27:33); // deluxe Gravity Lab
- if(originalEffect(effectID)==67)return profile==2?20:(profile==1?29:35); // Beat Laboratory
+ if(originalEffect(effectID)==68)return 12; // image stays steady; perimeter moves
+ if(originalEffect(effectID)==69)return profile==2?24:(profile==1?35:44); // bobbing ghost
  if(originalEffect(effectID)==51||originalEffect(effectID)==53)return profile==2?18:26; // smoother/faster surviving yarn effects
  if(originalEffect(effectID)>=49)return profile==2?14:20; // limit imported Nova for power
  if(!adaptiveRender)return rate;
@@ -2288,10 +2294,13 @@ void setup(){
  fb=(uint16_t*)cv.getBuffer();
  Serial.printf("Framebuffer OK. Free PSRAM=%u bytes\n",(unsigned)ESP.getFreePsram());
  initArtwork();
+ ArtCapsule::initialize();GhostCompanion::load();
+ if(prefs.getUChar("s1728",0)!=1){prefs.putUChar("s1728",1);prefs.putUChar("eff1728",effectID);}
  // V17.1: boot directly into the final effect; do not cover it with the battery HUD.
  sampleBatteryDrain(true);
  M5.BtnA.setHoldThresh(730);M5.BtnB.setHoldThresh(850);
  M5.Power.setVibration(0);
+ MotionPower::begin();
  WiFi.mode(WIFI_OFF); // radio ONLY when harness remote enabled
  if(profile==2)setCpuFrequencyMhz(160);
  Serial.printf("StopWatch Native31 built for M5StopWatch; %dx%d, effects=%u, PSRAM=%u, static assets=%u bytes\n",
@@ -2313,10 +2322,11 @@ void loop(){
  }
  if(overlay==BATTERY && (int32_t)(powerNow-batteryHudUntil)>=0)overlay=NONE;
  // Battery state and ETA are read by the 60-second sampler, not per frame.
- controlButtons();controlTouch();radioTick();harnessApTick();audioTick();beatTick();
+ controlButtons();controlTouch();MotionPower::tick();radioTick();harnessApTick();audioTick();beatTick();
  if(!remote && overlay==NONE && (originalEffect(effectID)==65||originalEffect(effectID)==66))
     GravityLab::tick(millis(),originalEffect(effectID)==65);
- if(!remote && overlay==NONE && originalEffect(effectID)==67)BeatLab::tick(millis());
+ if(!remote && overlay==NONE && originalEffect(effectID)==68)ArtCapsule::tick();
+ if(!remote && overlay==NONE && originalEffect(effectID)==69)GhostCompanion::tick();
  uint32_t now=millis();
  // V17.24: always-on display in both visualizer and harness modes.
  // Removed the remote idle blanker entirely; no automatic brightness-to-zero.
