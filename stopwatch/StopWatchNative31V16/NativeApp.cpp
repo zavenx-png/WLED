@@ -22,7 +22,7 @@
 #undef sq
 #endif
 
-constexpr uint8_t VIS_COUNT=31, Z_COUNT=28, REMOTE_PAGES=6;
+constexpr uint8_t VIS_COUNT=32, Z_COUNT=28, REMOTE_PAGES=6;
 constexpr int NFFT=512, FS=16000, NBANDS=32;
 constexpr float PI_F=3.14159265358979323846f, TAU=6.28318530717958647692f;
 static const char *const EFFECT_NAMES[VIS_COUNT] = {
@@ -56,9 +56,10 @@ static const char *const EFFECT_NAMES[VIS_COUNT] = {
  "String Theory",
  "FluidBox Classic",
  "Gravity Lab",
- "Beat Laboratory"
+ "AirDrop Art Capsule",
+ "Ghost Companion"
 };
-static constexpr uint8_t ORIGINAL_EFFECT_ID[VIS_COUNT]={23,22,20,4,24,29,30,1,2,3,6,7,8,9,10,11,12,13,17,19,25,26,27,44,51,53,63,64,65,66,67};
+static constexpr uint8_t ORIGINAL_EFFECT_ID[VIS_COUNT]={23,22,20,4,24,29,30,1,2,3,6,7,8,9,10,11,12,13,17,19,25,26,27,44,51,53,63,64,65,66,68,69};
 static inline uint8_t originalEffect(uint8_t i);
 // V12 presentation order -> V13, prior to the two V16.8 effect removals.
 static constexpr uint8_t V12_INDEX_TO_V13[31]={9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,0,1,2,3,4,5,6,7,8,28,29,30};
@@ -291,7 +292,7 @@ static void loadScene(uint8_t slot){
  remoteIntensity=v.intensity;remoteSelected=clampi(v.remoteFx,0,Z_COUNT+WLED_COUNT-1);
  adaptiveRender=v.adaptive!=0;remoteIdleSecs=0;favoritesOnly=false;
  prefs.putUChar("eff1717",effectID);prefs.putUChar("bright",brightness);prefs.putUChar("profile",profile);
- prefs.putBool("adaptive",adaptiveRender);prefs.putUChar("idle",remoteIdleSecs);prefs.putBytes("gain1717",gainPct,sizeof(gainPct));
+ prefs.putBool("adaptive",adaptiveRender);prefs.putUChar("idle",remoteIdleSecs);prefs.putBytes("gain1728",gainPct,sizeof(gainPct));
  storeLibrary();saveNames();M5.Display.setBrightness((uint8_t)(brightness*255/100));
  // No automatic transmissions from a recalled scene: avoid unexpected harness changes.
  if(!remote)setCpuFrequencyMhz(profile==2?160:240);
@@ -413,7 +414,7 @@ static void registerOnset(uint32_t now){
 // expansions; wave: the oscilloscope trace. Rendering functions are unchanged.
 enum AutoMicType : uint8_t {MIC_FIXED=0,MIC_SPECTRUM=1,MIC_BASS=2,MIC_ENERGY=3,MIC_WAVE=4};
 static constexpr uint8_t AUTO_MIC_TYPES[VIS_COUNT]={
- MIC_SPECTRUM, MIC_ENERGY, MIC_ENERGY, MIC_WAVE, MIC_BASS, MIC_ENERGY, MIC_ENERGY, MIC_SPECTRUM, MIC_ENERGY, MIC_ENERGY, MIC_SPECTRUM, MIC_SPECTRUM, MIC_WAVE, MIC_ENERGY, MIC_ENERGY, MIC_ENERGY, MIC_BASS, MIC_BASS, MIC_SPECTRUM, MIC_ENERGY, MIC_ENERGY, MIC_SPECTRUM, MIC_BASS, MIC_FIXED, MIC_BASS, MIC_ENERGY, MIC_SPECTRUM, MIC_ENERGY, MIC_FIXED, MIC_ENERGY, MIC_SPECTRUM
+ MIC_SPECTRUM, MIC_ENERGY, MIC_ENERGY, MIC_WAVE, MIC_BASS, MIC_ENERGY, MIC_ENERGY, MIC_SPECTRUM, MIC_ENERGY, MIC_ENERGY, MIC_SPECTRUM, MIC_SPECTRUM, MIC_WAVE, MIC_ENERGY, MIC_ENERGY, MIC_ENERGY, MIC_BASS, MIC_BASS, MIC_SPECTRUM, MIC_ENERGY, MIC_ENERGY, MIC_SPECTRUM, MIC_BASS, MIC_FIXED, MIC_BASS, MIC_ENERGY, MIC_SPECTRUM, MIC_ENERGY, MIC_FIXED, MIC_ENERGY, MIC_FIXED, MIC_FIXED
 };
 static_assert(sizeof(AUTO_MIC_TYPES)/sizeof(AUTO_MIC_TYPES[0])==VIS_COUNT,"auto mic profile count");
 static constexpr float AUTO_MIC_TARGET=.80f;
@@ -489,7 +490,6 @@ static void adaptMicSensitivity(float rms,float spectrum,float lowBass,float wav
  // No Preferences writes in the audio callback, so no extra flash wear.
 }
 
-#include "assets/BeatLabDSP.h"
 static void processMic(){
  float power=0,powerBass=0,powerMid=0,powerHi=0;
  float strongest[5]={},ungainedBass=0,rawWave=0;
@@ -521,11 +521,10 @@ static void processMic(){
  flux=fmaxf(0,bass-oldBass);oldBass=smooth(oldBass,bass,.075f);
  kick=smooth(kick,clampf(flux*2.5f+bass*.28f),.4f);
  uint32_t now=millis();if(flux>.042f && bass>.105f && now-beatStamp>260)registerOnset(now);
- if(originalEffect(effectID)==67)BeatLabDSP::engine.consume(bins,bass,mids,highs,energy,now);
  haveSamples=true;micStamp=now;
 }
 static void audioTick(){
- if(remote || (originalEffect(effectID)>=41 && originalEffect(effectID)<=48) || !M5.Mic.isEnabled())return; // old three stay time-only; five new effects optionally react to music
+  if(remote || originalEffect(effectID)>=68 || (originalEffect(effectID)>=41 && originalEffect(effectID)<=48) || !M5.Mic.isEnabled())return;
  if(pendingMic){if(!M5.Mic.isRecording()){pendingMic=false;processMic();}}
  else pendingMic=M5.Mic.record(pcm,NFFT,FS);
 }
@@ -655,7 +654,7 @@ static void loadSettings(){
   prefs.putUChar("eff1717",effectID);
   prefs.putBytes("fav1717",&favoriteBits,sizeof(favoriteBits));
   prefs.putBytes("man1717",&micManualMask,sizeof(micManualMask));
-  prefs.putBytes("gain1717",gainPct,sizeof(gainPct));
+  prefs.putBytes("gain1728",gainPct,sizeof(gainPct));
   for(uint8_t i=0;i<VIS_COUNT;i++)if(isTextEffect(i))
    prefs.putString((String("t1717")+String(i)).c_str(),userText[i]);
   for(uint8_t j=0;j<4;j++)if(scenes[j].magic==SCENE_MAGIC)
@@ -666,7 +665,7 @@ static void loadSettings(){
  effectID=0;
  micGain=gainPct[effectID]/100.f;
 }
-static void persistEffect(){prefs.putUChar("eff1717",effectID);micGain=gainPct[effectID]/100.f;}
+static void persistEffect(){prefs.putUChar("eff1728",effectID);if(effectID<30)prefs.putUChar("eff1717",effectID);micGain=gainPct[effectID]/100.f;}
 static void radioSend(uint8_t cmd,uint8_t value){
  if(!radioReady)return;
  uint32_t seq=++remoteSeq;uint8_t payload[12]={'Z','H','R','1',1,cmd,value,0,
@@ -1250,7 +1249,8 @@ static void drawCinematic(uint8_t id){
 #include "assets/ImportedAudioFXV1716.h"
 #include "assets/StringTheoryV1719.h"
 #include "assets/GravityLabV1720.h"
-#include "assets/BeatLabV1721.h"
+#include "assets/ArtCapsuleV1728.h"
+#include "assets/GhostCompanionV1728.h"
 static void renderEffect(){
  const uint8_t id=originalEffect(effectID);
  if(id==64){StringTheory::render();return;}
@@ -2096,7 +2096,6 @@ static void controlTouch(){
    touchDown=true;
    if(overlay==NONE&&!remote&&originalEffect(effectID)==64)StringTheory::touchStart(touch.x,touch.y);
    if(overlay==NONE&&!remote&&(originalEffect(effectID)==65||originalEffect(effectID)==66))GravityLab::touchStart(touch.x,touch.y,originalEffect(effectID)==65);
-   if(overlay==NONE&&!remote&&originalEffect(effectID)==67)BeatLab::touchStart(touch.x,touch.y);
    nameTouchXSum=touch.x;nameTouchYSum=touch.y;nameTouchSamples=1;
    remoteTouchXSum=touch.x;remoteTouchYSum=touch.y;remoteTouchSamples=1;
    nameDeleteConsumed=false;
@@ -2126,7 +2125,6 @@ static void controlTouch(){
    }
    if(overlay==NONE&&!remote&&originalEffect(effectID)==64)StringTheory::touchMove(touch.x,touch.y);
    if(overlay==NONE&&!remote&&(originalEffect(effectID)==65||originalEffect(effectID)==66))GravityLab::touchMove(touch.x,touch.y,originalEffect(effectID)==65);
-   if(overlay==NONE&&!remote&&originalEffect(effectID)==67)BeatLab::touchMove(touch.x,touch.y);
    if((overlay==NAME||overlay==AP_PASSWORD) && !nameDeleteConsumed){
      // Compute ONE mean contact center across this entire physical press.
      // Ignore simultaneous / adjacent key edges, not the touch centroid.
@@ -2213,6 +2211,35 @@ static uint8_t powerFrameCap(){
  if(factor==100)for(uint8_t v:medium)if(originalEffect(effectID)==v){factor=82;break;}
  if(energy<.11f&&factor<100)factor=(uint8_t)(factor*0.84f);
  return clampi((rate*factor+50)/100,14,rate);
+}
+// Physical 90-second motionlessness shutoff, independent of animation.
+namespace MotionPower {
+ static uint32_t lastMove=0,lastPoll=0;
+ static float ax=0,ay=0,az=0;
+ static bool calibrated=false,off=false;
+ static void begin(){lastMove=millis();}
+ static void tick(){
+  uint32_t now=millis();if(now-lastPoll<50)return;lastPoll=now;
+  if(M5.BtnA.isPressed()||M5.BtnB.isPressed()||touchDown
+     ||(originalEffect(effectID)==68&&ArtCapsule::busy())
+     ||(originalEffect(effectID)==69&&GhostCompanion::busy()))lastMove=now;
+  if(!M5.Imu.isEnabled()){lastMove=now;return;}
+  if(!M5.Imu.update())return;
+  auto d=M5.Imu.getImuData();
+  float a=d.accel.x,b=d.accel.y,c=d.accel.z;
+  if(!isfinite(a)||!isfinite(b)||!isfinite(c)){lastMove=now;return;}
+  if(!calibrated){ax=a;ay=b;az=c;calibrated=true;lastMove=now;return;}
+  float delta=fabsf(a-ax)+fabsf(b-ay)+fabsf(c-az);
+  ax=ax*.88f+a*.12f;ay=ay*.88f+b*.12f;az=az*.88f+c*.12f;
+  float spin=fabsf(d.gyro.x)+fabsf(d.gyro.y)+fabsf(d.gyro.z);
+  if(delta>.039f||spin>1.8f)lastMove=now;
+  if(!off && (uint32_t)(now-lastMove)>=90000UL){
+   off=true;Serial.println("Powering down after 90s motionless");
+   M5.Power.setVibration(0);M5.Mic.end();M5.Speaker.end();
+   M5.Display.fillScreen(TFT_BLACK);M5.Power.powerOff();
+   while(true)delay(1000);
+  }
+ }
 }
 static void renderFrame(){
  if(overlay!=NONE)renderOverlay();else if(remote)renderRemote();else renderEffect();
