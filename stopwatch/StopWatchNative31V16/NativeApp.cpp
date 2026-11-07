@@ -23,7 +23,7 @@
 #endif
 
 constexpr uint8_t VIS_COUNT=32, Z_COUNT=28, REMOTE_PAGES=6;
-constexpr int NFFT=512, FS=16000, NBANDS=32;
+constexpr int NFFT=512, MIC_SAMPLE_RATE=16000, NBANDS=32;
 constexpr float PI_F=3.14159265358979323846f, TAU=6.28318530717958647692f;
 static const char *const EFFECT_NAMES[VIS_COUNT] = {
  "zaven Chromatic EQ",
@@ -526,7 +526,7 @@ static void processMic(){
 static void audioTick(){
   if(remote || originalEffect(effectID)>=68 || (originalEffect(effectID)>=41 && originalEffect(effectID)<=48) || !M5.Mic.isEnabled())return;
  if(pendingMic){if(!M5.Mic.isRecording()){pendingMic=false;processMic();}}
- else pendingMic=M5.Mic.record(pcm,NFFT,FS);
+ else pendingMic=M5.Mic.record(pcm,NFFT,MIC_SAMPLE_RATE);
 }
 static void beatTick(){static uint32_t last=0;uint32_t now=millis();if(!last){last=now;return;}uint32_t d=now-last;last=now;
  beatClock+=clampf(d*.001f,0,.05f)*bpm/60.f;
@@ -2252,7 +2252,7 @@ static void renderFrame(){
  cv.pushSprite(0,0);
 }
 void setup(){
- Serial.begin(115200);auto cfg=M5.config();cfg.internal_mic=true;cfg.internal_imu=true;cfg.internal_spk=false;
+ Serial.begin(115200);auto cfg=M5.config();cfg.internal_mic=true;cfg.internal_imu=true;cfg.internal_spk=true;
  M5.begin(cfg);
  // V17.27: Switch OFF the green power LED while the StopWatch is running.
  // The LED is controlled by M5PM1 (I2C addr 0x6E), not an ESP32 GPIO.
