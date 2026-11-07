@@ -59,11 +59,13 @@ jobs:
           cp stopwatch/V17_28_README.md compiled/Editable_Source/
           printf 'ESP32Drop pinned SHA: 92bdc1221924ca522f3ccbebbd9353612ce5b2d7\n' > compiled/THIRD_PARTY_VERSION.txt
           (cd compiled && sha256sum *.bin > SHA256SUMS.txt)
+          cp stopwatch/Mac_Flasher_V17_28.sh compiled/Mac_Flasher.sh
       - uses: actions/upload-artifact@v4
         with:
           name: StopWatch_V17_28_Art_Capsule_Ghost_32_Effects
           path: |
             compiled/*.bin
+            compiled/*.sh
             compiled/*.txt
             compiled/Editable_Source/
           if-no-files-found: error
