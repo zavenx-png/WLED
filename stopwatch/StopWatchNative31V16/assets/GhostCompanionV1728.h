@@ -64,9 +64,9 @@ static void startPortal(){
  if(phase==PORTAL)return;
  if(phase==RECORDING||phase==REQUESTING||phase==PLAYBACK)return;
  WiFi.disconnect(true,false);
- uint32_t suffix=(uint32_t)(ESP.getEfuseMac()&0xffffff);
- char code[16];snprintf(code,sizeof(code),"ghost%06X",(unsigned)suffix);
- apPass=code;
+ uint32_t r0=esp_random(),r1=esp_random();
+ char code[25];snprintf(code,sizeof(code),"Ghost-%08lX%08lX",(unsigned long)r0,(unsigned long)r1);
+ apPass=code;joinedAt=0;
  WiFi.mode(WIFI_AP);
  if(!WiFi.softAP("ZAVEN-GHOST",apPass.c_str())){phase=FAILURE;status="Hotspot failed";return;}
  server.on("/",HTTP_GET,[](){server.send(200,"text/html; charset=utf-8",portalPage());});
@@ -185,8 +185,10 @@ static void tick(){
    }
  }else if(phase==PLAYBACK && replySamples){
    M5.Mic.end();M5.Speaker.begin();
-   M5.Speaker.playRaw(reply,replySamples,24000,false,1,0);
-   replySamples=0; // speaker owns an internal copy if implementation supports playRaw
+   if(!M5.Speaker.playRaw(reply,replySamples,24000,false,1,0)){
+     status="Speaker playback failed";phase=FAILURE;M5.Speaker.end();M5.Mic.begin();return;
+   }
+   replySamples=0; // M5Unified borrows reply PCM memory; keep until playback completes
    status="Speaking"; // finish is observed in next pass
  }else if(phase==PLAYBACK && !M5.Speaker.isPlaying()){
    M5.Speaker.end();M5.Mic.begin();phase=READY;status="Tap to talk";
