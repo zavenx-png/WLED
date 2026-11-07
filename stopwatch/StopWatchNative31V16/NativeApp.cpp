@@ -291,7 +291,7 @@ static void loadScene(uint8_t slot){
  selectedPalette=clampi(v.palette,0,PAL_COUNT-1);remoteBrightness=v.harnessBrightness;remoteSpeed=v.speed;
  remoteIntensity=v.intensity;remoteSelected=clampi(v.remoteFx,0,Z_COUNT+WLED_COUNT-1);
  adaptiveRender=v.adaptive!=0;remoteIdleSecs=0;favoritesOnly=false;
- prefs.putUChar("eff1717",effectID);prefs.putUChar("bright",brightness);prefs.putUChar("profile",profile);
+ prefs.putUChar("eff1728",effectID);if(effectID<30)prefs.putUChar("eff1717",effectID);prefs.putUChar("bright",brightness);prefs.putUChar("profile",profile);
  prefs.putBool("adaptive",adaptiveRender);prefs.putUChar("idle",remoteIdleSecs);prefs.putBytes("gain1728",gainPct,sizeof(gainPct));
  storeLibrary();saveNames();M5.Display.setBrightness((uint8_t)(brightness*255/100));
  // No automatic transmissions from a recalled scene: avoid unexpected harness changes.
@@ -570,7 +570,7 @@ static void loadSettings(){
   if(remapToV178)slot=toV178Effect(slot,sortVersion);
   return toV1717Index(toV1714Index(slot,hasV1712));
  };
- const int sourceCount=hasV1717?30:(hasV1716?41:(hasV1715?31:(hasV1714?26:(hasV1712?33:(remapToV178?31:23)))));
+ const int sourceCount=prefs.getUChar("s1728",0)==1?32:(hasV1717?30:(hasV1716?41:(hasV1715?31:(hasV1714?26:(hasV1712?33:(remapToV178?31:23))))));
  const char *effectKey=hasV1717?"eff1717":(hasV1716?"eff1716":(hasV1715?"eff1715":(hasV1714?"eff1714":(hasV1712?"eff1712":(hasV178?"eff178":"effect")))));
  const char *favoriteKey=hasV1717?"fav1717":(hasV1716?"fav1716":(hasV1715?"fav1715":(hasV1714?"fav1714":(hasV1712?"fav1712":(hasV178?"fav178":"favs")))));
  const char *manualKey=hasV1717?"man1717":(hasV1716?"man1716":(hasV1715?"man1715":(hasV1714?"man1714":(hasV1712?"man1712":(hasV178?"man178":"micmodes")))));
