@@ -208,7 +208,7 @@ static const String DEFAULT_WORD="zaven";
 enum Overlay : uint8_t {NONE,NAME,BRIGHTNESS,RHYTHM,BATTERY,AP_PASSWORD};
 Overlay overlay=NONE;
 String inputName="";uint8_t robotField=0;
-bool nameRobotBlueEdited=false,nameRobotPinkEdited=false,nameDeleteConsumed=false;
+bool nameRobotBlueEdited=false,nameRobotPinkEdited=false,nameTouchCommitted=false;
 int remoteTouchXSum=0,remoteTouchYSum=0,remoteTouchSamples=0;
 String keyboardPopup="";int keyboardPopupX=0,keyboardPopupY=0;
 uint32_t keyboardPopupUntil=0,keyboardPopupStarted=0,brightnessRepeatAt=0;
@@ -1957,7 +1957,7 @@ static bool nameEditorPress(int x,int y){
 static void checkNameEditorIdle(){
  if(overlay!=NAME)return;
  // Do not close in the middle of a held finger press.
- if(!touchDown && (uint32_t)(millis()-nameLastInputMs)>=NAME_IDLE_MS){
+ if((!touchDown||M5.Touch.getCount()==0) && (uint32_t)(millis()-nameLastInputMs)>=NAME_IDLE_MS){
   cancelNameOverlay();
  }
 }
@@ -2203,10 +2203,10 @@ static void controlTouch(){
    if(overlay==NONE&&!remote&&(originalEffect(effectID)==65||originalEffect(effectID)==66))GravityLab::touchStart(touch.x,touch.y,originalEffect(effectID)==65);
    nameTouchXSum=touch.x;nameTouchYSum=touch.y;nameTouchSamples=1;
    remoteTouchXSum=touch.x;remoteTouchYSum=touch.y;remoteTouchSamples=1;
-   nameDeleteConsumed=false;
+   nameTouchCommitted=false;
    if(overlay==NAME){
      // Commit a letter/control on initial touch, not delayed release.
-     nameDeleteConsumed=nameEditorPress(touch.x,touch.y);
+     nameTouchCommitted=nameEditorPress(touch.x,touch.y);
    }
  }
  if(touch.isPressed()&&touchDown){
@@ -2222,10 +2222,10 @@ static void controlTouch(){
    }
    if(overlay==NONE&&!remote&&originalEffect(effectID)==64)StringTheory::touchMove(touch.x,touch.y);
    if(overlay==NONE&&!remote&&(originalEffect(effectID)==65||originalEffect(effectID)==66))GravityLab::touchMove(touch.x,touch.y,originalEffect(effectID)==65);
-   if(overlay==NAME && !nameDeleteConsumed && (uint32_t)(millis()-touchStart)>=22){
+   if(overlay==NAME && !nameTouchCommitted && (uint32_t)(millis()-touchStart)>=22){
      // One retry after contact stabilizes recovers taps starting on the glass edge.
      // Exactly one action per physical press, including DELETE and page change.
-     nameDeleteConsumed=nameEditorPress(touch.x,touch.y);
+     nameTouchCommitted=nameEditorPress(touch.x,touch.y);
    }
    if(overlay==AP_PASSWORD){
      // Preserve the separate harness password editor's long-press behavior.
@@ -2236,10 +2236,11 @@ static void controlTouch(){
    // A physical contact can report both wasClicked and wasReleased across
    // frames. Commit exactly once, then discard any duplicate event.
    if(!touchDown)return;
-   if(overlay==NAME&&nameDeleteConsumed){
+   if(overlay==NAME&&nameTouchCommitted){
      // The key/control was already processed on finger down; never repeat it.
-     touchDown=false;nameTouchSamples=0;nameDeleteConsumed=false;
-     keyboardPopup="";return;
+     touchDown=false;nameTouchSamples=0;nameTouchCommitted=false;
+     // Keep the 285ms letter confirmation visible after the finger lifts.
+     return;
    }
    uint32_t held=millis()-touchStart;
    int x=touchLastX,y=touchLastY;
