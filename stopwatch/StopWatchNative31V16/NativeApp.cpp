@@ -208,7 +208,7 @@ static const String DEFAULT_WORD="zaven";
 enum Overlay : uint8_t {NONE,NAME,BRIGHTNESS,RHYTHM,BATTERY,AP_PASSWORD};
 Overlay overlay=NONE;
 String inputName="";uint8_t robotField=0;
-bool nameRobotBlueEdited=false,nameRobotPinkEdited=false,nameTouchCommitted=false;
+bool nameRobotBlueEdited=false,nameRobotPinkEdited=false;
 int remoteTouchXSum=0,remoteTouchYSum=0,remoteTouchSamples=0;
 String keyboardPopup="";int keyboardPopupX=0,keyboardPopupY=0;
 uint32_t keyboardPopupUntil=0,keyboardPopupStarted=0,brightnessRepeatAt=0;
@@ -2051,7 +2051,7 @@ static void editorTouch(int x,int y){
  }else if(overlay==AP_PASSWORD){
    harnessApPasswordTouch(x,y);
  }else if(overlay==NAME){
-   // Fallback for an initially unrecognized contact; normal keys commit on press.
+   // Name-key presses commit once at finger release using the mean touch position.
    nameEditorCommit(x,y);
  }
 }
@@ -2179,7 +2179,6 @@ static void controlTouch(){
    if(overlay==NONE&&!remote&&(originalEffect(effectID)==65||originalEffect(effectID)==66))GravityLab::touchStart(touch.x,touch.y,originalEffect(effectID)==65);
    nameTouchXSum=touch.x;nameTouchYSum=touch.y;nameTouchSamples=1;
    remoteTouchXSum=touch.x;remoteTouchYSum=touch.y;remoteTouchSamples=1;
-   nameTouchCommitted=false;
    if(overlay==NAME)keyboardPopup="";
  }
  if(touch.isPressed()&&touchDown){
