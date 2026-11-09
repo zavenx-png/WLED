@@ -22,10 +22,10 @@
 #undef sq
 #endif
 
-constexpr uint8_t VIS_COUNT=38, Z_COUNT=28, REMOTE_PAGES=6;
+constexpr uint8_t VIS_COUNT=26, Z_COUNT=28, REMOTE_PAGES=6;
 constexpr int NFFT=512, MIC_SAMPLE_RATE=16000, NBANDS=32;
 constexpr float PI_F=3.14159265358979323846f, TAU=6.28318530717958647692f;
-static const char *const EFFECT_NAMES[VIS_COUNT] = {
+static const char *const EFFECT_NAMES[VIS_COUNT]={
  "zaven Chromatic EQ",
  "Robot Shuffle",
  "Warehouse House Duo",
@@ -34,38 +34,29 @@ static const char *const EFFECT_NAMES[VIS_COUNT] = {
  "zaven Electric Aurora",
  "zaven Flowing Halo",
  "Prism EQ",
- "Psychedelic Bloom",
  "Vapor Scope",
  "Frequency Towers",
  "Radial Spectrum",
  "Heartbeat Neon",
  "Round Resonator",
  "Kaleidoscope Reactor",
- "Fibonacci Sunflower",
  "Infinity Tunnel",
  "Cymatic Mandala",
  "Orbital Harmonics",
- "Nebula Particles",
  "zaven Kaleidoscope",
  "zaven Round Resonator",
  "zaven Fibonacci Spiral",
- "Warp Drive Loom",
- "Spiral Spindle",
- "Tidal Cable Knit",
  "Spike Ball Nova (variant)",
  "String Theory",
  "FluidBox Classic",
- "Gravity Lab",
- "AirDrop Art Capsule",
- "Ghost Companion",
- "Warehouse Disco Duo",
- "Prism Drop",
- "Silver Lightwell",
  "Neon Helix Chamber",
  "Ultraviolet Reactor",
  "Disco Stargate"
 };
-static constexpr uint8_t ORIGINAL_EFFECT_ID[VIS_COUNT]={23,22,20,4,24,29,30,1,2,3,6,7,8,9,10,11,12,13,17,19,25,26,27,44,51,53,63,64,65,66,68,69,70,71,72,73,74,75};
+static constexpr uint8_t ORIGINAL_EFFECT_ID[VIS_COUNT]={23,22,20,4,24,29,30,1,3,6,7,8,9,10,12,13,17,25,26,27,63,64,65,73,74,75};
+// Map the 38 old slots to the 26 retained positions; 0xff means removed.
+static constexpr uint8_t V1731_TO_V1732[38]={0,1,2,3,4,5,6,7,0xff,8,9,10,11,12,13,0xff,14,15,16,0xff,17,18,19,0xff,0xff,0xff,20,21,22,0xff,0xff,0xff,0xff,0xff,0xff,23,24,25};
+static inline uint8_t remapV1731Slot(uint8_t slot){return slot<38?V1731_TO_V1732[slot]:0xff;}
 static inline uint8_t originalEffect(uint8_t i);
 // V12 presentation order -> V13, prior to the two V16.8 effect removals.
 static constexpr uint8_t V12_INDEX_TO_V13[31]={9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,0,1,2,3,4,5,6,7,8,28,29,30};
@@ -425,8 +416,7 @@ static void registerOnset(uint32_t now){
 // expansions; wave: the oscilloscope trace. Rendering functions are unchanged.
 enum AutoMicType : uint8_t {MIC_FIXED=0,MIC_SPECTRUM=1,MIC_BASS=2,MIC_ENERGY=3,MIC_WAVE=4};
 static constexpr uint8_t AUTO_MIC_TYPES[VIS_COUNT]={
- MIC_SPECTRUM, MIC_ENERGY, MIC_ENERGY, MIC_WAVE, MIC_BASS, MIC_ENERGY, MIC_ENERGY, MIC_SPECTRUM, MIC_ENERGY, MIC_ENERGY, MIC_SPECTRUM, MIC_SPECTRUM, MIC_WAVE, MIC_ENERGY, MIC_ENERGY, MIC_ENERGY, MIC_BASS, MIC_BASS, MIC_SPECTRUM, MIC_ENERGY, MIC_ENERGY, MIC_SPECTRUM, MIC_BASS, MIC_FIXED, MIC_BASS, MIC_ENERGY, MIC_SPECTRUM, MIC_ENERGY, MIC_FIXED, MIC_ENERGY, MIC_FIXED, MIC_FIXED, MIC_ENERGY,
- MIC_FIXED, MIC_FIXED, MIC_FIXED, MIC_FIXED, MIC_FIXED
+ MIC_SPECTRUM, MIC_ENERGY, MIC_ENERGY, MIC_WAVE, MIC_BASS, MIC_ENERGY, MIC_ENERGY, MIC_SPECTRUM, MIC_ENERGY, MIC_SPECTRUM, MIC_SPECTRUM, MIC_WAVE, MIC_ENERGY, MIC_ENERGY, MIC_BASS, MIC_BASS, MIC_SPECTRUM, MIC_ENERGY, MIC_SPECTRUM, MIC_BASS, MIC_SPECTRUM, MIC_ENERGY, MIC_FIXED, MIC_FIXED, MIC_FIXED, MIC_FIXED
 };
 static_assert(sizeof(AUTO_MIC_TYPES)/sizeof(AUTO_MIC_TYPES[0])==VIS_COUNT,"auto mic profile count");
 static constexpr float AUTO_MIC_TARGET=.80f;
@@ -1288,15 +1278,11 @@ static void drawCinematic(uint8_t id){
 #include "assets/ImportedAudioFXV1716.h"
 #include "assets/StringTheoryV1719.h"
 #include "assets/GravityLabV1720.h"
-#include "assets/ArtCapsuleV1728.h"
-#include "assets/GhostCompanionV1728.h"
 #include "assets/InfinityMirrorV1731.h"
 static void renderEffect(){
  const uint8_t id=originalEffect(effectID);
  if(id==64){StringTheory::render();return;}
  if(id==65||id==66){GravityLab::render(id==65);return;}
- if(id==68){ArtCapsule::render();return;}
- if(id==69){GhostCompanion::render();return;}
  if(id>=71&&id<=75){InfinityMirrorV1731::render(id-71);return;}
  if(renderStringFestivalV1714(id))return; // original three, completely unchanged
  if(renderStringFestivalV1715(id))return; // five unchanged textile scenes
@@ -2071,11 +2057,8 @@ static void selectEffect(int d){
   if(originalEffect(effectID)==64)StringTheory::dismissUI();
   if(originalEffect(effectID)==65||originalEffect(effectID)==66)GravityLab::dismissUI();
   const uint8_t departing=originalEffect(effectID);
-  if(departing==69 && GhostCompanion::busy())return;
   effectID=favoritesOnly&&favoriteBits?nextFavorite(effectID,d):((effectID+VIS_COUNT+d)%VIS_COUNT);
   persistEffect();
-  if(departing==68)ArtCapsule::leaveEffect();
-  if(departing==69)GhostCompanion::deactivate();
  }
 }
 static void controlButtons(){
@@ -2140,8 +2123,6 @@ static void controlButtons(){
   return;
  }
  if(M5.BtnA.isPressed()&&M5.BtnB.isPressed()&&!keyChord){
-  if(!remote && originalEffect(effectID)==68 && ArtCapsule::radioOwned){ESP.restart();return;}
-  if(!remote && originalEffect(effectID)==69){if(GhostCompanion::busy())return;GhostCompanion::deactivate();}
   keyChord=true;keyAHeld=keyBHeld=true;setRemote(!remote);
   if(remote&&!radioReady){startRadio();if(apAutoConnect)harnessApStartConnect();}
   if(!remote){if(radioReady){esp_now_deinit();radioReady=false;}
@@ -2245,8 +2226,6 @@ static void controlTouch(){
    if(originalEffect(effectID)==65||originalEffect(effectID)==66){
      if(GravityLab::touchEnd(x,y,held,dx,y-touchStartY,originalEffect(effectID)==65))return;
    }
-   if(originalEffect(effectID)==68){if(!ArtCapsule::radioOwned)ArtCapsule::begin();return;}
-   if(originalEffect(effectID)==69){GhostCompanion::tap(x,y);return;}
    // No swipe changes effects in V17.19. A and B own effect navigation.
    // Avoid opening the text editor accidentally after a horizontal gesture.
    if(abs(dx)>60 && abs(dx)>abs(y-touchStartY)*1.2f)return;
@@ -2297,9 +2276,7 @@ namespace MotionPower {
  static void begin(){lastMove=lastSensorAt=millis();}
  static void tick(){
   uint32_t now=millis();if(now-lastPoll<50)return;lastPoll=now;
-  if(M5.BtnA.isPressed()||M5.BtnB.isPressed()||touchDown
-     ||(originalEffect(effectID)==68&&ArtCapsule::busy())
-     ||(originalEffect(effectID)==69&&GhostCompanion::busy()))lastMove=now;
+  if(M5.BtnA.isPressed()||M5.BtnB.isPressed()||touchDown)lastMove=now;
   if(!M5.Imu.isEnabled()){lastMove=now;return;}
   if(!M5.Imu.update()){
     if(now-lastSensorAt>1800UL)lastMove=now; // sensor failure: never shut down on stale data
@@ -2369,7 +2346,6 @@ void setup(){
  fb=(uint16_t*)cv.getBuffer();
  Serial.printf("Framebuffer OK. Free PSRAM=%u bytes\n",(unsigned)ESP.getFreePsram());
  initArtwork();
- ArtCapsule::initialize();GhostCompanion::load();
  if(prefs.getUChar("s1728",0)!=1){
    // One-time migration: retain all legacy per-effect sensitivity gains.
    prefs.putBytes("gain1728",gainPct,sizeof(gainPct));
@@ -2417,8 +2393,6 @@ void loop(){
  MotionPower::tick();radioTick();harnessApTick();audioTick();beatTick();
  if(!remote && overlay==NONE && (originalEffect(effectID)==65||originalEffect(effectID)==66))
     GravityLab::tick(millis(),originalEffect(effectID)==65);
- if(!remote && overlay==NONE && originalEffect(effectID)==68)ArtCapsule::tick();
- if(!remote && overlay==NONE && originalEffect(effectID)==69)GhostCompanion::tick();
  uint32_t now=millis();
  // V17.24: always-on display in both visualizer and harness modes.
  // Removed the remote idle blanker entirely; no automatic brightness-to-zero.
