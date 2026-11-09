@@ -19,6 +19,7 @@ jobs:
           import re
           s=Path('stopwatch/StopWatchNative31V16/NativeApp.cpp').read_text()
           names=['zaven Chromatic EQ','Robot Shuffle','Warehouse House Duo','Matrix Phosphor','zaven Psychedelic Halo','zaven Electric Aurora','zaven Flowing Halo','Prism EQ','Vapor Scope','Frequency Towers','Radial Spectrum','Heartbeat Neon','Round Resonator','Kaleidoscope Reactor','Infinity Tunnel','Cymatic Mandala','Orbital Harmonics','zaven Kaleidoscope','zaven Round Resonator','zaven Fibonacci Spiral','Spike Ball Nova (variant)','String Theory','FluidBox Classic','Neon Helix Chamber','Ultraviolet Reactor','Disco Stargate']
+          assert Path('stopwatch/V17_32_README.md').exists()
           assert 'VIS_COUNT=26' in s
           menu=s.split('static const char *const EFFECT_NAMES[VIS_COUNT]')[1].split('};')[0]
           actual=re.findall(r'"([^"]+)"',menu)
