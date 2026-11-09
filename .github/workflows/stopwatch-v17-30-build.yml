@@ -1,0 +1,101 @@
+name: Build V17.30 Keyboard UX Auto Cancel
+on:
+  push:
+    branches:
+      - stopwatch-v17-30-keyboard-ux-idle8
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build-firmware:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check 33 effects, large-key geometry, touch latency and timeout safety
+        run: |
+          python3 -m py_compile stopwatch/ghost_gateway/main.py
+          python3 - <<'PY'
+          from pathlib import Path
+          s=Path('stopwatch/StopWatchNative31V16/NativeApp.cpp').read_text()
+          assert 'VIS_COUNT=33' in s
+          assert '"Warehouse Disco Duo"' in s
+          assert '68,69,70};' in s
+          assert 'case 20:{' in s and 'case 22:{' in s and 'case 70:{' in s
+          assert 'if(id<23||id==70)effectsClassic(id);' in s
+          assert 'isRobotNameEffect(effectID)' in s
+          assert 'return id==22||id==70;' in s
+          assert 'prefs.putUChar("s1729",1);' in s
+          assert 'figure(150,242,1.f,beatClock+.2f,rgb(255,104,214));' in s
+          assert 'figure(318,242,1.f,beatClock+2.f,rgb(77,226,255));' in s
+          assert 'if(id==68){ArtCapsule::render();return;}' in s
+          assert 'if(id==69){GhostCompanion::render();return;}' in s
+          assert 'MotionPower::tick()' in s
+          assert 'BeatLab::' not in s
+          # Both 13-letter pages must account for the entire alphabet exactly once.
+          rows=('qwert','yuiop','asd','fghjk','lzxcv','bnm')
+          assert len(''.join(rows))==26 and set(''.join(rows))==set('abcdefghijklmnopqrstuvwxyz')
+          assert 'NAME_IDLE_MS=8000UL' in s
+          assert 'nameKeyboardLarge=true' in s
+          assert 'XL_WIDTH=68,XL_HEIGHT=60' in s
+          assert 'nameLastInputMs=millis();' in s
+          assert 'checkNameEditorIdle();' in s
+          assert 'cancelNameOverlay();' in s
+          assert 'nameTouchCommitted=nameEditorPress(touch.x,touch.y);' in s
+          assert 'nameKeyboardPage^=1;' in s
+          assert 'if(!nameKeyboardLarge)return qwertyHit' in s
+          assert 'if(overlay==AP_PASSWORD)' in s
+          # Controls must be fully visible on the round OLED (radius 230).
+          controls=[(106,376,80,48),(193,376,80,48),(280,376,80,48)]
+          for x,y,w,h in controls:
+            for px in (x,x+w):
+              for py in (y,y+h):
+                assert (px-233)**2+(py-233)**2 <= 230**2, (x,y,w,h)
+          print('V17.30 keyboard geometry/idle/touch + V17.29 inheritance checks pass')
+          PY
+      - name: Install Arduino CLI
+        uses: arduino/setup-arduino-cli@v2
+      - name: Install StopWatch core and libraries
+        run: |
+          arduino-cli config init
+          arduino-cli config add board_manager.additional_urls https://static-cdn.m5stack.com/resource/arduino/package_m5stack_index.json
+          arduino-cli core update-index
+          arduino-cli core install m5stack:esp32@3.3.10
+          arduino-cli lib install M5Unified@0.2.29
+          arduino-cli lib install M5GFX@0.2.36
+      - name: Retrieve pinned ESP32Drop AirDrop receiver
+        run: |
+          git clone --quiet https://github.com/s-iwaki-d/ESP32Drop.git "$RUNNER_TEMP/esp32drop"
+          git -C "$RUNNER_TEMP/esp32drop" checkout --quiet 92bdc1221924ca522f3ccbebbd9353612ce5b2d7
+          test -f "$RUNNER_TEMP/esp32drop/ESP32Drop/library.properties"
+      - name: Build StopWatch V17.30 33 effects
+        run: |
+          mkdir -p compiled
+          arduino-cli compile \
+            --fqbn "m5stack:esp32:m5stack_stopwatch:PartitionScheme=huge_app,PSRAM=opi,DebugLevel=error,USBMode=default,CDCOnBoot=cdc,UploadMode=cdc" \
+            --library "$RUNNER_TEMP/esp32drop/ESP32Drop" \
+            --output-dir "$GITHUB_WORKSPACE/compiled" \
+            "$GITHUB_WORKSPACE/stopwatch/StopWatchNative31V16"
+          ls -lh compiled/*.bin
+      - name: Package editable source, flasher and checksums
+        run: |
+          mkdir -p compiled/Editable_Source
+          cp -R stopwatch/StopWatchNative31V16 compiled/Editable_Source/
+          cp -R stopwatch/ghost_gateway compiled/Editable_Source/
+          cp stopwatch/V17_28_README.md compiled/Editable_Source/
+          cp stopwatch/V17_29_README.md compiled/Editable_Source/
+          cp stopwatch/V17_30_README.md compiled/Editable_Source/
+          cp stopwatch/Mac_Flasher_V17_28.sh compiled/Mac_Flasher.sh
+          printf 'ESP32Drop SHA: 92bdc1221924ca522f3ccbebbd9353612ce5b2d7\n' > compiled/THIRD_PARTY_VERSION.txt
+          printf 'Source git commit: %s\n' "$GITHUB_SHA" > compiled/BUILD_COMMIT.txt
+          (cd compiled && sha256sum *.bin > SHA256SUMS.txt)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: StopWatch_V17_30_Keyboard_XL_AutoCancel_33_Effects
+          path: |
+            compiled/*.bin
+            compiled/*.sh
+            compiled/*.txt
+            compiled/Editable_Source/
+          if-no-files-found: error
+          retention-days: 30
