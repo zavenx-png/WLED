@@ -32,26 +32,38 @@ jobs:
           assert 'if(id==69){GhostCompanion::render();return;}' in s
           assert 'MotionPower::tick()' in s
           assert 'BeatLab::' not in s
-          # Both 13-letter pages must account for the entire alphabet exactly once.
-          rows=('qwert','yuiop','asd','fghjk','lzxcv','bnm')
-          assert len(''.join(rows))==26 and set(''.join(rows))==set('abcdefghijklmnopqrstuvwxyz')
+          # All 26 QWERTY keys must remain on ONE screen; not a paged keyboard.
+          rows=('qwertyuiop','asdfghjkl','zxcvbnm')
+          assert ''.join(rows)=='qwertyuiopasdfghjklzxcvbnm'
+          assert len(''.join(rows))==26
           assert 'NAME_IDLE_MS=8000UL' in s
-          assert 'nameKeyboardLarge=true' in s
-          assert 'XL_WIDTH=68,XL_HEIGHT=60' in s
-          assert 'nameLastInputMs=millis();' in s
+          assert 'NAME_ROWS[3]' in s
+          assert 'nameTouchXSum+=touch.x' in s
+          assert 'nameTouchYSum+=touch.y' in s
+          assert 'x=nameTouchXSum/nameTouchSamples;' in s
+          assert 'y=nameTouchYSum/nameTouchSamples;' in s
+          assert 'nameLetterHit(ax,ay,ch,cx,cy)' in s
+          assert 'nameEditorCommit(x,y)' in s
           assert 'checkNameEditorIdle();' in s
           assert 'cancelNameOverlay();' in s
-          assert 'nameTouchCommitted=nameEditorPress(touch.x,touch.y);' in s
-          assert 'nameKeyboardPage^=1;' in s
-          assert 'if(!nameKeyboardLarge)return qwertyHit' in s
+          assert 'nameLastInputMs=now;' in s
+          assert 'nameKeyboardPage' not in s
+          assert 'XL_ROWS' not in s
+          assert 'nameKeyboardLarge' not in s
           assert 'if(overlay==AP_PASSWORD)' in s
-          # Controls must be fully visible on the round OLED (radius 230).
-          controls=[(106,376,80,48),(193,376,80,48),(280,376,80,48)]
-          for x,y,w,h in controls:
-            for px in (x,x+w):
-              for py in (y,y+h):
-                assert (px-233)**2+(py-233)**2 <= 230**2, (x,y,w,h)
-          print('V17.30 keyboard geometry/idle/touch + V17.29 inheritance checks pass')
+          assert 'NAME_DEL_W=190,NAME_DEL_H=48' in s
+          # Confirm rendered keys and delete corners are inside the round display.
+          left=(21,32,55); pitch=(43,46,53); widths=(40,45,48); tops=(155,226,297)
+          for row,letters in enumerate(rows):
+            for k in range(len(letters)):
+              x=left[row]+k*pitch[row]
+              for px in (x,x+widths[row]):
+                for py in (tops[row],tops[row]+59):
+                  assert (px-233)**2+(py-233)**2 <= 230**2,(row,k,px,py)
+          for px in (138,328):
+            for py in (380,428):
+              assert (px-233)**2+(py-233)**2 <= 230**2
+          print('V17.30: single-page 26-letter QWERTY + touch-centroid averaging + 8s discard passed')
           PY
       - name: Install Arduino CLI
         uses: arduino/setup-arduino-cli@v2
