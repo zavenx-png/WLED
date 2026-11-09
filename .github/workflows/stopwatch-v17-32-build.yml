@@ -1,0 +1,88 @@
+name: Build V17.32 Curated 26 Effects
+on:
+  push:
+    branches:
+      - stopwatch-v17-32-curated-26-effects
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build-firmware:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify exact 26-effect menu, old-index migration, keyboard and mirror effects
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          s=Path('stopwatch/StopWatchNative31V16/NativeApp.cpp').read_text()
+          names=['zaven Chromatic EQ','Robot Shuffle','Warehouse House Duo','Matrix Phosphor','zaven Psychedelic Halo','zaven Electric Aurora','zaven Flowing Halo','Prism EQ','Vapor Scope','Frequency Towers','Radial Spectrum','Heartbeat Neon','Round Resonator','Kaleidoscope Reactor','Infinity Tunnel','Cymatic Mandala','Orbital Harmonics','zaven Kaleidoscope','zaven Round Resonator','zaven Fibonacci Spiral','Spike Ball Nova (variant)','String Theory','FluidBox Classic','Neon Helix Chamber','Ultraviolet Reactor','Disco Stargate']
+          assert 'VIS_COUNT=26' in s
+          menu=s.split('static const char *const EFFECT_NAMES[VIS_COUNT]')[1].split('};')[0]
+          actual=re.findall(r'"([^"]+)"',menu)
+          assert actual==names,(actual,names)
+          ids=[int(x) for x in re.findall(r'\d+',s.split('ORIGINAL_EFFECT_ID[VIS_COUNT]')[1].split('};')[0])]
+          assert ids==[23,22,20,4,24,29,30,1,3,6,7,8,9,10,12,13,17,25,26,27,63,64,65,73,74,75],ids
+          old_to_new=[x.strip() for x in s.split('V1731_TO_V1732[38]')[1].split('};')[0].split('{')[1].split(',')]
+          assert len(old_to_new)==38
+          assert sum(x!='0xff' for x in old_to_new)==26
+          assert [int(x) for x in old_to_new if x!='0xff']==list(range(26))
+          assert 'remapV1731Slot(slot)' in s
+          assert 'prefs.putUChar("s1732",1)' in s
+          assert 'prefs.putBytes("gain1732",gainPct,sizeof(gainPct))' in s
+          assert 'prefs.putBytes("fav1732",&favoriteBits,sizeof(favoriteBits))' in s
+          assert 'prefs.putUChar("eff1732",effectID)' in s
+          assert 'sc1732' in s
+          assert 'ArtCapsule::' not in s and 'GhostCompanion::' not in s
+          assert 'BeatLab::' not in s
+          assert 'return id==22||id==70;' in s
+          assert 'NAME_IDLE_MS=8000UL' in s
+          assert 'nameTouchXSum+=touch.x' in s and 'nameTouchYSum+=touch.y' in s
+          assert 'nameEditorCommit(x,y)' in s
+          assert 'InfinityMirrorV1731::render(id-71)' in s
+          assert 'MotionPower::tick()' in s
+          print('V17.32: exact 26 names/order/IDs, saved-settings migration, single-page averaged keyboard and three infinity mirrors pass')
+          PY
+      - name: Install Arduino CLI
+        uses: arduino/setup-arduino-cli@v2
+      - name: Install StopWatch core and libraries
+        run: |
+          arduino-cli config init
+          arduino-cli config add board_manager.additional_urls https://static-cdn.m5stack.com/resource/arduino/package_m5stack_index.json
+          arduino-cli core update-index
+          arduino-cli core install m5stack:esp32@3.3.10
+          arduino-cli lib install M5Unified@0.2.29
+          arduino-cli lib install M5GFX@0.2.36
+      - name: Build StopWatch V17.32 26 effects
+        run: |
+          mkdir -p compiled
+          arduino-cli compile \
+            --fqbn "m5stack:esp32:m5stack_stopwatch:PartitionScheme=huge_app,PSRAM=opi,DebugLevel=error,USBMode=default,CDCOnBoot=cdc,UploadMode=cdc" \
+            --output-dir "$GITHUB_WORKSPACE/compiled" \
+            "$GITHUB_WORKSPACE/stopwatch/StopWatchNative31V16"
+          ls -lh compiled/*.bin
+      - name: Package editable source, flasher and checksums
+        run: |
+          mkdir -p compiled/Editable_Source
+          cp -R stopwatch/StopWatchNative31V16 compiled/Editable_Source/
+          cp stopwatch/V17_28_README.md compiled/Editable_Source/
+          cp stopwatch/V17_29_README.md compiled/Editable_Source/
+          cp stopwatch/V17_30_README.md compiled/Editable_Source/
+          cp stopwatch/V17_31_README.md compiled/Editable_Source/
+          cp stopwatch/V17_32_README.md compiled/Editable_Source/
+          rm -f compiled/Editable_Source/StopWatchNative31V16/assets/ArtCapsuleV1728.h compiled/Editable_Source/StopWatchNative31V16/assets/GhostCompanionV1728.h
+          cp stopwatch/Mac_Flasher_V17_28.sh compiled/Mac_Flasher.sh
+          printf 'Source git commit: %s\n' "$GITHUB_SHA" > compiled/BUILD_COMMIT.txt
+          (cd compiled && sha256sum *.bin > SHA256SUMS.txt)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: StopWatch_V17_32_Curated_26_Effects
+          path: |
+            compiled/*.bin
+            compiled/*.sh
+            compiled/*.txt
+            compiled/Editable_Source/
+          if-no-files-found: error
+          retention-days: 30
