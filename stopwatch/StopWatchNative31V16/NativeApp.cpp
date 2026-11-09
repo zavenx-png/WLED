@@ -212,6 +212,11 @@ bool nameRobotBlueEdited=false,nameRobotPinkEdited=false,nameDeleteConsumed=fals
 int remoteTouchXSum=0,remoteTouchYSum=0,remoteTouchSamples=0;
 String keyboardPopup="";int keyboardPopupX=0,keyboardPopupY=0;
 uint32_t keyboardPopupUntil=0,keyboardPopupStarted=0,brightnessRepeatAt=0;
+// V17.30: large-key name keyboard is the default; compact QWERTY remains optional.
+bool nameKeyboardLarge=true;
+uint8_t nameKeyboardPage=0;
+uint32_t nameLastInputMs=0;
+static constexpr uint32_t NAME_IDLE_MS=8000UL;
 bool brightnessEntryHold=false,batteryEntryHold=false;
 uint8_t candidateBrightness=52;float candidateBpm=125;
 uint32_t batteryHudUntil=0,batteryKeyCooldown=0,batteryPowerPollAt=0;
@@ -1317,30 +1322,62 @@ static void uiBar(int y,int x0,int x1,float value,uint16_t color){
 // The closest physical key wins even if a finger overlaps 2-3 key hitboxes.
 // V17.3: larger, roomy one-screen keyboard. These SAME shared constants
 // drive the drawing AND the nearest-center touch hit testing.
+// Compact QWERTY is retained for users who prefer a single-screen alphabet
+// and for the separate harness-AP password editor; do not alter its geometry.
 static constexpr int QW_LEFT[3]={14,36,80};
 static constexpr int QW_TOP[3]={155,224,293};
 static constexpr int QW_PITCH=44,QW_WIDTH=41,QW_HEIGHT=61;
 static constexpr int QW_DEL_X=138,QW_DEL_Y=382,QW_DEL_W=190,QW_DEL_H=52;
-static inline bool deleteHit(int x,int y){
- // Generous invisible hit target extends beyond the button's visual border
- // (especially helpful when touching the lower curved screen edge).
- return x>=103&&x<=363&&y>=366&&y<=446;
+// Large-key mode: 13 letters per page. 68 x 60px keys are 66% wider than
+// the previous 41 x 61px keys, and stay inside the circular usable region.
+static constexpr int XL_LEFT[3]={52,52,122};
+static constexpr int XL_TOP[3]={157,226,295};
+static constexpr int XL_PITCH=74,XL_WIDTH=68,XL_HEIGHT=60;
+static const char *const XL_ROWS[2][3]={
+ {"qwert","yuiop","asd"},
+ {"fghjk","lzxcv","bnm"}
+};
+static constexpr int NAME_BUTTON_Y=376,NAME_BUTTON_H=48;
+static constexpr int NAME_MODE_X=94,NAME_MODE_W=84;
+static constexpr int NAME_DELETE_X=183,NAME_DELETE_W=100;
+static constexpr int NAME_PAGE_X=288,NAME_PAGE_W=84;
+static bool nameBottomHit(int x,int y,uint8_t &action){
+ if(y<NAME_BUTTON_Y-10||y>NAME_BUTTON_Y+NAME_BUTTON_H+7)return false;
+ if(x>=NAME_MODE_X-5&&x<NAME_MODE_X+NAME_MODE_W+3){action=1;return true;}
+ if(x>=NAME_DELETE_X-3&&x<NAME_DELETE_X+NAME_DELETE_W+3){action=2;return true;}
+ if(nameKeyboardLarge&&x>=NAME_PAGE_X-3&&x<NAME_PAGE_X+NAME_PAGE_W+5){action=3;return true;}
+ return false;
 }
 static bool qwertyHit(int x,int y,char &out,int &cx,int &cy){
  static const char *const rows[3]={"qwertyuiop","asdfghjkl","zxcvbnm"};
  if(x<8||x>458||y<146||y>362)return false;
- long best=2147483647L;char candidate=0;int bx=0,by=0;
+ long best=LONG_MAX;char candidate=0;int bx=0,by=0;
  for(int row=0;row<3;row++){
   const int yy=QW_TOP[row]+QW_HEIGHT/2;
   if(abs(y-yy)>37)continue;
   for(int k=0;k<(int)strlen(rows[row]);k++){
    const int xx=QW_LEFT[row]+k*QW_PITCH+QW_WIDTH/2;
-   const long dx=x-xx,dy=y-yy;
-   const long d=dx*dx+dy*dy;
+   const long dx=x-xx,dy=y-yy,d=dx*dx+dy*dy;
    if(d<best){best=d;candidate=rows[row][k];bx=xx;by=yy;}
   }
  }
- if(!candidate||best>2200)return false;
+ if(!candidate||best>2350)return false;
+ out=candidate;cx=bx;cy=by;return true;
+}
+static bool nameLetterHit(int x,int y,char &out,int &cx,int &cy){
+ if(!nameKeyboardLarge)return qwertyHit(x,y,out,cx,cy);
+ if(x<40||x>426||y<XL_TOP[0]-9||y>XL_TOP[2]+XL_HEIGHT+8)return false;
+ long best=LONG_MAX;char candidate=0;int bx=0,by=0;
+ for(int row=0;row<3;row++){
+  const int yy=XL_TOP[row]+XL_HEIGHT/2;
+  if(abs(y-yy)>36)continue;
+  for(int k=0;k<(int)strlen(XL_ROWS[nameKeyboardPage][row]);k++){
+   const int xx=XL_LEFT[row]+k*XL_PITCH+XL_WIDTH/2;
+   const long dx=x-xx,dy=y-yy,d=dx*dx+dy*dy;
+   if(d<best){best=d;candidate=XL_ROWS[nameKeyboardPage][row][k];bx=xx;by=yy;}
+  }
+ }
+ if(!candidate||best>2650)return false;
  out=candidate;cx=bx;cy=by;return true;
 }
 // Password editor uses the watch's existing QWERTY geometry, with an
@@ -1412,7 +1449,7 @@ static void keyboardPop(char letter,int x,int y){
  keyboardPopup=String(letter);
  keyboardPopupX=x;keyboardPopupY=y;
  keyboardPopupStarted=millis();
- keyboardPopupUntil=keyboardPopupStarted+455; // Visible for >10 frames at 30 fps.
+ keyboardPopupUntil=keyboardPopupStarted+285; // Fast, non-blocking key confirmation.
 }
 // V16.12: smaller, clean native font tiers with NO fractional bitmap zoom.
 // Heading: 18pt instead of 24pt. Both button labels: matching 12pt bold.
@@ -1569,44 +1606,53 @@ static void renderOverlay(){
  }
  case NAME:{
   black();circ(CX,CY,R-3,rgb(42,92,126),2);
+  const uint32_t now=millis();
   const bool robotName=isRobotNameEffect(effectID);
   if(robotName){
    uiButton(112,40,112,43,"BLUE",robotField==0);
    uiButton(241,40,112,43,"PINK",robotField==1);
-   const String& chosen=robotField==0?draftBlue:draftPink;
-   if(chosen.length())
-    drawLargeNativeLabel(chosen,CX,109,406,1.575f,robotField==0?CYAN:PINK);
+   const String &chosen=robotField==0?draftBlue:draftPink;
+   if(chosen.length())drawLargeNativeLabel(chosen,CX,109,406,1.575f,robotField==0?CYAN:PINK);
+   else textC("TYPE A NAME",CX,109,GRAY,2);
   }else{
    if(inputName.length())drawLargeNativeLabel(inputName,CX,99,390,1.575f,PINK);
-   textC("A CANCEL    B SAVE",CX,42,GRAY,2);
+   else textC("TYPE A NAME",CX,99,GRAY,2);
+   textC("A CANCEL     B SAVE",CX,43,GRAY,2);
   }
-  // All 26 keys are visible at once, 41x61 instead of V17.2's 39x53.
-  static const char *const kRows[3]={"qwertyuiop","asdfghjkl","zxcvbnm"};
-  uint32_t now=millis();
-  bool popActive=keyboardPopup.length()&&(touchDown||(int32_t)(keyboardPopupUntil-now)>0);
-  for(int row=0;row<3;row++)for(int k=0;k<(int)strlen(kRows[row]);k++){
-   int x=QW_LEFT[row]+k*QW_PITCH,y=QW_TOP[row];
-   bool active=popActive&&keyboardPopupX==x+QW_WIDTH/2&&keyboardPopupY==y+QW_HEIGHT/2;
-   cv.fillRoundRect(x,y,QW_WIDTH,QW_HEIGHT,9,active?rgb(93,172,209):rgb(27,55,87));
-   cv.drawRoundRect(x,y,QW_WIDTH,QW_HEIGHT,9,active?rgb(224,253,255):rgb(116,171,211));
-   textC(String(kRows[row][k]),x+QW_WIDTH/2,y+QW_HEIGHT/2,rgb(246,250,255),4);
+  textC(nameKeyboardLarge?(nameKeyboardPage==0?"LARGE KEYS  1/2":"LARGE KEYS  2/2"):
+                              "FULL QWERTY",CX,141,GRAY,2);
+  const bool popActive=keyboardPopup.length()&&(touchDown||(int32_t)(keyboardPopupUntil-now)>0);
+  for(int row=0;row<3;row++){
+   const char *letters=nameKeyboardLarge?XL_ROWS[nameKeyboardPage][row]:
+               (row==0?"qwertyuiop":row==1?"asdfghjkl":"zxcvbnm");
+   const int x0=nameKeyboardLarge?XL_LEFT[row]:QW_LEFT[row];
+   const int y0=nameKeyboardLarge?XL_TOP[row]:QW_TOP[row];
+   const int pitch=nameKeyboardLarge?XL_PITCH:QW_PITCH;
+   const int kw=nameKeyboardLarge?XL_WIDTH:QW_WIDTH;
+   const int kh=nameKeyboardLarge?XL_HEIGHT:QW_HEIGHT;
+   for(int k=0;k<(int)strlen(letters);k++){
+    const int x=x0+k*pitch, cx=x+kw/2,cy=y0+kh/2;
+    const bool selected=popActive&&keyboardPopupX==cx&&keyboardPopupY==cy;
+    cv.fillRoundRect(x,y0,kw,kh,11,selected?rgb(73,166,190):rgb(26,55,84));
+    cv.drawRoundRect(x,y0,kw,kh,11,selected?rgb(231,253,255):rgb(117,177,214));
+    textC(String((char)toupper((unsigned char)letters[k])),cx,cy,rgb(251,253,255),nameKeyboardLarge?5:4);
+   }
   }
-  // Only DELETE remains below the keyboard. Large visible button and
-  // deliberately wider invisible hit target for smaller fingers.
-  cv.fillRoundRect(QW_DEL_X,QW_DEL_Y,QW_DEL_W,QW_DEL_H,13,rgb(33,94,122));
-  cv.drawRoundRect(QW_DEL_X,QW_DEL_Y,QW_DEL_W,QW_DEL_H,13,rgb(164,229,249));
-  crispBrightnessText("DEL",CX,QW_DEL_Y+QW_DEL_H/2,rgb(251,254,255));
+  // Three clearly separated controls; inactive third zone is a countdown.
+  uiButton(NAME_MODE_X,NAME_BUTTON_Y,NAME_MODE_W,NAME_BUTTON_H,nameKeyboardLarge?"QWERTY":"LARGE");
+  uiButton(NAME_DELETE_X,NAME_BUTTON_Y,NAME_DELETE_W,NAME_BUTTON_H,"DEL");
+  if(nameKeyboardLarge)uiButton(NAME_PAGE_X,NAME_BUTTON_Y,NAME_PAGE_W,NAME_BUTTON_H,nameKeyboardPage==0?"NEXT":"BACK");
+  else textC("ALL 26",NAME_PAGE_X+NAME_PAGE_W/2,NAME_BUTTON_Y+NAME_BUTTON_H/2,GRAY,2);
+  // The timer never saves drafts; only physical B commits changes.
+  const uint32_t remaining=(now-nameLastInputMs>=NAME_IDLE_MS)?0:NAME_IDLE_MS-(now-nameLastInputMs);
+  textC(String("AUTO EXIT ")+String((remaining+999)/1000)+"s",CX,445,GRAY,2);
   if(popActive){
-   const uint32_t elapsed=now-keyboardPopupStarted;
-   float grow=clampf(elapsed/70.f);
-   int bw=60+(int)(16*grow),bh=66+(int)(14*grow);
-   int bx=clampi(keyboardPopupX-bw/2,11,W-bw-11);
-   int by=clampi(keyboardPopupY-112,41,255);
-   cv.fillRoundRect(bx-3,by-2,bw+6,bh+6,13,rgb(51,77,99));
+   const int bw=nameKeyboardLarge?78:70,bh=nameKeyboardLarge?76:70;
+   const int bx=clampi(keyboardPopupX-bw/2,18,W-bw-18);
+   const int by=clampi(keyboardPopupY-106,44,258);
+   cv.fillRoundRect(bx-3,by-2,bw+6,bh+6,13,rgb(47,79,111));
    cv.fillRoundRect(bx,by,bw,bh,12,rgb(248,251,255));
-   cv.drawRoundRect(bx,by,bw,bh,12,rgb(107,178,221));
-   cv.fillTriangle(keyboardPopupX-10,by+bh-1,keyboardPopupX+10,by+bh-1,
-                   keyboardPopupX,by+bh+13,rgb(248,251,255));
+   cv.drawRoundRect(bx,by,bw,bh,12,rgb(111,190,222));
    drawLargeNativeLabel(keyboardPopup,bx+bw/2,by+bh/2,bw-12,1.60f,rgb(17,38,62));
   }
   break;
@@ -1852,6 +1898,7 @@ static void showTextEditor(){
  // Always start with a BLANK name entry; no previous name is prefilled.
  overlay=NAME;inputName="";draftBlue="";draftPink="";robotField=0;
  nameRobotBlueEdited=false;nameRobotPinkEdited=false;
+ nameKeyboardLarge=true;nameKeyboardPage=0;nameLastInputMs=millis();
  keyboardPopup="";keyboardPopupUntil=0;keyboardPopupStarted=0;vibration();
 }
 static void saveNameOverlay(){
@@ -1865,6 +1912,54 @@ static void saveNameOverlay(){
   if(inputName.length())sharedName=inputName;
  }
  saveNames();overlay=NONE;vibration(180,65);
+}
+// V17.30: cancel means NO writes to NVS and NO changes to saved names.
+static void cancelNameOverlay(){
+ overlay=NONE;inputName="";draftBlue="";draftPink="";
+ nameRobotBlueEdited=false;nameRobotPinkEdited=false;
+ keyboardPopup="";keyboardPopupUntil=0;
+}
+static bool nameEditorPress(int x,int y){
+ if(overlay!=NAME)return false;
+ const uint32_t now=millis();
+ if(isRobotNameEffect(effectID)&&y>=36&&y<=96&&x>=105&&x<=358){
+  robotField=x<CX?0:1;keyboardPopup="";nameLastInputMs=now;vibration(95,12);
+  return true;
+ }
+ uint8_t action=0;
+ if(nameBottomHit(x,y,action)){
+  nameLastInputMs=now;keyboardPopup="";
+  if(action==1){nameKeyboardLarge=!nameKeyboardLarge;nameKeyboardPage=0;}
+  else if(action==2){
+   String &dest=isRobotNameEffect(effectID)?(robotField==0?draftBlue:draftPink):inputName;
+   if(dest.length()){
+    dest.remove(dest.length()-1);
+    if(isRobotNameEffect(effectID)){
+     if(robotField==0)nameRobotBlueEdited=true;else nameRobotPinkEdited=true;
+    }
+   }
+  }else if(action==3)nameKeyboardPage^=1;
+  vibration(103,14);return true;
+ }
+ char typed=0;int px=0,py=0;
+ if(!nameLetterHit(x,y,typed,px,py))return false;
+ nameLastInputMs=now;
+ String &dest=isRobotNameEffect(effectID)?(robotField==0?draftBlue:draftPink):inputName;
+ if(dest.length()<12){
+  dest+=typed;
+  if(isRobotNameEffect(effectID)){
+   if(robotField==0)nameRobotBlueEdited=true;else nameRobotPinkEdited=true;
+  }
+  keyboardPop(typed,px,py);
+ }else keyboardPopup="";
+ vibration(100,14);return true;
+}
+static void checkNameEditorIdle(){
+ if(overlay!=NAME)return;
+ // Do not close in the middle of a held finger press.
+ if(!touchDown && (uint32_t)(millis()-nameLastInputMs)>=NAME_IDLE_MS){
+  cancelNameOverlay();
+ }
 }
 static void remoteTouch(int x,int y,int dx,int dy){
  // On every page, swipe LEFT -> next page; RIGHT -> previous page.
@@ -1980,34 +2075,8 @@ static void editorTouch(int x,int y){
  }else if(overlay==AP_PASSWORD){
    harnessApPasswordTouch(x,y);
  }else if(overlay==NAME){
-   if(isRobotNameEffect(effectID)&&y>=40&&y<87){
-     if(x>=112&&x<=353){robotField=x<CX?0:1;keyboardPopup="";vibration(110,24);}
-     return;
-   }
-   // DELETE takes priority over neighboring keys and uses a much larger
-   // invisible touch target than the visible DEL button.
-   if(deleteHit(x,y)){
-     String &dest=isRobotNameEffect(effectID)?(robotField==0?draftBlue:draftPink):inputName;
-     if(dest.length()){
-       dest.remove(dest.length()-1);
-       if(isRobotNameEffect(effectID)){
-         if(robotField==0)nameRobotBlueEdited=true;else nameRobotPinkEdited=true;
-       }
-     }
-     keyboardPopup="";vibration(150,35);
-     return;
-   }
-   char typed=0;int px=0,py=0;
-   if(qwertyHit(x,y,typed,px,py)){
-     String &dest=isRobotNameEffect(effectID)?(robotField==0?draftBlue:draftPink):inputName;
-     if(dest.length()<12){
-       dest+=typed;
-       if(isRobotNameEffect(effectID)){
-         if(robotField==0)nameRobotBlueEdited=true;else nameRobotPinkEdited=true;
-       }
-       keyboardPop(typed,px,py);vibration(105,20);
-     }
-   }
+   // Fallback for an initially unrecognized contact; normal keys commit on press.
+   nameEditorPress(x,y);
  }
 }
 static void selectEffect(int d){
@@ -2057,7 +2126,7 @@ static void controlButtons(){
  }
  // Text editor: physical A discards all edits, physical B saves.
  if(overlay==NAME){
-  if(M5.BtnA.wasReleased()){overlay=NONE;inputName="";keyboardPopup="";vibration(170,45);}
+  if(M5.BtnA.wasReleased()){cancelNameOverlay();vibration(170,45);}
   else if(M5.BtnB.wasReleased()){keyboardPopup="";saveNameOverlay();}
   if(M5.BtnA.wasReleased())keyADown=0;
   if(M5.BtnB.wasReleased())keyBDown=0;
@@ -2136,16 +2205,8 @@ static void controlTouch(){
    remoteTouchXSum=touch.x;remoteTouchYSum=touch.y;remoteTouchSamples=1;
    nameDeleteConsumed=false;
    if(overlay==NAME){
-     // V17.4: DELETE is an immediate ON-PRESS action. Do not wait for the
-     // finger to lift or use its averaged coordinates, which caused misses.
-     if(deleteHit(touch.x,touch.y)){
-       editorTouch(touch.x,touch.y);
-       nameDeleteConsumed=true;
-     }else{
-       char ch=0;int xx=0,yy=0;
-       if(qwertyHit(touch.x,touch.y,ch,xx,yy))keyboardPop(ch,xx,yy);
-       else keyboardPopup="";
-     }
+     // Commit a letter/control on initial touch, not delayed release.
+     nameDeleteConsumed=nameEditorPress(touch.x,touch.y);
    }
  }
  if(touch.isPressed()&&touchDown){
@@ -2161,16 +2222,14 @@ static void controlTouch(){
    }
    if(overlay==NONE&&!remote&&originalEffect(effectID)==64)StringTheory::touchMove(touch.x,touch.y);
    if(overlay==NONE&&!remote&&(originalEffect(effectID)==65||originalEffect(effectID)==66))GravityLab::touchMove(touch.x,touch.y,originalEffect(effectID)==65);
-   if((overlay==NAME||overlay==AP_PASSWORD) && !nameDeleteConsumed){
-     // Compute ONE mean contact center across this entire physical press.
-     // Ignore simultaneous / adjacent key edges, not the touch centroid.
-     if(nameTouchSamples<28){
-       nameTouchXSum+=touch.x;nameTouchYSum+=touch.y;nameTouchSamples++;
-     }
-     char ch=0;int xx=0,yy=0;
-     int avgX=nameTouchXSum/nameTouchSamples,avgY=nameTouchYSum/nameTouchSamples;
-     if(qwertyHit(avgX,avgY,ch,xx,yy)&&
-        (keyboardPopup.length()!=1||keyboardPopup[0]!=ch))keyboardPop(ch,xx,yy);
+   if(overlay==NAME && !nameDeleteConsumed && (uint32_t)(millis()-touchStart)>=22){
+     // One retry after contact stabilizes recovers taps starting on the glass edge.
+     // Exactly one action per physical press, including DELETE and page change.
+     nameDeleteConsumed=nameEditorPress(touch.x,touch.y);
+   }
+   if(overlay==AP_PASSWORD){
+     // Preserve the separate harness password editor's long-press behavior.
+     if(nameTouchSamples<28){nameTouchXSum+=touch.x;nameTouchYSum+=touch.y;nameTouchSamples++;}
    }
  }
  if(touch.wasReleased()||touch.wasClicked()){
@@ -2178,13 +2237,13 @@ static void controlTouch(){
    // frames. Commit exactly once, then discard any duplicate event.
    if(!touchDown)return;
    if(overlay==NAME&&nameDeleteConsumed){
-     // Consume the matching release; never delete twice or add a letter.
+     // The key/control was already processed on finger down; never repeat it.
      touchDown=false;nameTouchSamples=0;nameDeleteConsumed=false;
      keyboardPopup="";return;
    }
    uint32_t held=millis()-touchStart;
    int x=touchLastX,y=touchLastY;
-   if((overlay==NAME||overlay==AP_PASSWORD)&&nameTouchSamples>0){
+   if(overlay==AP_PASSWORD&&nameTouchSamples>0){
      x=nameTouchXSum/nameTouchSamples;
      y=nameTouchYSum/nameTouchSamples;
    }
@@ -2227,7 +2286,7 @@ static void saveFrameStats(){ // Diagnostic data via Serial only; no onscreen pe
 }
 static uint8_t powerFrameCap(){
  uint8_t rate=profile==0?48:profile==1?35:24;
- if(overlay==NAME)return profile==2?24:32; // smoother, visibly held key popovers
+ if(overlay==NAME)return profile==2?30:42; // V17.30 snappy keyboard + popovers
  if(remote||overlay!=NONE)return 15;
  if(originalEffect(effectID)==64)return profile==2?20:(profile==1?28:34); // improved gesture response
  if(originalEffect(effectID)==65)return profile==2?18:(profile==1?26:32); // classic FluidBox
@@ -2366,6 +2425,7 @@ void loop(){
  }
  if(overlay==BATTERY && (int32_t)(powerNow-batteryHudUntil)>=0)overlay=NONE;
  // Battery state and ETA are read by the 60-second sampler, not per frame.
+ checkNameEditorIdle();
  controlButtons();controlTouch();MotionPower::tick();radioTick();harnessApTick();audioTick();beatTick();
  if(!remote && overlay==NONE && (originalEffect(effectID)==65||originalEffect(effectID)==66))
     GravityLab::tick(millis(),originalEffect(effectID)==65);
