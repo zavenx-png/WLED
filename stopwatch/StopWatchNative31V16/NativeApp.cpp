@@ -22,7 +22,7 @@
 #undef sq
 #endif
 
-constexpr uint8_t VIS_COUNT=33, Z_COUNT=28, REMOTE_PAGES=6;
+constexpr uint8_t VIS_COUNT=38, Z_COUNT=28, REMOTE_PAGES=6;
 constexpr int NFFT=512, MIC_SAMPLE_RATE=16000, NBANDS=32;
 constexpr float PI_F=3.14159265358979323846f, TAU=6.28318530717958647692f;
 static const char *const EFFECT_NAMES[VIS_COUNT] = {
@@ -58,9 +58,14 @@ static const char *const EFFECT_NAMES[VIS_COUNT] = {
  "Gravity Lab",
  "AirDrop Art Capsule",
  "Ghost Companion",
- "Warehouse Disco Duo"
+ "Warehouse Disco Duo",
+ "Prism Drop",
+ "Silver Lightwell",
+ "Neon Helix Chamber",
+ "Ultraviolet Reactor",
+ "Disco Stargate"
 };
-static constexpr uint8_t ORIGINAL_EFFECT_ID[VIS_COUNT]={23,22,20,4,24,29,30,1,2,3,6,7,8,9,10,11,12,13,17,19,25,26,27,44,51,53,63,64,65,66,68,69,70};
+static constexpr uint8_t ORIGINAL_EFFECT_ID[VIS_COUNT]={23,22,20,4,24,29,30,1,2,3,6,7,8,9,10,11,12,13,17,19,25,26,27,44,51,53,63,64,65,66,68,69,70,71,72,73,74,75};
 static inline uint8_t originalEffect(uint8_t i);
 // V12 presentation order -> V13, prior to the two V16.8 effect removals.
 static constexpr uint8_t V12_INDEX_TO_V13[31]={9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,0,1,2,3,4,5,6,7,8,28,29,30};
@@ -420,7 +425,8 @@ static void registerOnset(uint32_t now){
 // expansions; wave: the oscilloscope trace. Rendering functions are unchanged.
 enum AutoMicType : uint8_t {MIC_FIXED=0,MIC_SPECTRUM=1,MIC_BASS=2,MIC_ENERGY=3,MIC_WAVE=4};
 static constexpr uint8_t AUTO_MIC_TYPES[VIS_COUNT]={
- MIC_SPECTRUM, MIC_ENERGY, MIC_ENERGY, MIC_WAVE, MIC_BASS, MIC_ENERGY, MIC_ENERGY, MIC_SPECTRUM, MIC_ENERGY, MIC_ENERGY, MIC_SPECTRUM, MIC_SPECTRUM, MIC_WAVE, MIC_ENERGY, MIC_ENERGY, MIC_ENERGY, MIC_BASS, MIC_BASS, MIC_SPECTRUM, MIC_ENERGY, MIC_ENERGY, MIC_SPECTRUM, MIC_BASS, MIC_FIXED, MIC_BASS, MIC_ENERGY, MIC_SPECTRUM, MIC_ENERGY, MIC_FIXED, MIC_ENERGY, MIC_FIXED, MIC_FIXED, MIC_ENERGY
+ MIC_SPECTRUM, MIC_ENERGY, MIC_ENERGY, MIC_WAVE, MIC_BASS, MIC_ENERGY, MIC_ENERGY, MIC_SPECTRUM, MIC_ENERGY, MIC_ENERGY, MIC_SPECTRUM, MIC_SPECTRUM, MIC_WAVE, MIC_ENERGY, MIC_ENERGY, MIC_ENERGY, MIC_BASS, MIC_BASS, MIC_SPECTRUM, MIC_ENERGY, MIC_ENERGY, MIC_SPECTRUM, MIC_BASS, MIC_FIXED, MIC_BASS, MIC_ENERGY, MIC_SPECTRUM, MIC_ENERGY, MIC_FIXED, MIC_ENERGY, MIC_FIXED, MIC_FIXED, MIC_ENERGY,
+ MIC_FIXED, MIC_FIXED, MIC_FIXED, MIC_FIXED, MIC_FIXED
 };
 static_assert(sizeof(AUTO_MIC_TYPES)/sizeof(AUTO_MIC_TYPES[0])==VIS_COUNT,"auto mic profile count");
 static constexpr float AUTO_MIC_TARGET=.80f;
@@ -576,7 +582,7 @@ static void loadSettings(){
   if(remapToV178)slot=toV178Effect(slot,sortVersion);
   return toV1717Index(toV1714Index(slot,hasV1712));
  };
- const int sourceCount=prefs.getUChar("s1729",0)==1?33:(prefs.getUChar("s1728",0)==1?32:(hasV1717?30:(hasV1716?41:(hasV1715?31:(hasV1714?26:(hasV1712?33:(remapToV178?31:23)))))));
+ const int sourceCount=prefs.getUChar("s1731",0)==1?38:(prefs.getUChar("s1729",0)==1?33:(prefs.getUChar("s1728",0)==1?32:(hasV1717?30:(hasV1716?41:(hasV1715?31:(hasV1714?26:(hasV1712?33:(remapToV178?31:23))))))));
  const char *effectKey=hasV1717?"eff1717":(hasV1716?"eff1716":(hasV1715?"eff1715":(hasV1714?"eff1714":(hasV1712?"eff1712":(hasV178?"eff178":"effect")))));
  const char *favoriteKey=hasV1717?"fav1717":(hasV1716?"fav1716":(hasV1715?"fav1715":(hasV1714?"fav1714":(hasV1712?"fav1712":(hasV178?"fav178":"favs")))));
  const char *manualKey=hasV1717?"man1717":(hasV1716?"man1716":(hasV1715?"man1715":(hasV1714?"man1714":(hasV1712?"man1712":(hasV178?"man178":"micmodes")))));
@@ -1284,12 +1290,14 @@ static void drawCinematic(uint8_t id){
 #include "assets/GravityLabV1720.h"
 #include "assets/ArtCapsuleV1728.h"
 #include "assets/GhostCompanionV1728.h"
+#include "assets/InfinityMirrorV1731.h"
 static void renderEffect(){
  const uint8_t id=originalEffect(effectID);
  if(id==64){StringTheory::render();return;}
  if(id==65||id==66){GravityLab::render(id==65);return;}
  if(id==68){ArtCapsule::render();return;}
  if(id==69){GhostCompanion::render();return;}
+ if(id>=71&&id<=75){InfinityMirrorV1731::render(id-71);return;}
  if(renderStringFestivalV1714(id))return; // original three, completely unchanged
  if(renderStringFestivalV1715(id))return; // five unchanged textile scenes
  if(renderImportedAudioV1716(id))return; // 10 imported/adapted audio faces, IDs 54..63
@@ -2265,6 +2273,8 @@ static uint8_t powerFrameCap(){
  if(originalEffect(effectID)==66)return profile==2?18:(profile==1?27:33); // deluxe Gravity Lab
  if(originalEffect(effectID)==68)return 12; // image stays steady; perimeter moves
  if(originalEffect(effectID)==69)return profile==2?24:(profile==1?35:44); // bobbing ghost
+ if(originalEffect(effectID)>=71&&originalEffect(effectID)<=75)
+  return profile==2?22:(profile==1?31:39); // V17.31 smooth continuous inward travel
  if(originalEffect(effectID)==51||originalEffect(effectID)==53)return profile==2?18:26; // smoother/faster surviving yarn effects
  if(originalEffect(effectID)>=49)return profile==2?14:20; // limit imported Nova for power
  if(!adaptiveRender)return rate;
@@ -2370,6 +2380,12 @@ void setup(){
  if(prefs.getUChar("s1729",0)!=1){
    prefs.putBytes("gain1728",gainPct,sizeof(gainPct));
    prefs.putUChar("s1729",1);
+ }
+ // V17.31: expand 33 stored effect gains to 38 without remapping any slots.
+ // Keep marker last: a power loss leaves prior settings valid for next boot.
+ if(prefs.getUChar("s1731",0)!=1){
+   prefs.putBytes("gain1728",gainPct,sizeof(gainPct));
+   prefs.putUChar("s1731",1);
  }
  // V17.1: boot directly into the final effect; do not cover it with the battery HUD.
  sampleBatteryDrain(true);
