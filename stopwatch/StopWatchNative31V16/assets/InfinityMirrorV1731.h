@@ -4,14 +4,14 @@
 // IDs 71..75 are appended. No Wi-Fi, microphone amplitude or external assets required.
 namespace InfinityMirrorV1731 {
   static constexpr int LUT=96;
-  static constexpr float TWO_PI=6.2831853071795864769f;
+  static constexpr float IM_TAU=6.2831853071795864769f;
   static float sn[LUT],cs[LUT];
   static bool ready=false;
 
   static void init(){
     if(ready)return;
     for(int i=0;i<LUT;i++){
-      const float a=TWO_PI*i/LUT;
+      const float a=IM_TAU*i/LUT;
       sn[i]=sinf(a);cs[i]=cosf(a);
     }
     ready=true;
@@ -92,7 +92,7 @@ namespace InfinityMirrorV1731 {
       float r=depthRadius(z);
       const float br=brilliance(z);
       const int step=r>117?1:(r>61?2:3);
-      const float offset=(k&1)?TWO_PI/(2*LUT):0.f;
+      const float offset=(k&1)?IM_TAU/(2*LUT):0.f;
       float co=cosf(offset),si=sinf(offset);
       const uint16_t pearl=(k%5==0)?rgb(119,185,217):((k&1)?rgb(214,232,245):rgb(243,248,251));
       const int dotr=r>116?3:(r>34?2:1);
@@ -136,7 +136,7 @@ namespace InfinityMirrorV1731 {
       for(int step=0;step<=44;step++){
         float z=step/44.f;
         float r=depthRadius(z);
-        float theta=(arm*TWO_PI/8)+z*3.1f+drift;
+        float theta=(arm*IM_TAU/8)+z*3.1f+drift;
         float x=CX+r*cosf(theta),y=CY+r*sinf(theta);
         if(step){
           uint16_t co=tint((arm&1)?rgb(255,58,189):rgb(36,192,246),
@@ -239,7 +239,7 @@ namespace InfinityMirrorV1731 {
       float oldx=0,oldy=0;
       for(int k=0;k<=35;k++){
         float z=k/35.f,r=depthRadius(z);
-        float a=p*TWO_PI/12+rotationalDrift+z*.53f;
+        float a=p*IM_TAU/12+rotationalDrift+z*.53f;
         float x=CX+r*cosf(a),y=CY+r*sinf(a);
         if(k>0)line(oldx,oldy,x,y,tint(rgb(169,179,250),.12f*(1.f-z)),1);
         oldx=x;oldy=y;
