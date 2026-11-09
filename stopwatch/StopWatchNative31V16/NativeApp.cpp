@@ -1338,9 +1338,9 @@ static const char *const XL_ROWS[2][3]={
  {"fghjk","lzxcv","bnm"}
 };
 static constexpr int NAME_BUTTON_Y=376,NAME_BUTTON_H=48;
-static constexpr int NAME_MODE_X=94,NAME_MODE_W=84;
-static constexpr int NAME_DELETE_X=183,NAME_DELETE_W=100;
-static constexpr int NAME_PAGE_X=288,NAME_PAGE_W=84;
+static constexpr int NAME_MODE_X=106,NAME_MODE_W=80;
+static constexpr int NAME_DELETE_X=193,NAME_DELETE_W=80;
+static constexpr int NAME_PAGE_X=280,NAME_PAGE_W=80;
 static bool nameBottomHit(int x,int y,uint8_t &action){
  if(y<NAME_BUTTON_Y-10||y>NAME_BUTTON_Y+NAME_BUTTON_H+7)return false;
  if(x>=NAME_MODE_X-5&&x<NAME_MODE_X+NAME_MODE_W+3){action=1;return true;}
@@ -1639,7 +1639,7 @@ static void renderOverlay(){
    }
   }
   // Three clearly separated controls; inactive third zone is a countdown.
-  uiButton(NAME_MODE_X,NAME_BUTTON_Y,NAME_MODE_W,NAME_BUTTON_H,nameKeyboardLarge?"QWERTY":"LARGE");
+  uiButton(NAME_MODE_X,NAME_BUTTON_Y,NAME_MODE_W,NAME_BUTTON_H,nameKeyboardLarge?"FULL":"LARGE");
   uiButton(NAME_DELETE_X,NAME_BUTTON_Y,NAME_DELETE_W,NAME_BUTTON_H,"DEL");
   if(nameKeyboardLarge)uiButton(NAME_PAGE_X,NAME_BUTTON_Y,NAME_PAGE_W,NAME_BUTTON_H,nameKeyboardPage==0?"NEXT":"BACK");
   else textC("ALL 26",NAME_PAGE_X+NAME_PAGE_W/2,NAME_BUTTON_Y+NAME_BUTTON_H/2,GRAY,2);
