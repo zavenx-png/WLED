@@ -22,7 +22,7 @@
 #undef sq
 #endif
 
-constexpr uint8_t VIS_COUNT=32, Z_COUNT=28, REMOTE_PAGES=6;
+constexpr uint8_t VIS_COUNT=33, Z_COUNT=28, REMOTE_PAGES=6;
 constexpr int NFFT=512, MIC_SAMPLE_RATE=16000, NBANDS=32;
 constexpr float PI_F=3.14159265358979323846f, TAU=6.28318530717958647692f;
 static const char *const EFFECT_NAMES[VIS_COUNT] = {
@@ -57,9 +57,10 @@ static const char *const EFFECT_NAMES[VIS_COUNT] = {
  "FluidBox Classic",
  "Gravity Lab",
  "AirDrop Art Capsule",
- "Ghost Companion"
+ "Ghost Companion",
+ "Warehouse Disco Duo"
 };
-static constexpr uint8_t ORIGINAL_EFFECT_ID[VIS_COUNT]={23,22,20,4,24,29,30,1,2,3,6,7,8,9,10,11,12,13,17,19,25,26,27,44,51,53,63,64,65,66,68,69};
+static constexpr uint8_t ORIGINAL_EFFECT_ID[VIS_COUNT]={23,22,20,4,24,29,30,1,2,3,6,7,8,9,10,11,12,13,17,19,25,26,27,44,51,53,63,64,65,66,68,69,70};
 static inline uint8_t originalEffect(uint8_t i);
 // V12 presentation order -> V13, prior to the two V16.8 effect removals.
 static constexpr uint8_t V12_INDEX_TO_V13[31]={9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,0,1,2,3,4,5,6,7,8,28,29,30};
@@ -348,6 +349,8 @@ static inline float band(int b){return bins[clampi(b,0,NBANDS-1)];}
 static inline void textC(const String& s,int x,int y,uint16_t c,int size=2){cv.setTextDatum(middle_center);cv.setTextColor(c);cv.drawString(s,x,y,size);}
 static inline void black(){cv.fillScreen(TFT_BLACK);}
 static inline uint8_t originalEffect(uint8_t i){return ORIGINAL_EFFECT_ID[i%VIS_COUNT];}
+// Both Robot Shuffle and Warehouse Disco Duo use the persistent blue/pink names.
+static inline bool isRobotNameEffect(uint8_t i){const uint8_t id=originalEffect(i);return id==22||id==70;}
 static inline bool isTextEffect(uint8_t i){uint8_t id=originalEffect(i);return id>=23&&id<=31;}
 static inline const String& artName(uint8_t i){(void)i;return sharedName.length()?sharedName:DEFAULT_WORD;}
 static inline void glyph(char ch,int x,int y,uint16_t c,int size=4){char b[2]={ch,0};cv.setTextDatum(middle_center);cv.setTextColor(c);cv.drawString(b,x,y,size);}
@@ -414,7 +417,7 @@ static void registerOnset(uint32_t now){
 // expansions; wave: the oscilloscope trace. Rendering functions are unchanged.
 enum AutoMicType : uint8_t {MIC_FIXED=0,MIC_SPECTRUM=1,MIC_BASS=2,MIC_ENERGY=3,MIC_WAVE=4};
 static constexpr uint8_t AUTO_MIC_TYPES[VIS_COUNT]={
- MIC_SPECTRUM, MIC_ENERGY, MIC_ENERGY, MIC_WAVE, MIC_BASS, MIC_ENERGY, MIC_ENERGY, MIC_SPECTRUM, MIC_ENERGY, MIC_ENERGY, MIC_SPECTRUM, MIC_SPECTRUM, MIC_WAVE, MIC_ENERGY, MIC_ENERGY, MIC_ENERGY, MIC_BASS, MIC_BASS, MIC_SPECTRUM, MIC_ENERGY, MIC_ENERGY, MIC_SPECTRUM, MIC_BASS, MIC_FIXED, MIC_BASS, MIC_ENERGY, MIC_SPECTRUM, MIC_ENERGY, MIC_FIXED, MIC_ENERGY, MIC_FIXED, MIC_FIXED
+ MIC_SPECTRUM, MIC_ENERGY, MIC_ENERGY, MIC_WAVE, MIC_BASS, MIC_ENERGY, MIC_ENERGY, MIC_SPECTRUM, MIC_ENERGY, MIC_ENERGY, MIC_SPECTRUM, MIC_SPECTRUM, MIC_WAVE, MIC_ENERGY, MIC_ENERGY, MIC_ENERGY, MIC_BASS, MIC_BASS, MIC_SPECTRUM, MIC_ENERGY, MIC_ENERGY, MIC_SPECTRUM, MIC_BASS, MIC_FIXED, MIC_BASS, MIC_ENERGY, MIC_SPECTRUM, MIC_ENERGY, MIC_FIXED, MIC_ENERGY, MIC_FIXED, MIC_FIXED, MIC_ENERGY
 };
 static_assert(sizeof(AUTO_MIC_TYPES)/sizeof(AUTO_MIC_TYPES[0])==VIS_COUNT,"auto mic profile count");
 static constexpr float AUTO_MIC_TARGET=.80f;
@@ -570,7 +573,7 @@ static void loadSettings(){
   if(remapToV178)slot=toV178Effect(slot,sortVersion);
   return toV1717Index(toV1714Index(slot,hasV1712));
  };
- const int sourceCount=prefs.getUChar("s1728",0)==1?32:(hasV1717?30:(hasV1716?41:(hasV1715?31:(hasV1714?26:(hasV1712?33:(remapToV178?31:23))))));
+ const int sourceCount=prefs.getUChar("s1729",0)==1?33:(prefs.getUChar("s1728",0)==1?32:(hasV1717?30:(hasV1716?41:(hasV1715?31:(hasV1714?26:(hasV1712?33:(remapToV178?31:23)))))));
  const char *effectKey=hasV1717?"eff1717":(hasV1716?"eff1716":(hasV1715?"eff1715":(hasV1714?"eff1714":(hasV1712?"eff1712":(hasV178?"eff178":"effect")))));
  const char *favoriteKey=hasV1717?"fav1717":(hasV1716?"fav1716":(hasV1715?"fav1715":(hasV1714?"fav1714":(hasV1712?"fav1712":(hasV178?"fav178":"favs")))));
  const char *manualKey=hasV1717?"man1717":(hasV1716?"man1716":(hasV1715?"man1715":(hasV1714?"man1714":(hasV1712?"man1712":(hasV178?"man178":"micmodes")))));
@@ -1001,6 +1004,33 @@ static void effectsClassic(uint8_t id){
    if(blueRobot.length())textC(blueRobot,(int)xBlue,(int)(yBlue-116),rgb(109,233,255),4);
    if(pinkRobot.length())textC(pinkRobot,(int)xPink,(int)(yPink-116),rgb(255,144,207),4);
   break;}
+ case 70:{ // V17.29 Warehouse Disco Duo: original Warehouse choreography + Robot Shuffle disco ball/names.
+   // Warehouse House Duo spotlights and audio-reactive floor, exactly as before.
+   for(int i=0;i<11;i++)spoke(CX,27,0,360,-PI_F/2+(i-5)*.095f+t*.12f,tint(hue(i*.09f),.13f),2);
+   for(int i=0;i<19;i++)cv.fillRect(9+i*24,H-28-(int)(band(i+3)*100),16,15+(int)(band(i+3)*100),tint(hue(i*.05f),.22f));
+      // Robot Shuffle's suspended rotating mirror-grid disco ball.
+   line(CX,0,CX,38,rgb(204,221,255),2);
+   const int ballY=85,ballR=43;
+   for(int rr=ballR;rr>=4;rr-=5)dot(CX,ballY,rr,tint(rgb(105+(ballR-rr)*2,153+(ballR-rr),226),.36f));
+   float reflectRot=phase8()*TAU;
+   for(int row=-5;row<=5;row++){
+     int yy=row*8,halfwidth=(int)sqrtf(fmaxf(0,(float)(ballR*ballR-yy*yy)));
+     for(int col=-6;col<=6;col++){
+       int xx=col*11+int(reflectRot*7.f+row*3)%11-5;
+       if(abs(xx)>halfwidth-2)continue;
+       float shine=clampf(.44f+.48f*sinf(xx*.13f+reflectRot+row*.77f));
+       uint16_t tile=tint(hue(.56f+row*.027f+col*.043f),.30f+.68f*shine);
+       cv.fillRoundRect(CX+xx-5,ballY+yy-3,9,7,1,tile);
+     }
+   }
+   circ(CX,ballY,ballR,rgb(180,221,255),2);dot(CX-13,ballY-13,4,rgb(253,255,255));
+   // Original Warehouse House Duo dance steps: fixed left-pink / right-blue partners.
+   figure(150,242,1.f,beatClock+.2f,rgb(255,104,214));
+   figure(318,242,1.f,beatClock+2.f,rgb(77,226,255));
+   // Both names are saved globally and editable with the existing two-field keyboard.
+   if(pinkRobot.length())textC(pinkRobot,150,124,rgb(255,144,207),pinkRobot.length()>7?3:4);
+   if(blueRobot.length())textC(blueRobot,318,124,rgb(109,233,255),blueRobot.length()>7?3:4);
+   break;}
  }
 }
 
@@ -1261,7 +1291,7 @@ static void renderEffect(){
  if(renderStringFestivalV1715(id))return; // five unchanged textile scenes
  if(renderImportedAudioV1716(id))return; // 10 imported/adapted audio faces, IDs 54..63
  if(fidelityClassic167(id)||fidelityText167(id))return;
- if(id<23)effectsClassic(id);
+ if(id<23||id==70)effectsClassic(id);
  else if(id<32)textEffects(id);
  else drawCinematic(id);
  // Mask only corners of the square sprite; the real StopWatch is a circular OLED.
@@ -1539,7 +1569,7 @@ static void renderOverlay(){
  }
  case NAME:{
   black();circ(CX,CY,R-3,rgb(42,92,126),2);
-  const bool robotName=originalEffect(effectID)==22;
+  const bool robotName=isRobotNameEffect(effectID);
   if(robotName){
    uiButton(112,40,112,43,"BLUE",robotField==0);
    uiButton(241,40,112,43,"PINK",robotField==1);
@@ -1825,7 +1855,7 @@ static void showTextEditor(){
  keyboardPopup="";keyboardPopupUntil=0;keyboardPopupStarted=0;vibration();
 }
 static void saveNameOverlay(){
- if(originalEffect(effectID)==22){
+ if(isRobotNameEffect(effectID)){
   // Unedited partner name is preserved; pressing Save with an empty field
   // never silently wipes an existing robot name.
   if(nameRobotBlueEdited&&draftBlue.length())blueRobot=draftBlue;
@@ -1950,17 +1980,17 @@ static void editorTouch(int x,int y){
  }else if(overlay==AP_PASSWORD){
    harnessApPasswordTouch(x,y);
  }else if(overlay==NAME){
-   if(originalEffect(effectID)==22&&y>=40&&y<87){
+   if(isRobotNameEffect(effectID)&&y>=40&&y<87){
      if(x>=112&&x<=353){robotField=x<CX?0:1;keyboardPopup="";vibration(110,24);}
      return;
    }
    // DELETE takes priority over neighboring keys and uses a much larger
    // invisible touch target than the visible DEL button.
    if(deleteHit(x,y)){
-     String &dest=originalEffect(effectID)==22?(robotField==0?draftBlue:draftPink):inputName;
+     String &dest=isRobotNameEffect(effectID)?(robotField==0?draftBlue:draftPink):inputName;
      if(dest.length()){
        dest.remove(dest.length()-1);
-       if(originalEffect(effectID)==22){
+       if(isRobotNameEffect(effectID)){
          if(robotField==0)nameRobotBlueEdited=true;else nameRobotPinkEdited=true;
        }
      }
@@ -1969,10 +1999,10 @@ static void editorTouch(int x,int y){
    }
    char typed=0;int px=0,py=0;
    if(qwertyHit(x,y,typed,px,py)){
-     String &dest=originalEffect(effectID)==22?(robotField==0?draftBlue:draftPink):inputName;
+     String &dest=isRobotNameEffect(effectID)?(robotField==0?draftBlue:draftPink):inputName;
      if(dest.length()<12){
        dest+=typed;
-       if(originalEffect(effectID)==22){
+       if(isRobotNameEffect(effectID)){
          if(robotField==0)nameRobotBlueEdited=true;else nameRobotPinkEdited=true;
        }
        keyboardPop(typed,px,py);vibration(105,20);
@@ -2181,7 +2211,7 @@ static void controlTouch(){
    // No swipe changes effects in V17.19. A and B own effect navigation.
    // Avoid opening the text editor accidentally after a horizontal gesture.
    if(abs(dx)>60 && abs(dx)>abs(y-touchStartY)*1.2f)return;
-   if(originalEffect(effectID)==22||isTextEffect(effectID)||originalEffect(effectID)==44){showTextEditor();return;}
+   if(isRobotNameEffect(effectID)||isTextEffect(effectID)||originalEffect(effectID)==44){showTextEditor();return;}
    // No manual microphone screen: all audio is calibrated automatically.
    if(originalEffect(effectID)==32||originalEffect(effectID)==36||
       originalEffect(effectID)==41||originalEffect(effectID)==43){
@@ -2304,6 +2334,11 @@ void setup(){
    prefs.putBytes("gain1728",gainPct,sizeof(gainPct));
    prefs.putUChar("eff1728",effectID);
    prefs.putUChar("s1728",1);
+ }
+ // V17.29 one-time extension of gains; original 32 positions remain unchanged.
+ if(prefs.getUChar("s1729",0)!=1){
+   prefs.putBytes("gain1728",gainPct,sizeof(gainPct));
+   prefs.putUChar("s1729",1);
  }
  // V17.1: boot directly into the final effect; do not cover it with the battery HUD.
  sampleBatteryDrain(true);
