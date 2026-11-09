@@ -197,7 +197,7 @@ static bool gainIsManual(uint8_t id){return id<VIS_COUNT && (micManualMask&(1ULL
 static void setGainManual(uint8_t id,bool manual){
  if(id>=VIS_COUNT)return;
  if(manual)micManualMask|=(1ULL<<id);else micManualMask&=~(1ULL<<id);
- prefs.putBytes("man1717",&micManualMask,sizeof(micManualMask));
+ prefs.putBytes("man1732",&micManualMask,sizeof(micManualMask));
 }
 String userText[VIS_COUNT];String sharedName="",blueRobot="",pinkRobot="";
 static const String DEFAULT_WORD="zaven";
@@ -222,7 +222,8 @@ uint32_t batteryDrainLast=0,batteryCheckpointMs=0;
 int batteryCheckpointPct=-1,batteryEstimatedMinutes=-1;
 bool batteryPrevCharging=false;
 // Persistent, compact NVS-backed favorites and complete per-scene parameters.
-static constexpr uint64_t FAVORITE_DEFAULT=(1ULL<<22)|(1ULL<<7)|(1ULL<<16)|(1ULL<<1);
+static constexpr uint64_t FAVORITE_DEFAULT=(1ULL<<19)|(1ULL<<7)|(1ULL<<14)|(1ULL<<1);
+static constexpr uint64_t FAVORITE_LEGACY_DEFAULT=(1ULL<<22)|(1ULL<<7)|(1ULL<<16)|(1ULL<<1);
 static constexpr uint32_t SCENE_MAGIC=0x3253435A; // "ZCS1" scene format version
 static const char *const SCENE_LABELS[4]={"WARMUP","PEAK HOUR","HYPNOTIC","AFTERHOURS"};
 struct SceneData {
@@ -267,7 +268,7 @@ static int remoteFavCount(){int n=0;for(int i=0;i<REMOTE_FX_COUNT;i++)if(remoteI
 static int remoteFavIndexAt(int pos){for(int i=0;i<REMOTE_FX_COUNT;i++)if(remoteIsFavorite(i)&&pos--==0)return i;return -1;}
 static String remoteEffectName(int i){return i<Z_COUNT?String(Z_NAMES[i]):String(WLED_NAMES[i-Z_COUNT]);}
 
-static void storeLibrary(){prefs.putBytes("fav1717",&favoriteBits,sizeof(favoriteBits));prefs.putBool("favonly",favoritesOnly);}
+static void storeLibrary(){prefs.putBytes("fav1732",&favoriteBits,sizeof(favoriteBits));prefs.putBool("favonly",favoritesOnly);}
 static void vibration(uint8_t strength,int ms);
 static inline int clampi(int v,int a,int b);
 static void saveNames();
@@ -276,7 +277,7 @@ static void saveScene(uint8_t slot){
  v.palette=selectedPalette;v.harnessBrightness=remoteBrightness;v.speed=remoteSpeed;v.intensity=remoteIntensity;v.remoteFx=remoteSelected;
  v.adaptive=adaptiveRender?1:0;v.remoteIdle=remoteIdleSecs;
  sharedName.toCharArray(v.name,sizeof(v.name));blueRobot.toCharArray(v.blue,sizeof(v.blue));pinkRobot.toCharArray(v.pink,sizeof(v.pink));
- scenes[slot]=v;prefs.putBytes((String("sc1717")+String(slot)).c_str(),&v,sizeof(v));
+ scenes[slot]=v;prefs.putBytes((String("sc1732")+String(slot)).c_str(),&v,sizeof(v));
  // Keep original SceneData binary layout compatible with V11-V15.
  prefs.putBool((String("scna1717")+String(slot)).c_str(),gainIsManual(effectID));
  vibration(170,72);
@@ -291,14 +292,14 @@ static void loadScene(uint8_t slot){
  selectedPalette=clampi(v.palette,0,PAL_COUNT-1);remoteBrightness=v.harnessBrightness;remoteSpeed=v.speed;
  remoteIntensity=v.intensity;remoteSelected=clampi(v.remoteFx,0,Z_COUNT+WLED_COUNT-1);
  adaptiveRender=v.adaptive!=0;remoteIdleSecs=0;favoritesOnly=false;
- prefs.putUChar("eff1728",effectID);if(effectID<30)prefs.putUChar("eff1717",effectID);prefs.putUChar("bright",brightness);prefs.putUChar("profile",profile);
- prefs.putBool("adaptive",adaptiveRender);prefs.putUChar("idle",remoteIdleSecs);prefs.putBytes("gain1728",gainPct,sizeof(gainPct));
+ prefs.putUChar("eff1732",effectID);prefs.putUChar("bright",brightness);prefs.putUChar("profile",profile);
+ prefs.putBool("adaptive",adaptiveRender);prefs.putUChar("idle",remoteIdleSecs);prefs.putBytes("gain1732",gainPct,sizeof(gainPct));
  storeLibrary();saveNames();M5.Display.setBrightness((uint8_t)(brightness*255/100));
  // No automatic transmissions from a recalled scene: avoid unexpected harness changes.
  if(!remote)setCpuFrequencyMhz(profile==2?160:240);
  overlay=NONE;vibration(180,85);
 }
-static void clearScene(uint8_t slot){if(slot>=4)return;scenes[slot]=SceneData();prefs.remove((String("sc1717")+String(slot)).c_str());vibration(140,70);}
+static void clearScene(uint8_t slot){if(slot>=4)return;scenes[slot]=SceneData();prefs.remove((String("sc1732")+String(slot)).c_str());vibration(140,70);}
 static uint8_t nextFavorite(uint8_t start,int dir){
  for(int n=0;n<VIS_COUNT;n++){start=(start+VIS_COUNT+(dir<0?-1:1))%VIS_COUNT;if(isFavorite(start))return start;}return start;
 }
@@ -557,7 +558,8 @@ static void loadSettings(){
  const bool hasV1714=prefs.getUChar("s1714",0)==19;
  const bool hasV1712=prefs.getUChar("s1712",0)==18;
  const bool hasV178=prefs.getUChar("s178",0)==17;
- const bool hadSaved=hasV1717||hasV1716||hasV1715||hasV1714||hasV1712||hasV178||
+ const bool hasV1732=prefs.getUChar("s1732",0)==1;
+ const bool hadSaved=hasV1732||hasV1717||hasV1716||hasV1715||hasV1714||hasV1712||hasV178||
        prefs.isKey("effect")||prefs.isKey("favs")||prefs.isKey("gains")||prefs.isKey("scn0");
  const uint8_t sortVersion=(hasV1717||hasV1716||hasV1715||hasV1714||hasV1712||hasV178)?17:prefs.getUChar("sortrev",12);
  const bool legacyV12=hadSaved&&sortVersion<13;
@@ -565,31 +567,32 @@ static void loadSettings(){
  // For an old 33-slot menu, only index 25->23, 26->24 and 30->25
  // survive; seven discarded String modes are deliberately not migrated.
  const auto mapSlot=[&](uint8_t slot)->uint8_t{
-  if(hasV1717)return slot<VIS_COUNT?slot:0xff;
-  if(hasV1716)return toV1717Index(slot);
-  if(hasV1715)return slot<31?toV1717Index(slot):0xff;
-  if(hasV1714)return slot<26?toV1717Index(slot):0xff;
+  if(hasV1732)return slot<VIS_COUNT?slot:0xff;
+  if(hasV1717)return remapV1731Slot(slot);
+  if(hasV1716)return remapV1731Slot(toV1717Index(slot));
+  if(hasV1715)return slot<31?remapV1731Slot(toV1717Index(slot)):0xff;
+  if(hasV1714)return slot<26?remapV1731Slot(toV1717Index(slot)):0xff;
   if(remapToV178)slot=toV178Effect(slot,sortVersion);
-  return toV1717Index(toV1714Index(slot,hasV1712));
+  return remapV1731Slot(toV1717Index(toV1714Index(slot,hasV1712)));
  };
- const int sourceCount=prefs.getUChar("s1731",0)==1?38:(prefs.getUChar("s1729",0)==1?33:(prefs.getUChar("s1728",0)==1?32:(hasV1717?30:(hasV1716?41:(hasV1715?31:(hasV1714?26:(hasV1712?33:(remapToV178?31:23))))))));
+ const int sourceCount=hasV1732?26:(prefs.getUChar("s1731",0)==1?38:(prefs.getUChar("s1729",0)==1?33:(prefs.getUChar("s1728",0)==1?32:(hasV1717?30:(hasV1716?41:(hasV1715?31:(hasV1714?26:(hasV1712?33:(remapToV178?31:23)))))))));
  const char *effectKey=hasV1717?"eff1717":(hasV1716?"eff1716":(hasV1715?"eff1715":(hasV1714?"eff1714":(hasV1712?"eff1712":(hasV178?"eff178":"effect")))));
- const char *favoriteKey=hasV1717?"fav1717":(hasV1716?"fav1716":(hasV1715?"fav1715":(hasV1714?"fav1714":(hasV1712?"fav1712":(hasV178?"fav178":"favs")))));
- const char *manualKey=hasV1717?"man1717":(hasV1716?"man1716":(hasV1715?"man1715":(hasV1714?"man1714":(hasV1712?"man1712":(hasV178?"man178":"micmodes")))));
- const char *gainKey=prefs.getUChar("s1728",0)==1?"gain1728":hasV1717?"gain1717":(hasV1716?"gain1716":(hasV1715?"gain1715":(hasV1714?"gain1714":(hasV1712?"gain1712":(hasV178?"gain178":"gains")))));
- const char *sceneStem=hasV1717?"sc1717":(hasV1716?"sc1716":(hasV1715?"sc1715":(hasV1714?"sc1714":(hasV1712?"sc1712":(hasV178?"sc178":"scn")))));
+ const char *favoriteKey=hasV1732?"fav1732":hasV1717?"fav1717":(hasV1716?"fav1716":(hasV1715?"fav1715":(hasV1714?"fav1714":(hasV1712?"fav1712":(hasV178?"fav178":"favs")))));
+ const char *manualKey=hasV1732?"man1732":hasV1717?"man1717":(hasV1716?"man1716":(hasV1715?"man1715":(hasV1714?"man1714":(hasV1712?"man1712":(hasV178?"man178":"micmodes")))));
+ const char *gainKey=hasV1732?"gain1732":prefs.getUChar("s1728",0)==1?"gain1728":hasV1717?"gain1717":(hasV1716?"gain1716":(hasV1715?"gain1715":(hasV1714?"gain1714":(hasV1712?"gain1712":(hasV178?"gain178":"gains")))));
+ const char *sceneStem=hasV1732?"sc1732":hasV1717?"sc1717":(hasV1716?"sc1716":(hasV1715?"sc1715":(hasV1714?"sc1714":(hasV1712?"sc1712":(hasV178?"sc178":"scn")))));
  const char *textStem=hasV1717?"t1717":(hasV1716?"t1716":(hasV1715?"t1715":(hasV1714?"t1714":(hasV1712?"t1712":(hasV178?"t178":"t")))));
 
- const uint8_t selected=prefs.getUChar("s1728",0)==1 ? prefs.getUChar("eff1728",0) : mapSlot(prefs.getUChar(effectKey,0));
+ const uint8_t selected=hasV1732?prefs.getUChar("eff1732",0):mapSlot(prefs.getUChar("s1728",0)==1?prefs.getUChar("eff1728",0):prefs.getUChar(effectKey,0));
  effectID=selected<VIS_COUNT?selected:0;
  brightness=clampi(prefs.getUChar("bright",52),8,100);
  profile=prefs.getUChar("profile",1)%3;
 
- uint64_t oldFavorites=FAVORITE_DEFAULT;
+ uint64_t oldFavorites=hasV1732?FAVORITE_DEFAULT:FAVORITE_LEGACY_DEFAULT;
  if(prefs.getBytes(favoriteKey,&oldFavorites,sizeof(oldFavorites))!=sizeof(oldFavorites)){
   oldFavorites=remapToV178
     ? ((1ULL<<4)|(1ULL<<9)|(1ULL<<19)|(1ULL<<27)|(1ULL<<28)|(1ULL<<29)|(1ULL<<30))
-    : FAVORITE_DEFAULT;
+    : (hasV1732?FAVORITE_DEFAULT:FAVORITE_LEGACY_DEFAULT);
   if(legacyV12)oldFavorites=(1ULL<<0)|(1ULL<<10)|(1ULL<<18)|(1ULL<<23)|(1ULL<<28)|(1ULL<<29)|(1ULL<<30);
  }
  favoriteBits=0;
@@ -598,6 +601,7 @@ static void loadSettings(){
   if(dest<VIS_COUNT)favoriteBits|=1ULL<<dest;
  }
  favoriteBits&=((1ULL<<VIS_COUNT)-1ULL);
+ if(!hadSaved&&!hasV1732)favoriteBits=FAVORITE_DEFAULT;
  favoritesOnly=false;
 
  // Match current auto mic behavior. Retain stored compatibility, but all
@@ -663,11 +667,22 @@ static void loadSettings(){
    prefs.putBytes((String("sc1717")+String(j)).c_str(),&scenes[j],sizeof(SceneData));
   prefs.putUChar("s1717",22);
  }
+ // V17.32: write the curated 26-slot schema once, AFTER remapping
+ // legacy 38-slot favorites, scenes and gain values. Never rewrite V17.31 keys.
+ if(!hasV1732){
+  prefs.putBytes("gain1732",gainPct,sizeof(gainPct));
+  prefs.putBytes("fav1732",&favoriteBits,sizeof(favoriteBits));
+  prefs.putBytes("man1732",&micManualMask,sizeof(micManualMask));
+  prefs.putUChar("eff1732",effectID);
+  for(uint8_t j=0;j<4;j++)if(scenes[j].magic==SCENE_MAGIC)
+   prefs.putBytes((String("sc1732")+String(j)).c_str(),&scenes[j],sizeof(SceneData));
+  prefs.putUChar("s1732",1); // commit marker LAST
+ }
  // Always boot into 01 Chromatic EQ, unchanged from V17.8 onward.
  effectID=0;
  micGain=gainPct[effectID]/100.f;
 }
-static void persistEffect(){prefs.putUChar("eff1728",effectID);if(effectID<30)prefs.putUChar("eff1717",effectID);micGain=gainPct[effectID]/100.f;}
+static void persistEffect(){prefs.putUChar("eff1732",effectID);micGain=gainPct[effectID]/100.f;}
 static void radioSend(uint8_t cmd,uint8_t value){
  if(!radioReady)return;
  uint32_t seq=++remoteSeq;uint8_t payload[12]={'Z','H','R','1',1,cmd,value,0,
@@ -2346,23 +2361,7 @@ void setup(){
  fb=(uint16_t*)cv.getBuffer();
  Serial.printf("Framebuffer OK. Free PSRAM=%u bytes\n",(unsigned)ESP.getFreePsram());
  initArtwork();
- if(prefs.getUChar("s1728",0)!=1){
-   // One-time migration: retain all legacy per-effect sensitivity gains.
-   prefs.putBytes("gain1728",gainPct,sizeof(gainPct));
-   prefs.putUChar("eff1728",effectID);
-   prefs.putUChar("s1728",1);
- }
- // V17.29 one-time extension of gains; original 32 positions remain unchanged.
- if(prefs.getUChar("s1729",0)!=1){
-   prefs.putBytes("gain1728",gainPct,sizeof(gainPct));
-   prefs.putUChar("s1729",1);
- }
- // V17.31: expand 33 stored effect gains to 38 without remapping any slots.
- // Keep marker last: a power loss leaves prior settings valid for next boot.
- if(prefs.getUChar("s1731",0)!=1){
-   prefs.putBytes("gain1728",gainPct,sizeof(gainPct));
-   prefs.putUChar("s1731",1);
- }
+ // The V17.32 settings migration is completed inside loadSettings().
  // V17.1: boot directly into the final effect; do not cover it with the battery HUD.
  sampleBatteryDrain(true);
  M5.BtnA.setHoldThresh(730);M5.BtnB.setHoldThresh(850);
