@@ -214,6 +214,7 @@ String keyboardPopup="";int keyboardPopupX=0,keyboardPopupY=0;
 uint32_t keyboardPopupUntil=0,keyboardPopupStarted=0,brightnessRepeatAt=0;
 // V17.30: ONE full QWERTY page and original centroid-based tap selection.
 uint32_t nameLastInputMs=0;
+uint8_t nameFooterConsumed=0; // 0=none; 1=DEL; 2=SPACE. One action per physical press.
 static constexpr uint32_t NAME_IDLE_MS=8000UL;
 bool brightnessEntryHold=false,batteryEntryHold=false;
 uint8_t candidateBrightness=52;float candidateBpm=125;
@@ -1045,7 +1046,7 @@ static void effectsClassic(uint8_t id){
    // Original Warehouse House Duo dance steps: fixed left-pink / right-blue partners.
    figure(150,242,1.f,beatClock+.2f,rgb(255,104,214));
    figure(318,242,1.f,beatClock+2.f,rgb(77,226,255));
-   // Both names are saved globally and editable with the existing two-field keyboard.
+   // Both names are session-only; they are never saved in NVS.
    if(warehousePinkName.length())textC(warehousePinkName,150,124,rgb(255,144,207),warehousePinkName.length()>7?3:4);
    if(warehouseBlueName.length())textC(warehouseBlueName,318,124,rgb(109,233,255),warehouseBlueName.length()>7?3:4);
    break;}
@@ -1389,9 +1390,15 @@ static constexpr int NAME_TOP[3]={155,226,297};
 static constexpr int NAME_PITCH[3]={43,46,53};
 static constexpr int NAME_WIDTH[3]={40,45,48};
 static constexpr int NAME_HEIGHT=59;
-static constexpr int NAME_DEL_X=138,NAME_DEL_Y=380,NAME_DEL_W=190,NAME_DEL_H=48;
+// The footer controls occupy two distinct, entirely touchable rectangular keys.
+// Their on-press hit tests never use the finger-centroid averaging for letters.
+static constexpr int NAME_DEL_X=125,NAME_DEL_Y=381,NAME_DEL_W=149,NAME_DEL_H=48;
+static constexpr int NAME_SPACE_X=283,NAME_SPACE_Y=381,NAME_SPACE_W=52,NAME_SPACE_H=48;
 static bool nameDeleteHit(int x,int y){
- return x>=119&&x<=347&&y>=370&&y<=431;
+ return x>=NAME_DEL_X&&x<NAME_DEL_X+NAME_DEL_W&&y>=NAME_DEL_Y&&y<NAME_DEL_Y+NAME_DEL_H;
+}
+static bool nameSpaceHit(int x,int y){
+ return x>=NAME_SPACE_X&&x<NAME_SPACE_X+NAME_SPACE_W&&y>=NAME_SPACE_Y&&y<NAME_SPACE_Y+NAME_SPACE_H;
 }
 static bool nameLetterHit(int x,int y,char &out,int &cx,int &cy){
  if(x<10||x>457||y<145||y>365)return false;
@@ -1657,11 +1664,17 @@ static void renderOverlay(){
    cv.drawRoundRect(x,y,w,NAME_HEIGHT,9,selected?rgb(234,255,255):rgb(115,176,212));
    textC(String((char)toupper((unsigned char)NAME_ROWS[row][k])),cx,cy,rgb(255,255,255),4);
   }
-  const bool deleting=touchDown&&nameDeleteHit(touchLastX,touchLastY);
-  cv.fillRoundRect(NAME_DEL_X,NAME_DEL_Y,NAME_DEL_W,NAME_DEL_H,12,
+  // Letter labels and footer labels all use the same large, readable font tier.
+  const bool deleting=touchDown&&nameFooterConsumed==1;
+  const bool spacing=touchDown&&nameFooterConsumed==2;
+  cv.fillRoundRect(NAME_DEL_X,NAME_DEL_Y,NAME_DEL_W,NAME_DEL_H,10,
                    deleting?rgb(64,147,170):rgb(32,90,120));
-  cv.drawRoundRect(NAME_DEL_X,NAME_DEL_Y,NAME_DEL_W,NAME_DEL_H,12,rgb(164,229,249));
-  textC("DELETE",CX,NAME_DEL_Y+NAME_DEL_H/2,rgb(251,254,255),3);
+  cv.drawRoundRect(NAME_DEL_X,NAME_DEL_Y,NAME_DEL_W,NAME_DEL_H,10,rgb(164,229,249));
+  textC("DEL",NAME_DEL_X+NAME_DEL_W/2,NAME_DEL_Y+NAME_DEL_H/2,rgb(251,254,255),4);
+  cv.fillRoundRect(NAME_SPACE_X,NAME_SPACE_Y,NAME_SPACE_W,NAME_SPACE_H,10,
+                   spacing?rgb(64,147,170):rgb(32,90,120));
+  cv.drawRoundRect(NAME_SPACE_X,NAME_SPACE_Y,NAME_SPACE_W,NAME_SPACE_H,10,rgb(164,229,249));
+  textC("SP",NAME_SPACE_X+NAME_SPACE_W/2,NAME_SPACE_Y+NAME_SPACE_H/2,rgb(251,254,255),4);
   const uint32_t remaining=now-nameLastInputMs>=NAME_IDLE_MS?0:NAME_IDLE_MS-(now-nameLastInputMs);
   textC(String("AUTO EXIT  ")+String((remaining+999)/1000)+"s",CX,445,GRAY,2);
   // Preview the letter under the AVERAGED finger location. Commit only on release.
@@ -1918,6 +1931,7 @@ static void showTextEditor(){
  overlay=NAME;inputName="";draftBlue="";draftPink="";robotField=0;
  nameRobotBlueEdited=false;nameRobotPinkEdited=false;
  nameLastInputMs=millis();
+ nameFooterConsumed=0;
  keyboardPopup="";keyboardPopupUntil=0;keyboardPopupStarted=0;vibration();
 }
 static void saveNameOverlay(){
@@ -1936,26 +1950,43 @@ static void saveNameOverlay(){
 static void cancelNameOverlay(){
  overlay=NONE;inputName="";draftBlue="";draftPink="";
  nameRobotBlueEdited=false;nameRobotPinkEdited=false;
- keyboardPopup="";keyboardPopupUntil=0;
+ nameFooterConsumed=0;keyboardPopup="";keyboardPopupUntil=0;
 }
-// One action per release, selected by the average finger centroid.
+// V17.33: footer keys act on the LIVE touch coordinate, on touch-down.
+// Unlike letters, DEL and SPACE never depend on the averaged contact center.
+static bool nameFooterPress(int x,int y){
+ if(overlay!=NAME||nameFooterConsumed)return false;
+ const bool deleting=nameDeleteHit(x,y),spacing=nameSpaceHit(x,y);
+ if(!deleting&&!spacing)return false;
+ nameFooterConsumed=deleting?1:2;
+ nameLastInputMs=millis();
+ keyboardPopup="";
+ String &dest=isRobotNameEffect(effectID)?(robotField==0?draftBlue:draftPink):inputName;
+ if(deleting){
+  if(dest.length()){
+   dest.remove(dest.length()-1);
+   if(isRobotNameEffect(effectID)){
+    if(robotField==0)nameRobotBlueEdited=true;else nameRobotPinkEdited=true;
+   }
+  }else if(originalEffect(effectID)==76){
+   // An empty DEL press allows an existing session-only label to be cleared.
+   if(robotField==0)nameRobotBlueEdited=true;else nameRobotPinkEdited=true;
+  }
+ }else if(dest.length()<12){
+  dest+=' ';
+  if(isRobotNameEffect(effectID)){
+   if(robotField==0)nameRobotBlueEdited=true;else nameRobotPinkEdited=true;
+  }
+ }
+ vibration(103,14);return true;
+}
+// Letter keys and BLUE/PINK tabs still use the averaged finger centroid.
 static bool nameEditorCommit(int x,int y){
  if(overlay!=NAME)return false;
  const uint32_t now=millis();
  if(isRobotNameEffect(effectID)&&y>=36&&y<=96&&x>=105&&x<=358){
   robotField=x<CX?0:1;keyboardPopup="";nameLastInputMs=now;vibration(95,12);
   return true;
- }
- if(nameDeleteHit(x,y)){
-  nameLastInputMs=now;keyboardPopup="";
-  String &dest=isRobotNameEffect(effectID)?(robotField==0?draftBlue:draftPink):inputName;
-  if(dest.length()){
-   dest.remove(dest.length()-1);
-   if(isRobotNameEffect(effectID)){
-    if(robotField==0)nameRobotBlueEdited=true;else nameRobotPinkEdited=true;
-   }
-  }
-  vibration(103,14);return true;
  }
  char typed=0;int px=0,py=0;
  if(!nameLetterHit(x,y,typed,px,py))return false;
@@ -2214,7 +2245,10 @@ static void controlTouch(){
    if(overlay==NONE&&!remote&&(originalEffect(effectID)==65||originalEffect(effectID)==66))GravityLab::touchStart(touch.x,touch.y,originalEffect(effectID)==65);
    nameTouchXSum=touch.x;nameTouchYSum=touch.y;nameTouchSamples=1;
    remoteTouchXSum=touch.x;remoteTouchYSum=touch.y;remoteTouchSamples=1;
-   if(overlay==NAME)keyboardPopup="";
+   if(overlay==NAME){
+     nameFooterConsumed=0;keyboardPopup="";
+     nameFooterPress(touch.x,touch.y);
+   }
  }
  if(touch.isPressed()&&touchDown){
    touchLastX=touch.x;touchLastY=touch.y;
@@ -2235,7 +2269,12 @@ static void controlTouch(){
        nameTouchXSum+=touch.x;nameTouchYSum+=touch.y;nameTouchSamples++;
      }
    }
-   if(overlay==NAME){
+   if(overlay==NAME&&!nameFooterConsumed&&touchStartY>=NAME_DEL_Y-6
+      &&touchStartY<=NAME_DEL_Y+NAME_DEL_H+6){
+     // One retry for contacts that become stable on the glass after touch-down.
+     nameFooterPress(touch.x,touch.y);
+   }
+   if(overlay==NAME&&!nameFooterConsumed){
      // Magnifier previews the CURRENT mean position, without entering letters.
      char ch=0;int cx=0,cy=0;
      const int ax=nameTouchXSum/nameTouchSamples,ay=nameTouchYSum/nameTouchSamples;
@@ -2248,6 +2287,11 @@ static void controlTouch(){
    // A physical contact can report both wasClicked and wasReleased across
    // frames. Commit exactly once, then discard any duplicate event.
    if(!touchDown)return;
+   if(overlay==NAME&&nameFooterConsumed){
+     // Footer already committed on touch-down. Ignore averaged release entirely.
+     nameFooterConsumed=0;touchDown=false;nameTouchSamples=0;remoteTouchSamples=0;
+     return;
+   }
    uint32_t held=millis()-touchStart;
    int x=touchLastX,y=touchLastY;
    if((overlay==NAME||overlay==AP_PASSWORD)&&nameTouchSamples>0){
