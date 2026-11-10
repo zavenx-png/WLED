@@ -1,5 +1,6 @@
 import SwiftUI
 import CoreBluetooth
+import WebKit
 
 // Self-contained Bluetooth companion for WLED Harness v5.3 BLE.
 // This is a separate app: Apple's official WLED app does not expose BLE transport.
@@ -267,11 +268,78 @@ final class HarnessBluetooth: NSObject, ObservableObject, CBCentralManagerDelega
 @main
 struct ZavenHarnessApp: App {
     @StateObject private var model = HarnessBluetooth()
+    @State private var transport = 0
     var body: some Scene {
         WindowGroup {
-            HarnessScreen()
-                .environmentObject(model)
-                .preferredColorScheme(.dark)
+            VStack(spacing: 0) {
+                Picker("Connection", selection: $transport) {
+                    Text("Bluetooth").tag(0)
+                    Text("Wi-Fi").tag(1)
+                }
+                .pickerStyle(.segmented)
+                .padding(.horizontal)
+                .padding(.top, 8)
+                if transport == 0 {
+                    HarnessScreen().environmentObject(model)
+                } else {
+                    WLEDWiFiScreen()
+                }
+            }
+            .preferredColorScheme(.dark)
+        }
+    }
+}
+
+// Native WLED UI over Wi-Fi is loaded inside the same companion app.
+// BLE has separate native controls because a normal HTTP WebView cannot
+// communicate directly with the iPhone's CoreBluetooth API.
+struct WLEDWiFiScreen: View {
+    @State private var address = "http://4.3.2.1"
+    @State private var url = URL(string: "http://4.3.2.1")!
+
+    var body: some View {
+        VStack(spacing: 8) {
+            HStack {
+                TextField("WLED device IP or URL", text: $address)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .keyboardType(.URL)
+                    .textFieldStyle(.roundedBorder)
+                Button("Go") {
+                    let entered = address.trimmingCharacters(in: .whitespacesAndNewlines)
+                    let full = entered.contains("://") ? entered : "http://" + entered
+                    guard let parsed = URL(string: full),
+                          let host = parsed.host, !host.isEmpty,
+                          parsed.scheme == "http" || parsed.scheme == "https" else { return }
+                    url = parsed
+                }
+                .buttonStyle(.borderedProminent)
+            }
+            .padding(.horizontal)
+            Text("Connect your iPhone to WLED-AP for 4.3.2.1, or enter your harness's network IP.")
+                .font(.caption).foregroundStyle(.secondary)
+                .padding(.horizontal)
+            WLEDWebView(url: url)
+        }
+        .navigationTitle("WLED via Wi-Fi")
+    }
+}
+
+struct WLEDWebView: UIViewRepresentable {
+    let url: URL
+    final class Coordinator {
+        var lastRequested: URL?
+    }
+    func makeCoordinator() -> Coordinator { Coordinator() }
+    func makeUIView(context: Context) -> WKWebView {
+        let web = WKWebView(frame: .zero)
+        web.allowsBackForwardNavigationGestures = true
+        return web
+    }
+    func updateUIView(_ webView: WKWebView, context: Context) {
+        if context.coordinator.lastRequested != url {
+            context.coordinator.lastRequested = url
+            webView.load(URLRequest(url: url))
         }
     }
 }
