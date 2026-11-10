@@ -23,7 +23,7 @@ open ZavenHarnessBLE.xcodeproj
 
 In Xcode, select an Apple development team under Signing & Capabilities and select your iPhone 17 Pro Max as the run destination; press Run. An app binary for personal installation **cannot be exported without Apple code signing** and is not included here.
 
-The app uses **CoreBluetooth**, requires no Internet or Wi-Fi after pairing, and supports power, brightness, effect/palette selection, v5.3 per-effect settings and default buttons, and presets 1–9. It is a *companion*, **not** a modified App Store copy of the official WLED app. Wi-Fi controls remain in the official WLED app.
+The custom app includes a **Bluetooth / Wi-Fi selector** at its top. Bluetooth uses **CoreBluetooth** and requires neither Internet nor Wi-Fi after pairing: power, brightness, effect/palette selection, v5.3 per-effect settings/default buttons, and presets 1–9. Wi-Fi embeds the device's **complete existing WLED web interface** using WKWebView (default address `http://4.3.2.1` on WLED-AP; enter a different LAN IP as needed). This is a *custom companion*, **not** a modification to the existing official App Store WLED app.
 
 ## Protocol (BLE GATT)
 
