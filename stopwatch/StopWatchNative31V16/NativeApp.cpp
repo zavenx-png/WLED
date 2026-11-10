@@ -22,13 +22,14 @@
 #undef sq
 #endif
 
-constexpr uint8_t VIS_COUNT=26, Z_COUNT=28, REMOTE_PAGES=6;
+constexpr uint8_t VIS_COUNT=27, Z_COUNT=28, REMOTE_PAGES=6;
 constexpr int NFFT=512, MIC_SAMPLE_RATE=16000, NBANDS=32;
 constexpr float PI_F=3.14159265358979323846f, TAU=6.28318530717958647692f;
 static const char *const EFFECT_NAMES[VIS_COUNT]={
  "zaven Chromatic EQ",
  "Robot Shuffle",
  "Warehouse House Duo",
+ "Warehouse Disco Duo",
  "Matrix Phosphor",
  "zaven Psychedelic Halo",
  "zaven Electric Aurora",
@@ -53,7 +54,7 @@ static const char *const EFFECT_NAMES[VIS_COUNT]={
  "Ultraviolet Reactor",
  "Disco Stargate"
 };
-static constexpr uint8_t ORIGINAL_EFFECT_ID[VIS_COUNT]={23,22,20,4,24,29,30,1,3,6,7,8,9,10,12,13,17,25,26,27,63,64,65,73,74,75};
+static constexpr uint8_t ORIGINAL_EFFECT_ID[VIS_COUNT]={23,22,20,76,4,24,29,30,1,3,6,7,8,9,10,12,13,17,25,26,27,63,64,65,73,74,75};
 // Map the 38 old slots to the 26 retained positions; 0xff means removed.
 static constexpr uint8_t V1731_TO_V1732[38]={0,1,2,3,4,5,6,7,0xff,8,9,10,11,12,13,0xff,14,15,16,0xff,17,18,19,0xff,0xff,0xff,20,21,22,0xff,0xff,0xff,0xff,0xff,0xff,23,24,25};
 static inline uint8_t remapV1731Slot(uint8_t slot){return slot<38?V1731_TO_V1732[slot]:0xff;}
@@ -200,6 +201,9 @@ static void setGainManual(uint8_t id,bool manual){
  prefs.putBytes("man1732",&micManualMask,sizeof(micManualMask));
 }
 String userText[VIS_COUNT];String sharedName="",blueRobot="",pinkRobot="";
+// V17.33: effect #4 robot labels exist in RAM for the current boot only.
+// They are intentionally NEVER written to NVS or copied to scenes.
+String warehouseBlueName="",warehousePinkName="";
 static const String DEFAULT_WORD="zaven";
 enum Overlay : uint8_t {NONE,NAME,BRIGHTNESS,RHYTHM,BATTERY,AP_PASSWORD};
 Overlay overlay=NONE;
@@ -350,7 +354,7 @@ static inline void textC(const String& s,int x,int y,uint16_t c,int size=2){cv.s
 static inline void black(){cv.fillScreen(TFT_BLACK);}
 static inline uint8_t originalEffect(uint8_t i){return ORIGINAL_EFFECT_ID[i%VIS_COUNT];}
 // Both Robot Shuffle and Warehouse Disco Duo use the persistent blue/pink names.
-static inline bool isRobotNameEffect(uint8_t i){const uint8_t id=originalEffect(i);return id==22||id==70;}
+static inline bool isRobotNameEffect(uint8_t i){const uint8_t id=originalEffect(i);return id==22||id==76;}
 static inline bool isTextEffect(uint8_t i){uint8_t id=originalEffect(i);return id>=23&&id<=31;}
 static inline const String& artName(uint8_t i){(void)i;return sharedName.length()?sharedName:DEFAULT_WORD;}
 static inline void glyph(char ch,int x,int y,uint16_t c,int size=4){char b[2]={ch,0};cv.setTextDatum(middle_center);cv.setTextColor(c);cv.drawString(b,x,y,size);}
@@ -417,7 +421,7 @@ static void registerOnset(uint32_t now){
 // expansions; wave: the oscilloscope trace. Rendering functions are unchanged.
 enum AutoMicType : uint8_t {MIC_FIXED=0,MIC_SPECTRUM=1,MIC_BASS=2,MIC_ENERGY=3,MIC_WAVE=4};
 static constexpr uint8_t AUTO_MIC_TYPES[VIS_COUNT]={
- MIC_SPECTRUM, MIC_ENERGY, MIC_ENERGY, MIC_WAVE, MIC_BASS, MIC_ENERGY, MIC_ENERGY, MIC_SPECTRUM, MIC_ENERGY, MIC_SPECTRUM, MIC_SPECTRUM, MIC_WAVE, MIC_ENERGY, MIC_ENERGY, MIC_BASS, MIC_BASS, MIC_SPECTRUM, MIC_ENERGY, MIC_SPECTRUM, MIC_BASS, MIC_SPECTRUM, MIC_ENERGY, MIC_FIXED, MIC_FIXED, MIC_FIXED, MIC_FIXED
+ MIC_SPECTRUM, MIC_ENERGY, MIC_ENERGY, MIC_ENERGY, MIC_WAVE, MIC_BASS, MIC_ENERGY, MIC_ENERGY, MIC_SPECTRUM, MIC_ENERGY, MIC_SPECTRUM, MIC_SPECTRUM, MIC_WAVE, MIC_ENERGY, MIC_ENERGY, MIC_BASS, MIC_BASS, MIC_SPECTRUM, MIC_ENERGY, MIC_SPECTRUM, MIC_BASS, MIC_SPECTRUM, MIC_ENERGY, MIC_FIXED, MIC_FIXED, MIC_FIXED, MIC_FIXED
 };
 static_assert(sizeof(AUTO_MIC_TYPES)/sizeof(AUTO_MIC_TYPES[0])==VIS_COUNT,"auto mic profile count");
 static constexpr float AUTO_MIC_TARGET=.80f;
@@ -1018,6 +1022,33 @@ static void effectsClassic(uint8_t id){
    if(blueRobot.length())textC(blueRobot,(int)xBlue,(int)(yBlue-116),rgb(109,233,255),4);
    if(pinkRobot.length())textC(pinkRobot,(int)xPink,(int)(yPink-116),rgb(255,144,207),4);
   break;}
+ case 76:{ // V17.33 effect #4: original Warehouse dance, Robot Shuffle disco ball, volatile independent names.
+   // Warehouse House Duo spotlights and audio-reactive floor, exactly as before.
+   for(int i=0;i<11;i++)spoke(CX,27,0,360,-PI_F/2+(i-5)*.095f+t*.12f,tint(hue(i*.09f),.13f),2);
+   for(int i=0;i<19;i++)cv.fillRect(9+i*24,H-28-(int)(band(i+3)*100),16,15+(int)(band(i+3)*100),tint(hue(i*.05f),.22f));
+      // Robot Shuffle's suspended rotating mirror-grid disco ball.
+   line(CX,0,CX,38,rgb(204,221,255),2);
+   const int ballY=85,ballR=43;
+   for(int rr=ballR;rr>=4;rr-=5)dot(CX,ballY,rr,tint(rgb(105+(ballR-rr)*2,153+(ballR-rr),226),.36f));
+   float reflectRot=phase8()*TAU;
+   for(int row=-5;row<=5;row++){
+     int yy=row*8,halfwidth=(int)sqrtf(fmaxf(0,(float)(ballR*ballR-yy*yy)));
+     for(int col=-6;col<=6;col++){
+       int xx=col*11+int(reflectRot*7.f+row*3)%11-5;
+       if(abs(xx)>halfwidth-2)continue;
+       float shine=clampf(.44f+.48f*sinf(xx*.13f+reflectRot+row*.77f));
+       uint16_t tile=tint(hue(.56f+row*.027f+col*.043f),.30f+.68f*shine);
+       cv.fillRoundRect(CX+xx-5,ballY+yy-3,9,7,1,tile);
+     }
+   }
+   circ(CX,ballY,ballR,rgb(180,221,255),2);dot(CX-13,ballY-13,4,rgb(253,255,255));
+   // Original Warehouse House Duo dance steps: fixed left-pink / right-blue partners.
+   figure(150,242,1.f,beatClock+.2f,rgb(255,104,214));
+   figure(318,242,1.f,beatClock+2.f,rgb(77,226,255));
+   // Both names are saved globally and editable with the existing two-field keyboard.
+   if(warehousePinkName.length())textC(warehousePinkName,150,124,rgb(255,144,207),warehousePinkName.length()>7?3:4);
+   if(warehouseBlueName.length())textC(warehouseBlueName,318,124,rgb(109,233,255),warehouseBlueName.length()>7?3:4);
+   break;}
  case 70:{ // V17.29 Warehouse Disco Duo: original Warehouse choreography + Robot Shuffle disco ball/names.
    // Warehouse House Duo spotlights and audio-reactive floor, exactly as before.
    for(int i=0;i<11;i++)spoke(CX,27,0,360,-PI_F/2+(i-5)*.095f+t*.12f,tint(hue(i*.09f),.13f),2);
@@ -1303,7 +1334,7 @@ static void renderEffect(){
  if(renderStringFestivalV1715(id))return; // five unchanged textile scenes
  if(renderImportedAudioV1716(id))return; // 10 imported/adapted audio faces, IDs 54..63
  if(fidelityClassic167(id)||fidelityText167(id))return;
- if(id<23||id==70)effectsClassic(id);
+ if(id<23||id==76)effectsClassic(id);
  else if(id<32)textEffects(id);
  else drawCinematic(id);
  // Mask only corners of the square sprite; the real StopWatch is a circular OLED.
@@ -2335,6 +2366,7 @@ void setup(){
  M5.Speaker.end();M5.Mic.begin();
  M5.Display.setRotation(0);W=M5.Display.width();H=M5.Display.height();CX=W/2;CY=H/2;R=clampi(min(W,H)/2-3,150,260);
  loadSettings();
+ warehouseBlueName="";warehousePinkName=""; // Explicitly reset both names every boot.
  for(int i=0;i<NFFT;i++)fftWindow[i]=.5f-.5f*cosf(TAU*i/(NFFT-1));
  for(int k=0;k<NBANDS;k++){
    binBegin[k]=clampi((int)roundf(powf(255.f,(float)k/NBANDS)),1,254);
