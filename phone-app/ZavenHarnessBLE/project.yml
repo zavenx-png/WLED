@@ -9,14 +9,20 @@ targets:
     platform: iOS
     sources:
       - path: Sources
+    info:
+      path: Info.plist
+      properties:
+        CFBundleDisplayName: "Zaven Harness"
+        CFBundleShortVersionString: "1.0"
+        CFBundleVersion: "1"
+        UILaunchScreen: {}
+        NSBluetoothAlwaysUsageDescription: "Connect to your Zaven WLED harness without Wi-Fi."
+        NSLocalNetworkUsageDescription: "Connect to the local WLED controller over Wi-Fi."
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoadsInWebContent: true
     settings:
       base:
         SWIFT_VERSION: 5.0
         PRODUCT_BUNDLE_IDENTIFIER: com.zaven.harness.ble
         TARGETED_DEVICE_FAMILY: "1"
-        GENERATE_INFOPLIST_FILE: YES
-        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
-        INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription: "Connect to your Zaven WLED harness without Wi-Fi."
-        INFOPLIST_KEY_NSLocalNetworkUsageDescription: "Reserved for future optional WLED Wi-Fi support."
-        INFOPLIST_KEY_UILaunchScreen_Generation: YES
         CODE_SIGN_STYLE: Automatic
