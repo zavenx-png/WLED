@@ -183,4 +183,5 @@ class ZavenHarnessBLE final : public Usermod {
 };
 static ZavenHarnessBLE zavenHarnessBle;
 REGISTER_USERMOD(zavenHarnessBle);
+} // namespace
 #endif
