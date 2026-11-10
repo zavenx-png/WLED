@@ -19,6 +19,8 @@ final class HarnessBluetooth: NSObject, ObservableObject, CBCentralManagerDelega
     private var inbox = Data()
     private var writeQueue: [Data] = []
     private var isWriting = false
+    private var waitingForReply = false
+    private var pendingCommands: [[String: Any]] = []
 
     @Published var status = "Bluetooth starting…"
     @Published var connected = false
@@ -86,6 +88,8 @@ final class HarnessBluetooth: NSObject, ObservableObject, CBCentralManagerDelega
         writeChar = nil
         notifyChar = nil
         writeQueue.removeAll()
+        pendingCommands.removeAll()
+        waitingForReply = false
         isWriting = false
         inbox.removeAll()
         status = "Disconnected. Tap Connect to retry."
@@ -129,13 +133,23 @@ final class HarnessBluetooth: NSObject, ObservableObject, CBCentralManagerDelega
 
     // Each JSON message ends with newline; writes are 120 bytes and acknowledged.
     private func command(_ dictionary: [String: Any]) {
+        pendingCommands.append(dictionary)
+        sendNextRequest()
+    }
+
+    private func sendNextRequest() {
+        guard connected, !waitingForReply, !pendingCommands.isEmpty else { return }
+        let dictionary = pendingCommands.removeFirst()
+        waitingForReply = true
         guard let json = try? JSONSerialization.data(withJSONObject: dictionary, options: [.fragmentsAllowed]) else {
             status = "Cannot encode control command"
+            waitingForReply = false
+            sendNextRequest()
             return
         }
         var frame = json
         frame.append(0x0A)
-        guard frame.count <= 1024 else { status = "BLE command is too long"; return }
+        guard frame.count <= 1024 else { status = "BLE command is too long"; waitingForReply = false; sendNextRequest(); return }
         let maxChunk = min(device?.maximumWriteValueLength(for: .withResponse) ?? 120, 120)
         guard maxChunk > 0 else { return }
         for start in stride(from: 0, to: frame.count, by: maxChunk) {
@@ -182,6 +196,7 @@ final class HarnessBluetooth: NSObject, ObservableObject, CBCentralManagerDelega
 
     private func receive(_ json: [String: Any]) {
         let type = json["type"] as? String ?? ""
+        waitingForReply = false
         if type == "error" {
             status = "Harness error: \(json["reason"] as? String ?? "unknown")"
         } else if type == "state" {
@@ -217,6 +232,7 @@ final class HarnessBluetooth: NSObject, ObservableObject, CBCentralManagerDelega
                 if !page.isEmpty && offset + page.count < total { loadPalettes(offset: offset + page.count) }
             }
         }
+        sendNextRequest()
     }
 
     private func set(_ state: [String: Any]) {
