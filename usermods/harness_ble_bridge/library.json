@@ -1,0 +1,6 @@
+{
+  "name": "harness_ble_bridge",
+  "build": {
+    "libArchive": false
+  }
+}
