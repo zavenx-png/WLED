@@ -1,0 +1,111 @@
+name: Build V17.33 Keyboard and Warehouse Disco
+on:
+  push:
+    branches:
+      - stopwatch-v17-33-keyboard-warehouse-disco
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build-firmware:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify exact effect order, duplicated choreography, keyboard geometry and NVS migration
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          s=Path('stopwatch/StopWatchNative31V16/NativeApp.cpp').read_text()
+          names=['zaven Chromatic EQ','Robot Shuffle','Warehouse House Duo','Warehouse Disco Duo','Matrix Phosphor','zaven Psychedelic Halo','zaven Electric Aurora','zaven Flowing Halo','Prism EQ','Vapor Scope','Frequency Towers','Radial Spectrum','Heartbeat Neon','Round Resonator','Kaleidoscope Reactor','Infinity Tunnel','Cymatic Mandala','Orbital Harmonics','zaven Kaleidoscope','zaven Round Resonator','zaven Fibonacci Spiral','Spike Ball Nova (variant)','String Theory','FluidBox Classic','Neon Helix Chamber','Ultraviolet Reactor','Disco Stargate']
+          menu=s.split('static const char *const EFFECT_NAMES[VIS_COUNT]')[1].split('};')[0]
+          actual=re.findall(r'"([^"]+)"',menu)
+          assert 'VIS_COUNT=27' in s and actual==names,(actual,names)
+          ids=[int(x) for x in re.findall(r'\d+',s.split('ORIGINAL_EFFECT_ID[VIS_COUNT]')[1].split('};')[0])]
+          assert ids==[23,22,20,76,4,24,29,30,1,3,6,7,8,9,10,12,13,17,25,26,27,63,64,65,73,74,75],ids
+          old_to_new=[int(x) for x in re.findall(r'\d+',s.split('V1732_TO_V1733[26]')[1].split('};')[0])]
+          assert old_to_new==[0,1,2]+list(range(4,27)),old_to_new
+          assert 'remapV1732Slot(slot)' in s
+          assert 'prefs.putUChar("s1733",1)' in s
+          for k in ['gain1733','fav1733','man1733','eff1733','sc1733']:
+            assert k in s,k
+          # Warehouse House Duo stage and Robot Shuffle mirror are copied verbatim.
+          stage=s.split(' case 20:{')[1].split(' case 21:{')[0]
+          duo=s.split(' case 76:{')[1].split(' case 70:{')[0]
+          ball=s.split(' case 22:{')[1].split(' case 70:{')[0]
+          assert 'figure(150,242,1.f,beatClock+.2f,rgb(255,104,214));' in stage
+          assert 'figure(150,242,1.f,beatClock+.2f,rgb(255,104,214));' in duo
+          assert 'figure(318,242,1.f,beatClock+2.f,rgb(77,226,255));' in duo
+          assert 'const int ballY=85,ballR=43;' in ball and 'const int ballY=85,ballR=43;' in duo
+          assert 'float reflectRot=phase8()*TAU;' in duo
+          assert 'warehousePinkName' in duo and 'warehouseBlueName' in duo
+          assert 'warehouseBlueName="";warehousePinkName="";' in s
+          save=s.split('static void saveNameOverlay(){')[1].split('// V17.30: cancel')[0]
+          assert 'if(originalEffect(effectID)==76)' in save
+          assert save.index('if(originalEffect(effectID)==76)')<save.index('saveNames();')
+          assert 'warehouseBlueName=draftBlue;' in save and 'warehousePinkName=draftPink;' in save
+          for forbidden in ['prefs.putString("warehouseBlueName"','prefs.putString("warehousePinkName"']:
+            assert forbidden not in s
+          # Full rectangular footer, direct on-press interaction, one-shot release.
+          assert 'NAME_DEL_X=125,NAME_DEL_Y=381,NAME_DEL_W=149,NAME_DEL_H=48' in s
+          assert 'NAME_SPACE_X=283,NAME_SPACE_Y=381,NAME_SPACE_W=52,NAME_SPACE_H=48' in s
+          assert 'nameFooterPress(touch.x,touch.y);' in s
+          assert 'if(overlay==NAME&&nameFooterConsumed)' in s
+          assert 'dest+=\' \';' in s
+          assert 'textC("DEL",NAME_DEL_X+NAME_DEL_W/2,NAME_DEL_Y+NAME_DEL_H/2,rgb(251,254,255),4)' in s
+          assert 'textC("SP",NAME_SPACE_X+NAME_SPACE_W/2,NAME_SPACE_Y+NAME_SPACE_H/2,rgb(251,254,255),4)' in s
+          for x,y,w,h in [(125,381,149,48),(283,381,52,48)]:
+            for xx in [x,x+w]:
+              for yy in [y,y+h]:
+                assert (xx-233)**2+(yy-233)**2<230**2,(x,y,w,h)
+          # QWERTY letters still use the averaged finger center, 8s cancel retained.
+          assert 'x=nameTouchXSum/nameTouchSamples;' in s
+          assert 'y=nameTouchYSum/nameTouchSamples;' in s
+          assert 'NAME_IDLE_MS=8000UL' in s
+          assert 'ArtCapsule::' not in s and 'GhostCompanion::' not in s
+          assert Path('stopwatch/V17_33_README.md').exists()
+          print('V17.33: 27 effects, session-only warehouse labels, full footer hitboxes, QWERTY centroid, NVS upgrade all pass')
+          PY
+      - name: Install Arduino CLI
+        uses: arduino/setup-arduino-cli@v2
+      - name: Install StopWatch core and libraries
+        run: |
+          arduino-cli config init
+          arduino-cli config add board_manager.additional_urls https://static-cdn.m5stack.com/resource/arduino/package_m5stack_index.json
+          arduino-cli core update-index
+          arduino-cli core install m5stack:esp32@3.3.10
+          arduino-cli lib install M5Unified@0.2.29
+          arduino-cli lib install M5GFX@0.2.36
+      - name: Build StopWatch V17.33 27 effects
+        run: |
+          mkdir -p compiled
+          arduino-cli compile \
+            --fqbn "m5stack:esp32:m5stack_stopwatch:PartitionScheme=huge_app,PSRAM=opi,DebugLevel=error,USBMode=default,CDCOnBoot=cdc,UploadMode=cdc" \
+            --output-dir "$GITHUB_WORKSPACE/compiled" \
+            "$GITHUB_WORKSPACE/stopwatch/StopWatchNative31V16"
+          ls -lh compiled/*.bin
+      - name: Package editable source, flasher and checksums
+        run: |
+          mkdir -p compiled/Editable_Source
+          cp -R stopwatch/StopWatchNative31V16 compiled/Editable_Source/
+          cp stopwatch/V17_28_README.md compiled/Editable_Source/
+          cp stopwatch/V17_29_README.md compiled/Editable_Source/
+          cp stopwatch/V17_30_README.md compiled/Editable_Source/
+          cp stopwatch/V17_31_README.md compiled/Editable_Source/
+          cp stopwatch/V17_32_README.md compiled/Editable_Source/
+          cp stopwatch/V17_33_README.md compiled/Editable_Source/
+          rm -f compiled/Editable_Source/StopWatchNative31V16/assets/ArtCapsuleV1728.h compiled/Editable_Source/StopWatchNative31V16/assets/GhostCompanionV1728.h
+          cp stopwatch/Mac_Flasher_V17_28.sh compiled/Mac_Flasher.sh
+          printf 'Source git commit: %s\n' "$GITHUB_SHA" > compiled/BUILD_COMMIT.txt
+          (cd compiled && sha256sum *.bin > SHA256SUMS.txt)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: StopWatch_V17_33_Keyboard_Warehouse_Disco_27_Effects
+          path: |
+            compiled/*.bin
+            compiled/*.sh
+            compiled/*.txt
+            compiled/Editable_Source/
+          if-no-files-found: error
+          retention-days: 30
